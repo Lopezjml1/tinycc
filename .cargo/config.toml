@@ -1,0 +1,6 @@
+[target.'cfg(all())']
+rustflags = [
+    "-Dclippy::cast_sign_loss",
+    "-Dclippy::cast_possible_truncation",
+    "-Dclippy::cast_possible_wrap",
+]

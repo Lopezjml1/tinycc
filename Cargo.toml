@@ -1,0 +1,46 @@
+[package]
+name = "tinycc-rs"
+version = "0.9.28-rc.0"
+edition = "2021"
+rust-version = "1.70"
+description = "A memory-safe Rust port of Tiny C Compiler (TCC)"
+license = "LGPL-2.1-or-later"
+repository = "https://github.com/TinyCC/tinycc"
+
+[lib]
+name = "tcc"
+crate-type = ["cdylib", "staticlib", "rlib"]
+
+[[bin]]
+name = "tcc"
+path = "src/main.rs"
+
+[features]
+default = ["x86_64"]
+x86_64 = []
+i386 = []
+arm = []
+arm64 = []
+riscv64 = []
+selinux = ["libc"]
+bounds-checking = []
+
+[dependencies]
+thiserror = "1"
+clap = { version = "4", features = ["derive"] }
+gimli = { version = "0.28", features = ["write"] }
+zerocopy = "0.7"
+bytemuck = "1"
+nom = "7"
+libc = { version = "0.2", optional = true }
+
+[target.'cfg(windows)'.dependencies]
+winapi = { version = "0.3", features = ["memoryapi", "errhandlingapi"] }
+
+[dev-dependencies]
+tempfile = "3"
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
