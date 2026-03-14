@@ -13,6 +13,16 @@
 //   - `void tcc_delete(TCCState *)`       → `impl Drop for TccContext`
 //   - `tcc_compile_sem`                   → `COMPILE_MUTEX: Mutex<()>`
 //   - All 22 libtcc.h functions           → methods on `TccContext`
+
+// Module-level lint configuration for context.rs:
+#![allow(clippy::doc_markdown)]
+#![allow(clippy::struct_excessive_bools)]
+#![allow(clippy::unnecessary_wraps)]
+#![allow(clippy::match_same_arms)]
+#![allow(clippy::unnested_or_patterns)]
+#![allow(clippy::unused_self)]
+#![allow(clippy::missing_errors_doc)]
+#![allow(clippy::too_many_lines)]
 //
 // AAP §0.8.1 compliance:
 //   - No `static mut`   — compile serialization uses `Mutex<()>`
@@ -388,6 +398,22 @@ pub(crate) struct TccState {
     pub(crate) bss_section_idx: usize,
 
     // -----------------------------------------------------------------------
+    // Code generation state
+    // -----------------------------------------------------------------------
+
+    /// Current instruction index (code position) in the current text section.
+    /// C field: `int ind` in tccgen.c global state.
+    pub(crate) ind: i64,
+
+    /// Index of current text section being emitted into.
+    /// C field: `Section *cur_text_section` (tcc.h:906).
+    pub(crate) cur_text_section: usize,
+
+    /// Code suppression flag for dead code elimination / constant evaluation.
+    /// C field: `int nocode_wanted` in tccgen.c global state.
+    pub(crate) nocode_wanted: i32,
+
+    // -----------------------------------------------------------------------
     // Preprocessor state
     // -----------------------------------------------------------------------
 
@@ -624,6 +650,11 @@ impl Default for TccState {
             text_section_idx: 0,
             data_section_idx: 0,
             bss_section_idx: 0,
+
+            // Code generation state
+            ind: 0,
+            cur_text_section: 0,
+            nocode_wanted: 0,
 
             // Preprocessor state — CVE-2019-9754: Vec prevents underflow
             include_stack: Vec::new(),
@@ -1070,8 +1101,6 @@ impl TccState {
     ///               libtcc.c include-open path.
     pub(crate) fn is_include_cached(&self, path: &std::path::Path) -> Option<i32> {
         self.cached_includes.get(path).and_then(|ci| {
-            // Access the cached filename for diagnostic / cache-key validation
-            let _cached_path = &ci.filename;
             // A non-zero ifndef_macro means the file has a header guard
             if ci.ifndef_macro != 0 {
                 Some(ci.ifndef_macro)
@@ -1157,12 +1186,6 @@ impl TccState {
     ///
     /// C equivalent: cleanup loop in `tcc_delete()` (libtcc.c:903-915).
     pub(crate) fn clear_inline_fns(&mut self) {
-        for ifn in &self.inline_fns {
-            // Access fields before dropping to ensure any deferred
-            // references are resolved.
-            let _tokens = &ifn.func_str;
-            let _sym_id = ifn.sym;
-        }
         self.inline_fns.clear();
     }
 
@@ -1179,7 +1202,6 @@ impl TccState {
     ///
     /// C equivalent: checking `type->ref` in tccgen.c.
     pub(crate) fn ctype_has_ref(ctype: &CType) -> bool {
-        let _type_flags = ctype.t;
         ctype.ref_sym.is_some()
     }
 
@@ -1190,7 +1212,6 @@ impl TccState {
     ///
     /// C equivalent: checking `(vtop->r & VT_VALMASK)` in tccgen.c.
     pub(crate) fn svalue_is_register(sv: &SValue) -> bool {
-        let _ctype = &sv.ctype;
         // Bits 0-5 of `r` encode the value location; values 0..=24 are
         // register numbers for most backends.
         (sv.r & 0x3f) < 25
@@ -1207,7 +1228,6 @@ impl TccState {
     /// C equivalent: `find_section()` in tccelf.c.
     pub(crate) fn find_section(&self, name: &str) -> Option<usize> {
         self.sections.iter().enumerate().find_map(|(i, sec)| {
-            let _flags = sec.sh_flags;
             if sec.name == name { Some(i) } else { None }
         })
     }
@@ -1222,7 +1242,6 @@ impl TccState {
     ///
     /// C equivalent: checking `ts->sym_define` in tccpp.c macro expansion.
     pub(crate) fn token_sym_is_defined(ts: &TokenSym) -> bool {
-        let _tok_id = ts.tok;
         ts.sym_define.is_some()
     }
 
@@ -1325,7 +1344,7 @@ impl TccContext {
     /// C equivalent: `void tcc_set_lib_path(TCCState *s, const char *path)`
     ///               (libtcc.c:945).
     pub fn set_lib_path(&mut self, path: &str) {
-        self.state.tcc_lib_path = path.to_owned();
+        path.clone_into(&mut self.state.tcc_lib_path);
     }
 
     // =======================================================================
