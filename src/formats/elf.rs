@@ -2735,3 +2735,1195 @@ pub const PT_MIPS_ABIFLAGS: u32 = 0x70000003;
 pub const ELF_NOTE_GNU: &str = "GNU";
 pub const NT_GNU_PROPERTY_TYPE_0: u32 = 5;
 
+
+// ===========================================================================
+// Additional ELF Constants - completing full elf.h coverage
+// These constants ensure complete parity with the original TinyCC elf.h header
+// covering architecture-specific relocation types, section types, program header
+// types, and platform-specific flags.
+// ===========================================================================
+
+// ---------------------------------------------------------------------------
+// Dynamic Section Types (Supplemental)
+// ---------------------------------------------------------------------------
+pub const DT_ALPHA_NUM: u32 = 1;
+pub const DT_ALPHA_PLTRO: u32 = DT_LOPROC;
+pub const DT_IA_64_NUM: u32 = 1;
+pub const DT_IA_64_PLT_RESERVE: u32 = DT_LOPROC;
+
+// ---------------------------------------------------------------------------
+// ELF Flags (Supplemental)
+// ---------------------------------------------------------------------------
+/// PA-RISC 1.0 big-endian.
+pub const EFA_PARISC_1_0: u32 = 0x020b;
+/// PA-RISC 1.1 big-endian.
+pub const EFA_PARISC_1_1: u32 = 0x0210;
+/// PA-RISC 2.0 big-endian.
+pub const EFA_PARISC_2_0: u32 = 0x0214;
+/// All addresses must be < 2GB.
+pub const EF_ALPHA_32BIT: u32 = 1;
+/// Relocations for relaxing exist.
+pub const EF_ALPHA_CANRELAX: u32 = 2;
+pub const EF_ARM_EABI_UNKNOWN: u32 = 0x00000000;
+pub const EF_CPU32: u32 = 0x00810000;
+/// 64-bit ABI
+pub const EF_IA_64_ABI64: u32 = 0x00000010;
+/// arch. version mask
+pub const EF_IA_64_ARCH: u32 = 0xff000000;
+/// os-specific flags
+pub const EF_IA_64_MASKOS: u32 = 0x0000000f;
+/// Architecture version.
+pub const EF_PARISC_ARCH: u32 = 0x0000ffff;
+/// Program uses arch. extensions.
+pub const EF_PARISC_EXT: u32 = 0x00020000;
+/// Allow lazy swapping.
+pub const EF_PARISC_LAZYSWAP: u32 = 0x00400000;
+/// Program expects little endian.
+pub const EF_PARISC_LSB: u32 = 0x00040000;
+/// No kernel assisted branch
+pub const EF_PARISC_NO_KABP: u32 = 0x00100000;
+/// Trap nil pointer dereference.
+pub const EF_PARISC_TRAPNIL: u32 = 0x00010000;
+/// Program expects wide mode.
+pub const EF_PARISC_WIDE: u32 = 0x00080000;
+/// PowerPC embedded flag
+pub const EF_PPC_EMB: u32 = 0x80000000;
+/// PowerPC -mrelocatable flag
+pub const EF_PPC_RELOCATABLE: u32 = 0x00010000;
+/// PowerPC -mrelocatable-lib
+pub const EF_PPC_RELOCATABLE_LIB: u32 = 0x00008000;
+/// High GPRs kernel facility needed.
+pub const EF_S390_HIGH_GPRS: u32 = 0x00000001;
+pub const EF_SH1: u32 = 0x1;
+pub const EF_SH2: u32 = 0x2;
+pub const EF_SH2A: u32 = 0xd;
+pub const EF_SH2A_NOFPU: u32 = 0x13;
+pub const EF_SH2A_SH3E: u32 = 0x18;
+pub const EF_SH2A_SH3_NOFPU: u32 = 0x16;
+pub const EF_SH2A_SH4: u32 = 0x17;
+pub const EF_SH2A_SH4_NOFPU: u32 = 0x15;
+pub const EF_SH2E: u32 = 0xb;
+pub const EF_SH3: u32 = 0x3;
+pub const EF_SH3E: u32 = 0x8;
+pub const EF_SH3_DSP: u32 = 0x5;
+pub const EF_SH3_NOMMU: u32 = 0x14;
+pub const EF_SH4: u32 = 0x9;
+pub const EF_SH4A: u32 = 0xc;
+pub const EF_SH4AL_DSP: u32 = 0x6;
+pub const EF_SH4A_NOFPU: u32 = 0x11;
+pub const EF_SH4_NOFPU: u32 = 0x10;
+pub const EF_SH4_NOMMU_NOFPU: u32 = 0x12;
+pub const EF_SH_DSP: u32 = 0x4;
+pub const EF_SH_MACH_MASK: u32 = 0x1f;
+pub const EF_SH_UNKNOWN: u32 = 0x0;
+pub const EF_SPARCV9_MM: u32 = 3;
+pub const EF_SPARCV9_PSO: u32 = 1;
+pub const EF_SPARCV9_RMO: u32 = 2;
+pub const EF_SPARCV9_TSO: u32 = 0;
+/// generic V8+ features
+pub const EF_SPARC_32PLUS: u32 = 0x000100;
+pub const EF_SPARC_EXT_MASK: u32 = 0xFFFF00;
+/// HAL R1 extensions
+pub const EF_SPARC_HAL_R1: u32 = 0x000400;
+/// little endian data
+pub const EF_SPARC_LEDATA: u32 = 0x800000;
+/// Sun UltraSPARC1 extensions
+pub const EF_SPARC_SUN_US1: u32 = 0x000200;
+/// Sun UltraSPARCIII extensions
+pub const EF_SPARC_SUN_US3: u32 = 0x000800;
+
+// ---------------------------------------------------------------------------
+// ELF Helper Constants (Supplemental)
+// ---------------------------------------------------------------------------
+/// ELF magic string
+pub const ELFMAG: &[u8; 4] = b"\x7fELF";
+/// Amiga Research OS.
+pub const ELFOSABI_AROS: u32 = 15;
+/// Linux TMS320C6000.
+pub const ELFOSABI_C6000_LINUX: u32 = 65;
+/// FenixOS.
+pub const ELFOSABI_FENIXOS: u32 = 16;
+/// Hewlett-Packard Non-Stop Kernel.
+pub const ELFOSABI_NSK: u32 = 14;
+pub const ELFOSABI_OPENVMS: u32 = 13;
+/// Old name.
+pub const ELF_NOTE_ABI: u32 = NT_GNU_ABI_TAG;
+pub const ELF_NOTE_OS_FREEBSD: u32 = 3;
+pub const ELF_NOTE_OS_GNU: u32 = 1;
+pub const ELF_NOTE_OS_LINUX: u32 = 0;
+pub const ELF_NOTE_OS_SOLARIS2: u32 = 2;
+pub const ELF_NOTE_PAGESIZE_HINT: u32 = 1;
+/// Solaris ELF note name
+pub const ELF_NOTE_SOLARIS: &str = "SUNW Solaris";
+pub const SELFMAG: usize = 4;
+
+// ---------------------------------------------------------------------------
+// Machine Types (Supplemental)
+// ---------------------------------------------------------------------------
+/// ARC Cores Tangent-A5
+pub const EM_ARC_A5: u32 = 93;
+
+// ---------------------------------------------------------------------------
+// MIPS ELF Flags
+// ---------------------------------------------------------------------------
+/// -mips1 code.
+pub const E_MIPS_ARCH_1: u32 = 0x00000000;
+/// -mips2 code.
+pub const E_MIPS_ARCH_2: u32 = 0x10000000;
+/// -mips3 code.
+pub const E_MIPS_ARCH_3: u32 = 0x20000000;
+/// MIPS32 code.
+pub const E_MIPS_ARCH_32: u32 = 0x60000000;
+/// -mips4 code.
+pub const E_MIPS_ARCH_4: u32 = 0x30000000;
+/// -mips5 code.
+pub const E_MIPS_ARCH_5: u32 = 0x40000000;
+/// MIPS64 code.
+pub const E_MIPS_ARCH_64: u32 = 0x70000000;
+
+// ---------------------------------------------------------------------------
+// Alpha LITUSE Types
+// ---------------------------------------------------------------------------
+pub const LITUSE_ALPHA_ADDR: u32 = 0;
+pub const LITUSE_ALPHA_BASE: u32 = 1;
+pub const LITUSE_ALPHA_BYTOFF: u32 = 2;
+pub const LITUSE_ALPHA_JSR: u32 = 3;
+pub const LITUSE_ALPHA_TLS_GD: u32 = 4;
+pub const LITUSE_ALPHA_TLS_LDM: u32 = 5;
+
+// ---------------------------------------------------------------------------
+// MIPS Library List Flags
+// ---------------------------------------------------------------------------
+pub const LL_DELAY_LOAD: u32 = 1 << 4;
+pub const LL_DELTA: u32 = 1 << 5;
+/// Require exact match
+pub const LL_EXACT_MATCH: u32 = 1 << 0;
+pub const LL_EXPORTS: u32 = 1 << 3;
+/// Ignore interface version
+pub const LL_IGNORE_INT_VER: u32 = 1 << 1;
+pub const LL_NONE: u32 = 0;
+pub const LL_REQUIRE_MINOR: u32 = 1 << 2;
+
+// ---------------------------------------------------------------------------
+// MIPS Options Kind Constants
+// ---------------------------------------------------------------------------
+/// Exception processing options.
+pub const ODK_EXCEPTIONS: u32 = 2;
+/// record the fill value used by the linker.
+pub const ODK_FILL: u32 = 5;
+/// HW workarounds.  'AND' bits when merging.
+pub const ODK_HWAND: u32 = 7;
+/// HW workarounds.  'OR' bits when merging.
+pub const ODK_HWOR: u32 = 8;
+/// Hardware workarounds performed
+pub const ODK_HWPATCH: u32 = 4;
+/// Undefined.
+pub const ODK_NULL: u32 = 0;
+/// Section padding options.
+pub const ODK_PAD: u32 = 3;
+/// Register usage information.
+pub const ODK_REGINFO: u32 = 1;
+/// reserve space for desktop tools to write.
+pub const ODK_TAGS: u32 = 6;
+
+// ---------------------------------------------------------------------------
+// MIPS Exception Options
+// ---------------------------------------------------------------------------
+/// Dismiss invalid address faults?
+pub const OEX_DISMISS: u32 = 0x80000;
+/// Force floating point debug mode?
+pub const OEX_FPDBUG: u32 = 0x40000;
+pub const OEX_FPU_DIV0: u32 = 0x08;
+pub const OEX_FPU_INEX: u32 = 0x01;
+pub const OEX_FPU_INVAL: u32 = 0x10;
+/// FPE's which MAY be enabled.
+pub const OEX_FPU_MAX: u32 = 0x1f00;
+/// FPE's which MUST be enabled.
+pub const OEX_FPU_MIN: u32 = 0x1f;
+pub const OEX_FPU_OFLO: u32 = 0x04;
+pub const OEX_FPU_UFLO: u32 = 0x02;
+/// page zero must be mapped.
+pub const OEX_PAGE0: u32 = 0x10000;
+pub const OEX_PRECISEFP: u32 = OEX_FPDBUG;
+/// Force sequential memory mode?
+pub const OEX_SMM: u32 = 0x20000;
+
+// ---------------------------------------------------------------------------
+// Miscellaneous ELF Constants
+// ---------------------------------------------------------------------------
+pub const OHWA0_R4KEOP_CHECKED: u32 = 0x00000001;
+pub const OHWA1_R4KEOP_CLEAN: u32 = 0x00000002;
+pub const _ELF_H: u32 = 1;
+
+// ---------------------------------------------------------------------------
+// MIPS Hardware Options
+// ---------------------------------------------------------------------------
+/// R4000 end-of-page patch.
+pub const OHW_R4KEOP: u32 = 0x1;
+/// R5000 cvt.[ds].l bug.  clean=1.
+pub const OHW_R5KCVTL: u32 = 0x8;
+/// R5000 end-of-page patch.
+pub const OHW_R5KEOP: u32 = 0x4;
+/// may need R8000 prefetch patch.
+pub const OHW_R8KPFETCH: u32 = 0x2;
+
+// ---------------------------------------------------------------------------
+// MIPS Pad Options
+// ---------------------------------------------------------------------------
+pub const OPAD_POSTFIX: u32 = 0x2;
+pub const OPAD_PREFIX: u32 = 0x1;
+pub const OPAD_SYMBOL: u32 = 0x4;
+
+// ---------------------------------------------------------------------------
+// Program Header Flags (Supplemental)
+// ---------------------------------------------------------------------------
+pub const PF_HP_CODE: u32 = 0x01000000;
+pub const PF_HP_FAR_SHARED: u32 = 0x00200000;
+pub const PF_HP_LAZYSWAP: u32 = 0x04000000;
+pub const PF_HP_MODIFY: u32 = 0x02000000;
+pub const PF_HP_NEAR_SHARED: u32 = 0x00400000;
+pub const PF_HP_PAGE_SIZE: u32 = 0x00100000;
+pub const PF_HP_SBP: u32 = 0x08000000;
+/// spec insns w/o recovery
+pub const PF_IA_64_NORECOV: u32 = 0x80000000;
+pub const PF_MIPS_LOCAL: u32 = 0x10000000;
+pub const PF_PARISC_SBP: u32 = 0x08000000;
+
+// ---------------------------------------------------------------------------
+// Program Header Types (Supplemental)
+// ---------------------------------------------------------------------------
+pub const PT_HP_CORE_COMM: u32 = PT_LOOS + 0x4;
+pub const PT_HP_CORE_KERNEL: u32 = PT_LOOS + 0x3;
+pub const PT_HP_CORE_LOADABLE: u32 = PT_LOOS + 0x6;
+pub const PT_HP_CORE_MMF: u32 = PT_LOOS + 0x9;
+pub const PT_HP_CORE_NONE: u32 = PT_LOOS + 0x1;
+pub const PT_HP_CORE_PROC: u32 = PT_LOOS + 0x5;
+pub const PT_HP_CORE_SHM: u32 = PT_LOOS + 0x8;
+pub const PT_HP_CORE_STACK: u32 = PT_LOOS + 0x7;
+pub const PT_HP_CORE_VERSION: u32 = PT_LOOS + 0x2;
+pub const PT_HP_FASTBIND: u32 = PT_LOOS + 0x11;
+pub const PT_HP_HSL_ANNOT: u32 = PT_LOOS + 0x13;
+pub const PT_HP_OPT_ANNOT: u32 = PT_LOOS + 0x12;
+pub const PT_HP_PARALLEL: u32 = PT_LOOS + 0x10;
+pub const PT_HP_STACK: u32 = PT_LOOS + 0x14;
+pub const PT_HP_TLS: u32 = PT_LOOS;
+/// arch extension bits
+pub const PT_IA_64_ARCHEXT: u32 = PT_LOPROC;
+pub const PT_IA_64_HP_HSL_ANOT: u32 = PT_LOOS + 0x13;
+pub const PT_IA_64_HP_OPT_ANOT: u32 = PT_LOOS + 0x12;
+pub const PT_IA_64_HP_STACK: u32 = PT_LOOS + 0x14;
+/// ia64 unwind bits
+pub const PT_IA_64_UNWIND: u32 = PT_LOPROC + 1;
+pub const PT_MIPS_OPTIONS: u32 = 0x70000002;
+/// Register usage information
+pub const PT_MIPS_REGINFO: u32 = 0x70000000;
+/// Runtime procedure table.
+pub const PT_MIPS_RTPROC: u32 = 0x70000001;
+pub const PT_PARISC_ARCHEXT: u32 = 0x70000000;
+pub const PT_PARISC_UNWIND: u32 = 0x70000001;
+
+// ---------------------------------------------------------------------------
+// MIPS Runtime Hash Flags
+// ---------------------------------------------------------------------------
+pub const RHF_CORD: u32 = 1 << 12;
+pub const RHF_DEFAULT_DELAY_LOAD: u32 = 1 << 9;
+pub const RHF_DELTA_C_PLUS_PLUS: u32 = 1 << 6;
+pub const RHF_GUARANTEE_INIT: u32 = 1 << 5;
+pub const RHF_GUARANTEE_START_INIT: u32 = 1 << 7;
+/// No flags
+pub const RHF_NONE: u32 = 0;
+/// Hash size not power of 2
+pub const RHF_NOTPOT: u32 = 1 << 1;
+/// Ignore LD_LIBRARY_PATH
+pub const RHF_NO_LIBRARY_REPLACEMENT: u32 = 1 << 2;
+pub const RHF_NO_MOVE: u32 = 1 << 3;
+pub const RHF_NO_UNRES_UNDEF: u32 = 1 << 13;
+pub const RHF_PIXIE: u32 = 1 << 8;
+/// Use quickstart
+pub const RHF_QUICKSTART: u32 = 1 << 0;
+pub const RHF_REQUICKSTART: u32 = 1 << 10;
+pub const RHF_REQUICKSTARTED: u32 = 1 << 11;
+pub const RHF_RLD_ORDER_SAFE: u32 = 1 << 14;
+pub const RHF_SGI_ONLY: u32 = 1 << 4;
+
+// ---------------------------------------------------------------------------
+// M68K Relocation Types
+// ---------------------------------------------------------------------------
+/// Direct 16 bit
+pub const R_68K_16: u32 = 2;
+/// Direct 32 bit
+pub const R_68K_32: u32 = 1;
+/// Direct 8 bit
+pub const R_68K_8: u32 = 3;
+/// Copy symbol at runtime
+pub const R_68K_COPY: u32 = 19;
+/// Create GOT entry
+pub const R_68K_GLOB_DAT: u32 = 20;
+/// 16 bit PC relative GOT entry
+pub const R_68K_GOT16: u32 = 8;
+/// 16 bit GOT offset
+pub const R_68K_GOT16O: u32 = 11;
+/// 32 bit PC relative GOT entry
+pub const R_68K_GOT32: u32 = 7;
+/// 32 bit GOT offset
+pub const R_68K_GOT32O: u32 = 10;
+/// 8 bit PC relative GOT entry
+pub const R_68K_GOT8: u32 = 9;
+/// 8 bit GOT offset
+pub const R_68K_GOT8O: u32 = 12;
+/// Create PLT entry
+pub const R_68K_JMP_SLOT: u32 = 21;
+/// No reloc
+pub const R_68K_NONE: u32 = 0;
+pub const R_68K_NUM: u32 = 43;
+/// PC relative 16 bit
+pub const R_68K_PC16: u32 = 5;
+/// PC relative 32 bit
+pub const R_68K_PC32: u32 = 4;
+/// PC relative 8 bit
+pub const R_68K_PC8: u32 = 6;
+/// 16 bit PC relative PLT address
+pub const R_68K_PLT16: u32 = 14;
+/// 16 bit PLT offset
+pub const R_68K_PLT16O: u32 = 17;
+/// 32 bit PC relative PLT address
+pub const R_68K_PLT32: u32 = 13;
+/// 32 bit PLT offset
+pub const R_68K_PLT32O: u32 = 16;
+/// 8 bit PC relative PLT address
+pub const R_68K_PLT8: u32 = 15;
+/// 8 bit PLT offset
+pub const R_68K_PLT8O: u32 = 18;
+/// Adjust by program base
+pub const R_68K_RELATIVE: u32 = 22;
+/// 32 bit module number
+pub const R_68K_TLS_DTPMOD32: u32 = 40;
+/// 32 bit module-relative offset
+pub const R_68K_TLS_DTPREL32: u32 = 41;
+/// 16 bit GOT offset for GD
+pub const R_68K_TLS_GD16: u32 = 26;
+/// 32 bit GOT offset for GD
+pub const R_68K_TLS_GD32: u32 = 25;
+/// 8 bit GOT offset for GD
+pub const R_68K_TLS_GD8: u32 = 27;
+/// 16 bit GOT offset for IE
+pub const R_68K_TLS_IE16: u32 = 35;
+/// 32 bit GOT offset for IE
+pub const R_68K_TLS_IE32: u32 = 34;
+/// 8 bit GOT offset for IE
+pub const R_68K_TLS_IE8: u32 = 36;
+/// 16 bit GOT offset for LDM
+pub const R_68K_TLS_LDM16: u32 = 29;
+/// 32 bit GOT offset for LDM
+pub const R_68K_TLS_LDM32: u32 = 28;
+/// 8 bit GOT offset for LDM
+pub const R_68K_TLS_LDM8: u32 = 30;
+/// 16 bit module-relative offset
+pub const R_68K_TLS_LDO16: u32 = 32;
+/// 32 bit module-relative offset
+pub const R_68K_TLS_LDO32: u32 = 31;
+/// 8 bit module-relative offset
+pub const R_68K_TLS_LDO8: u32 = 33;
+/// 16 bit offset relative to
+pub const R_68K_TLS_LE16: u32 = 38;
+/// 32 bit offset relative to
+pub const R_68K_TLS_LE32: u32 = 37;
+/// 8 bit offset relative to
+pub const R_68K_TLS_LE8: u32 = 39;
+/// 32 bit TP-relative offset
+pub const R_68K_TLS_TPREL32: u32 = 42;
+
+// ---------------------------------------------------------------------------
+// AArch64 Relocation Types (Supplemental)
+// ---------------------------------------------------------------------------
+/// Module number, 64 bit.
+pub const R_AARCH64_TLS_DTPMOD64: u32 = 1028;
+/// Module-relative offset, 64 bit.
+pub const R_AARCH64_TLS_DTPREL64: u32 = 1029;
+/// TP-relative offset, 64 bit.
+pub const R_AARCH64_TLS_TPREL64: u32 = 1030;
+
+// ---------------------------------------------------------------------------
+// ARM Relocation Types (Supplemental)
+// ---------------------------------------------------------------------------
+pub const R_ARM_ALU_SBREL_19_12: u32 = 36;
+pub const R_ARM_ALU_SBREL_27_20: u32 = 37;
+pub const R_ARM_AMP_VCALL9: u32 = 12;
+pub const R_ARM_LDR_SBREL_11_0: u32 = 35;
+pub const R_ARM_PC13: u32 = 4;
+pub const R_ARM_RABS22: u32 = 253;
+pub const R_ARM_RBASE: u32 = 255;
+pub const R_ARM_RPC24: u32 = 254;
+pub const R_ARM_RREL32: u32 = 252;
+pub const R_ARM_RSBREL32: u32 = 250;
+pub const R_ARM_RXPC25: u32 = 249;
+/// Obsolete static relocation.
+pub const R_ARM_SWI24: u32 = 13;
+/// thumb unconditional branch
+pub const R_ARM_THM_PC11: u32 = 102;
+/// thumb conditional branch
+pub const R_ARM_THM_PC9: u32 = 103;
+pub const R_ARM_THM_RPC22: u32 = 251;
+pub const R_ARM_THM_TLS_DESCSEQ: u32 = 129;
+
+// ---------------------------------------------------------------------------
+// IA-64 Relocation Types
+// ---------------------------------------------------------------------------
+/// @pcrel(sym + add), brl
+pub const R_IA64_PCREL60B: u32 = 0x48;
+/// @pltoff(sym + add), add imm22
+pub const R_IA64_PLTOFF22: u32 = 0x3a;
+/// @pltoff(sym + add), mov imm64
+pub const R_IA64_PLTOFF64I: u32 = 0x3b;
+/// @pltoff(sym + add), data8 LSB
+pub const R_IA64_PLTOFF64LSB: u32 = 0x3f;
+/// @pltoff(sym + add), data8 MSB
+pub const R_IA64_PLTOFF64MSB: u32 = 0x3e;
+
+// ---------------------------------------------------------------------------
+// PA-RISC Relocation Types
+// ---------------------------------------------------------------------------
+/// Copy relocation.
+pub const R_PARISC_COPY: u32 = 128;
+/// 14 bits of eff. address.
+pub const R_PARISC_DIR14DR: u32 = 84;
+/// Right 14 bits of eff. address.
+pub const R_PARISC_DIR14R: u32 = 6;
+/// 14 bits of eff. address.
+pub const R_PARISC_DIR14WR: u32 = 83;
+/// 16 bits of eff. address.
+pub const R_PARISC_DIR16DF: u32 = 87;
+/// 16 bits of eff. address.
+pub const R_PARISC_DIR16F: u32 = 85;
+/// 16 bits of eff. address.
+pub const R_PARISC_DIR16WF: u32 = 86;
+/// 17 bits of eff. address.
+pub const R_PARISC_DIR17F: u32 = 4;
+/// Right 17 bits of eff. address.
+pub const R_PARISC_DIR17R: u32 = 3;
+/// Left 21 bits of eff. address.
+pub const R_PARISC_DIR21L: u32 = 2;
+/// Direct 32-bit reference.
+pub const R_PARISC_DIR32: u32 = 1;
+/// 64 bits of eff. address.
+pub const R_PARISC_DIR64: u32 = 80;
+/// Right 14 bits of rel. address.
+pub const R_PARISC_DPREL14R: u32 = 22;
+/// Left 21 bits of rel. address.
+pub const R_PARISC_DPREL21L: u32 = 18;
+/// Dynamic reloc, exported PLT
+pub const R_PARISC_EPLT: u32 = 130;
+/// 64 bits function address.
+pub const R_PARISC_FPTR64: u32 = 64;
+pub const R_PARISC_GNU_VTENTRY: u32 = 232;
+pub const R_PARISC_GNU_VTINHERIT: u32 = 233;
+/// GP-rel. address, right 14 bits.
+pub const R_PARISC_GPREL14DR: u32 = 92;
+/// GP-relative, right 14 bits.
+pub const R_PARISC_GPREL14R: u32 = 30;
+/// GP-rel. address, right 14 bits.
+pub const R_PARISC_GPREL14WR: u32 = 91;
+/// 16 bits GP-rel. address.
+pub const R_PARISC_GPREL16DF: u32 = 95;
+/// 16 bits GP-rel. address.
+pub const R_PARISC_GPREL16F: u32 = 93;
+/// 16 bits GP-rel. address.
+pub const R_PARISC_GPREL16WF: u32 = 94;
+/// GP-relative, left 21 bits.
+pub const R_PARISC_GPREL21L: u32 = 26;
+/// 64 bits of GP-rel. address.
+pub const R_PARISC_GPREL64: u32 = 88;
+pub const R_PARISC_HIRESERVE: u32 = 255;
+/// Dynamic reloc, imported PLT
+pub const R_PARISC_IPLT: u32 = 129;
+pub const R_PARISC_LORESERVE: u32 = 128;
+/// LT-rel. address, right 14 bits.
+pub const R_PARISC_LTOFF14DR: u32 = 100;
+/// LT-relative, right 14 bits.
+pub const R_PARISC_LTOFF14R: u32 = 38;
+/// LT-rel. address, right 14 bits.
+pub const R_PARISC_LTOFF14WR: u32 = 99;
+/// 16 bits LT-rel. address.
+pub const R_PARISC_LTOFF16DF: u32 = 103;
+/// 16 bits LT-rel. address.
+pub const R_PARISC_LTOFF16F: u32 = 101;
+/// 16 bits LT-rel. address.
+pub const R_PARISC_LTOFF16WF: u32 = 102;
+/// LT-relative, left 21 bits.
+pub const R_PARISC_LTOFF21L: u32 = 34;
+/// 64 bits LT-rel. address.
+pub const R_PARISC_LTOFF64: u32 = 96;
+/// LT-rel. fct. ptr., right 14 bits.
+pub const R_PARISC_LTOFF_FPTR14DR: u32 = 124;
+/// LT-rel. fct ptr, right 14 bits.
+pub const R_PARISC_LTOFF_FPTR14R: u32 = 62;
+/// LT-rel. fct. ptr., right 14 bits.
+pub const R_PARISC_LTOFF_FPTR14WR: u32 = 123;
+/// 16 bits LT-rel. function ptr.
+pub const R_PARISC_LTOFF_FPTR16DF: u32 = 127;
+/// 16 bits LT-rel. function ptr.
+pub const R_PARISC_LTOFF_FPTR16F: u32 = 125;
+/// 16 bits LT-rel. function ptr.
+pub const R_PARISC_LTOFF_FPTR16WF: u32 = 126;
+/// LT-rel. fct ptr, left 21 bits.
+pub const R_PARISC_LTOFF_FPTR21L: u32 = 58;
+/// 32 bits LT-rel. function pointer.
+pub const R_PARISC_LTOFF_FPTR32: u32 = 57;
+/// 64 bits LT-rel. function ptr.
+pub const R_PARISC_LTOFF_FPTR64: u32 = 120;
+/// LT-TP-rel. address, right 14 bits.
+pub const R_PARISC_LTOFF_TP14DR: u32 = 228;
+/// 14 bits LT-TP-rel. address.
+pub const R_PARISC_LTOFF_TP14F: u32 = 167;
+/// LT-TP-rel. address, right 14 bits.
+pub const R_PARISC_LTOFF_TP14R: u32 = 166;
+/// LT-TP-rel. address, right 14 bits.
+pub const R_PARISC_LTOFF_TP14WR: u32 = 227;
+/// 16 bits LT-TP-rel. address.
+pub const R_PARISC_LTOFF_TP16DF: u32 = 231;
+/// 16 bits LT-TP-rel. address.
+pub const R_PARISC_LTOFF_TP16F: u32 = 229;
+/// 16 bits LT-TP-rel. address.
+pub const R_PARISC_LTOFF_TP16WF: u32 = 230;
+/// LT-TP-rel. address, left 21 bits.
+pub const R_PARISC_LTOFF_TP21L: u32 = 162;
+/// 64 bits LT-TP-rel. address.
+pub const R_PARISC_LTOFF_TP64: u32 = 224;
+/// No reloc.
+pub const R_PARISC_NONE: u32 = 0;
+/// PC rel. address, right 14 bits.
+pub const R_PARISC_PCREL14DR: u32 = 76;
+/// Right 14 bits of rel. address.
+pub const R_PARISC_PCREL14R: u32 = 14;
+/// PC-rel. address, right 14 bits.
+pub const R_PARISC_PCREL14WR: u32 = 75;
+/// 16 bits PC-rel. address.
+pub const R_PARISC_PCREL16DF: u32 = 79;
+/// 16 bits PC-rel. address.
+pub const R_PARISC_PCREL16F: u32 = 77;
+/// 16 bits PC-rel. address.
+pub const R_PARISC_PCREL16WF: u32 = 78;
+/// 17 bits of rel. address.
+pub const R_PARISC_PCREL17F: u32 = 12;
+/// Right 17 bits of rel. address.
+pub const R_PARISC_PCREL17R: u32 = 11;
+/// Left 21 bits of rel. address.
+pub const R_PARISC_PCREL21L: u32 = 10;
+/// 22 bits PC-rel. address.
+pub const R_PARISC_PCREL22F: u32 = 74;
+/// 32-bit rel. address.
+pub const R_PARISC_PCREL32: u32 = 9;
+/// 64 bits PC-rel. address.
+pub const R_PARISC_PCREL64: u32 = 72;
+/// Right 14 bits of fdesc address.
+pub const R_PARISC_PLABEL14R: u32 = 70;
+/// Left 21 bits of fdesc address.
+pub const R_PARISC_PLABEL21L: u32 = 66;
+/// 32 bits function address.
+pub const R_PARISC_PLABEL32: u32 = 65;
+/// PLT-rel. address, right 14 bits.
+pub const R_PARISC_PLTOFF14DR: u32 = 116;
+/// PLT rel. address, right 14 bits.
+pub const R_PARISC_PLTOFF14R: u32 = 54;
+/// PLT-rel. address, right 14 bits.
+pub const R_PARISC_PLTOFF14WR: u32 = 115;
+/// 16 bits PLT-rel. address.
+pub const R_PARISC_PLTOFF16DF: u32 = 119;
+/// 16 bits LT-rel. address.
+pub const R_PARISC_PLTOFF16F: u32 = 117;
+/// 16 bits PLT-rel. address.
+pub const R_PARISC_PLTOFF16WF: u32 = 118;
+/// PLT rel. address, left 21 bits.
+pub const R_PARISC_PLTOFF21L: u32 = 50;
+/// 32 bits section rel. address.
+pub const R_PARISC_SECREL32: u32 = 41;
+/// 64 bits section rel. address.
+pub const R_PARISC_SECREL64: u32 = 104;
+/// No relocation, set segment base.
+pub const R_PARISC_SEGBASE: u32 = 48;
+/// 32 bits segment rel. address.
+pub const R_PARISC_SEGREL32: u32 = 49;
+/// 64 bits segment rel. address.
+pub const R_PARISC_SEGREL64: u32 = 112;
+/// DTP module 32-bit.
+pub const R_PARISC_TLS_DTPMOD32: u32 = 242;
+/// DTP module 64-bit.
+pub const R_PARISC_TLS_DTPMOD64: u32 = 243;
+/// DTP offset 32-bit.
+pub const R_PARISC_TLS_DTPOFF32: u32 = 244;
+/// DTP offset 32-bit.
+pub const R_PARISC_TLS_DTPOFF64: u32 = 245;
+/// GD 14-bit right.
+pub const R_PARISC_TLS_GD14R: u32 = 235;
+/// GD 21-bit left.
+pub const R_PARISC_TLS_GD21L: u32 = 234;
+/// GD call to __t_g_a.
+pub const R_PARISC_TLS_GDCALL: u32 = 236;
+pub const R_PARISC_TLS_IE14R: u32 = R_PARISC_LTOFF_TP14R;
+pub const R_PARISC_TLS_IE21L: u32 = R_PARISC_LTOFF_TP21L;
+/// LD module 14-bit right.
+pub const R_PARISC_TLS_LDM14R: u32 = 238;
+/// LD module 21-bit left.
+pub const R_PARISC_TLS_LDM21L: u32 = 237;
+/// LD module call to __t_g_a.
+pub const R_PARISC_TLS_LDMCALL: u32 = 239;
+/// LD offset 14-bit right.
+pub const R_PARISC_TLS_LDO14R: u32 = 241;
+/// LD offset 21-bit left.
+pub const R_PARISC_TLS_LDO21L: u32 = 240;
+pub const R_PARISC_TLS_LE14R: u32 = R_PARISC_TPREL14R;
+pub const R_PARISC_TLS_LE21L: u32 = R_PARISC_TPREL21L;
+pub const R_PARISC_TLS_TPREL32: u32 = R_PARISC_TPREL32;
+pub const R_PARISC_TLS_TPREL64: u32 = R_PARISC_TPREL64;
+/// TP-rel. address, right 14 bits.
+pub const R_PARISC_TPREL14DR: u32 = 220;
+/// TP-rel. address, right 14 bits.
+pub const R_PARISC_TPREL14R: u32 = 158;
+/// TP-rel. address, right 14 bits.
+pub const R_PARISC_TPREL14WR: u32 = 219;
+/// 16 bits TP-rel. address.
+pub const R_PARISC_TPREL16DF: u32 = 223;
+/// 16 bits TP-rel. address.
+pub const R_PARISC_TPREL16F: u32 = 221;
+/// 16 bits TP-rel. address.
+pub const R_PARISC_TPREL16WF: u32 = 222;
+/// TP-rel. address, left 21 bits.
+pub const R_PARISC_TPREL21L: u32 = 154;
+/// 32 bits TP-rel. address.
+pub const R_PARISC_TPREL32: u32 = 153;
+/// 64 bits TP-rel. address.
+pub const R_PARISC_TPREL64: u32 = 216;
+
+// ---------------------------------------------------------------------------
+// SPARC Relocation Types (Supplemental)
+// ---------------------------------------------------------------------------
+/// PC relative 64 bit
+pub const R_SPARC_DISP64: u32 = 46;
+/// was part of v9 ABI but was removed
+pub const R_SPARC_GLOB_JMP: u32 = 42;
+pub const R_SPARC_H34: u32 = 85;
+/// Direct high 12 of 44 bit
+pub const R_SPARC_H44: u32 = 50;
+/// High 22 bit complemented
+pub const R_SPARC_HIX22: u32 = 48;
+pub const R_SPARC_IRELATIVE: u32 = 249;
+pub const R_SPARC_JMP_IREL: u32 = 248;
+/// Direct low 10 of 44 bit
+pub const R_SPARC_L44: u32 = 52;
+/// Truncated 11 bit complemented
+pub const R_SPARC_LOX10: u32 = 49;
+/// Direct mid 22 of 44 bit
+pub const R_SPARC_M44: u32 = 51;
+/// Direct 64 bit ref to PLT entry
+pub const R_SPARC_PLT64: u32 = 47;
+/// Global register usage
+pub const R_SPARC_REGISTER: u32 = 53;
+pub const R_SPARC_SIZE32: u32 = 86;
+pub const R_SPARC_SIZE64: u32 = 87;
+pub const R_SPARC_TLS_DTPMOD32: u32 = 74;
+pub const R_SPARC_TLS_DTPMOD64: u32 = 75;
+pub const R_SPARC_TLS_DTPOFF32: u32 = 76;
+pub const R_SPARC_TLS_DTPOFF64: u32 = 77;
+pub const R_SPARC_TLS_GD_ADD: u32 = 58;
+pub const R_SPARC_TLS_GD_CALL: u32 = 59;
+pub const R_SPARC_TLS_GD_HI22: u32 = 56;
+pub const R_SPARC_TLS_GD_LO10: u32 = 57;
+pub const R_SPARC_TLS_IE_ADD: u32 = 71;
+pub const R_SPARC_TLS_IE_HI22: u32 = 67;
+pub const R_SPARC_TLS_IE_LD: u32 = 69;
+pub const R_SPARC_TLS_IE_LDX: u32 = 70;
+pub const R_SPARC_TLS_IE_LO10: u32 = 68;
+pub const R_SPARC_TLS_LDM_ADD: u32 = 62;
+pub const R_SPARC_TLS_LDM_CALL: u32 = 63;
+pub const R_SPARC_TLS_LDM_HI22: u32 = 60;
+pub const R_SPARC_TLS_LDM_LO10: u32 = 61;
+pub const R_SPARC_TLS_LDO_ADD: u32 = 66;
+pub const R_SPARC_TLS_LDO_HIX22: u32 = 64;
+pub const R_SPARC_TLS_LDO_LOX10: u32 = 65;
+pub const R_SPARC_TLS_LE_HIX22: u32 = 72;
+pub const R_SPARC_TLS_LE_LOX10: u32 = 73;
+pub const R_SPARC_TLS_TPOFF32: u32 = 78;
+pub const R_SPARC_TLS_TPOFF64: u32 = 79;
+/// Direct 16 bit unaligned
+pub const R_SPARC_UA16: u32 = 55;
+/// Direct 64 bit unaligned
+pub const R_SPARC_UA64: u32 = 54;
+pub const R_SPARC_WDISP10: u32 = 88;
+
+// ---------------------------------------------------------------------------
+// Tile-GX Relocation Types (Supplemental)
+// ---------------------------------------------------------------------------
+/// X0 pipe hword 0
+pub const R_TILEGX_IMM16_X0_HW0: u32 = 36;
+/// X0 pipe hword 0 GOT offset
+pub const R_TILEGX_IMM16_X0_HW0_GOT: u32 = 64;
+/// X0 pipe last hword 0
+pub const R_TILEGX_IMM16_X0_HW0_LAST: u32 = 44;
+/// X0 pipe last hword 0 GOT offset
+pub const R_TILEGX_IMM16_X0_HW0_LAST_GOT: u32 = 72;
+/// X0 pipe PC-rel last hword 0
+pub const R_TILEGX_IMM16_X0_HW0_LAST_PCREL: u32 = 58;
+/// X0 pipe PC-rel PLT last hword 0
+pub const R_TILEGX_IMM16_X0_HW0_LAST_PLT_PCREL: u32 = 94;
+/// X0 pipe last hword 0 GD off
+pub const R_TILEGX_IMM16_X0_HW0_LAST_TLS_GD: u32 = 86;
+/// X0 pipe last hword 0 IE off
+pub const R_TILEGX_IMM16_X0_HW0_LAST_TLS_IE: u32 = 100;
+/// X0 pipe last hword 0 LE off
+pub const R_TILEGX_IMM16_X0_HW0_LAST_TLS_LE: u32 = 82;
+/// X0 pipe PC relative hword 0
+pub const R_TILEGX_IMM16_X0_HW0_PCREL: u32 = 50;
+/// X0 pipe PC-rel PLT hword 0
+pub const R_TILEGX_IMM16_X0_HW0_PLT_PCREL: u32 = 66;
+/// X0 pipe hword 0 TLS GD offset
+pub const R_TILEGX_IMM16_X0_HW0_TLS_GD: u32 = 78;
+/// X0 pipe hword 0 TLS IE offset
+pub const R_TILEGX_IMM16_X0_HW0_TLS_IE: u32 = 92;
+/// X0 pipe hword 0 TLS LE offset
+pub const R_TILEGX_IMM16_X0_HW0_TLS_LE: u32 = 80;
+/// X0 pipe hword 1
+pub const R_TILEGX_IMM16_X0_HW1: u32 = 38;
+/// X0 pipe last hword 1
+pub const R_TILEGX_IMM16_X0_HW1_LAST: u32 = 46;
+/// X0 pipe last hword 1 GOT offset
+pub const R_TILEGX_IMM16_X0_HW1_LAST_GOT: u32 = 74;
+/// X0 pipe PC-rel last hword 1
+pub const R_TILEGX_IMM16_X0_HW1_LAST_PCREL: u32 = 60;
+/// X0 pipe PC-rel PLT last hword 1
+pub const R_TILEGX_IMM16_X0_HW1_LAST_PLT_PCREL: u32 = 96;
+/// X0 pipe last hword 1 GD off
+pub const R_TILEGX_IMM16_X0_HW1_LAST_TLS_GD: u32 = 88;
+/// X0 pipe last hword 1 IE off
+pub const R_TILEGX_IMM16_X0_HW1_LAST_TLS_IE: u32 = 102;
+/// X0 pipe last hword 1 LE off
+pub const R_TILEGX_IMM16_X0_HW1_LAST_TLS_LE: u32 = 84;
+/// X0 pipe PC relative hword 1
+pub const R_TILEGX_IMM16_X0_HW1_PCREL: u32 = 52;
+/// X0 pipe PC-rel PLT hword 1
+pub const R_TILEGX_IMM16_X0_HW1_PLT_PCREL: u32 = 68;
+/// X0 pipe hword 2
+pub const R_TILEGX_IMM16_X0_HW2: u32 = 40;
+/// X0 pipe last hword 2
+pub const R_TILEGX_IMM16_X0_HW2_LAST: u32 = 48;
+/// X0 pipe PC-rel last hword 2
+pub const R_TILEGX_IMM16_X0_HW2_LAST_PCREL: u32 = 62;
+/// X0 pipe PC-rel PLT last hword 2
+pub const R_TILEGX_IMM16_X0_HW2_LAST_PLT_PCREL: u32 = 98;
+/// X0 pipe PC relative hword 2
+pub const R_TILEGX_IMM16_X0_HW2_PCREL: u32 = 54;
+/// X0 pipe PC-rel PLT hword 2
+pub const R_TILEGX_IMM16_X0_HW2_PLT_PCREL: u32 = 70;
+/// X0 pipe hword 3
+pub const R_TILEGX_IMM16_X0_HW3: u32 = 42;
+/// X0 pipe PC relative hword 3
+pub const R_TILEGX_IMM16_X0_HW3_PCREL: u32 = 56;
+/// X0 pipe PC-rel PLT hword 3
+pub const R_TILEGX_IMM16_X0_HW3_PLT_PCREL: u32 = 76;
+/// X1 pipe hword 0
+pub const R_TILEGX_IMM16_X1_HW0: u32 = 37;
+/// X1 pipe hword 0 GOT offset
+pub const R_TILEGX_IMM16_X1_HW0_GOT: u32 = 65;
+/// X1 pipe last hword 0
+pub const R_TILEGX_IMM16_X1_HW0_LAST: u32 = 45;
+/// X1 pipe last hword 0 GOT offset
+pub const R_TILEGX_IMM16_X1_HW0_LAST_GOT: u32 = 73;
+/// X1 pipe PC-rel last hword 0
+pub const R_TILEGX_IMM16_X1_HW0_LAST_PCREL: u32 = 59;
+/// X1 pipe PC-rel PLT last hword 0
+pub const R_TILEGX_IMM16_X1_HW0_LAST_PLT_PCREL: u32 = 95;
+/// X1 pipe last hword 0 GD off
+pub const R_TILEGX_IMM16_X1_HW0_LAST_TLS_GD: u32 = 87;
+/// X1 pipe last hword 0 IE off
+pub const R_TILEGX_IMM16_X1_HW0_LAST_TLS_IE: u32 = 101;
+/// X1 pipe last hword 0 LE off
+pub const R_TILEGX_IMM16_X1_HW0_LAST_TLS_LE: u32 = 83;
+/// X1 pipe PC relative hword 0
+pub const R_TILEGX_IMM16_X1_HW0_PCREL: u32 = 51;
+/// X1 pipe PC-rel PLT hword 0
+pub const R_TILEGX_IMM16_X1_HW0_PLT_PCREL: u32 = 67;
+/// X1 pipe hword 0 TLS GD offset
+pub const R_TILEGX_IMM16_X1_HW0_TLS_GD: u32 = 79;
+/// X1 pipe hword 0 TLS IE offset
+pub const R_TILEGX_IMM16_X1_HW0_TLS_IE: u32 = 93;
+/// X1 pipe hword 0 TLS LE offset
+pub const R_TILEGX_IMM16_X1_HW0_TLS_LE: u32 = 81;
+/// X1 pipe hword 1
+pub const R_TILEGX_IMM16_X1_HW1: u32 = 39;
+/// X1 pipe last hword 1
+pub const R_TILEGX_IMM16_X1_HW1_LAST: u32 = 47;
+/// X1 pipe last hword 1 GOT offset
+pub const R_TILEGX_IMM16_X1_HW1_LAST_GOT: u32 = 75;
+/// X1 pipe PC-rel last hword 1
+pub const R_TILEGX_IMM16_X1_HW1_LAST_PCREL: u32 = 61;
+/// X1 pipe PC-rel PLT last hword 1
+pub const R_TILEGX_IMM16_X1_HW1_LAST_PLT_PCREL: u32 = 97;
+/// X1 pipe last hword 1 GD off
+pub const R_TILEGX_IMM16_X1_HW1_LAST_TLS_GD: u32 = 89;
+/// X1 pipe last hword 1 IE off
+pub const R_TILEGX_IMM16_X1_HW1_LAST_TLS_IE: u32 = 103;
+/// X1 pipe last hword 1 LE off
+pub const R_TILEGX_IMM16_X1_HW1_LAST_TLS_LE: u32 = 85;
+/// X1 pipe PC relative hword 1
+pub const R_TILEGX_IMM16_X1_HW1_PCREL: u32 = 53;
+/// X1 pipe PC-rel PLT hword 1
+pub const R_TILEGX_IMM16_X1_HW1_PLT_PCREL: u32 = 69;
+/// X1 pipe hword 2
+pub const R_TILEGX_IMM16_X1_HW2: u32 = 41;
+/// X1 pipe last hword 2
+pub const R_TILEGX_IMM16_X1_HW2_LAST: u32 = 49;
+/// X1 pipe PC-rel last hword 2
+pub const R_TILEGX_IMM16_X1_HW2_LAST_PCREL: u32 = 63;
+/// X1 pipe PC-rel PLT last hword 2
+pub const R_TILEGX_IMM16_X1_HW2_LAST_PLT_PCREL: u32 = 99;
+/// X1 pipe PC relative hword 2
+pub const R_TILEGX_IMM16_X1_HW2_PCREL: u32 = 55;
+/// X1 pipe PC-rel PLT hword 2
+pub const R_TILEGX_IMM16_X1_HW2_PLT_PCREL: u32 = 71;
+/// X1 pipe hword 3
+pub const R_TILEGX_IMM16_X1_HW3: u32 = 43;
+/// X1 pipe PC relative hword 3
+pub const R_TILEGX_IMM16_X1_HW3_PCREL: u32 = 57;
+/// X1 pipe PC-rel PLT hword 3
+pub const R_TILEGX_IMM16_X1_HW3_PLT_PCREL: u32 = 77;
+/// X0 pipe "addi" for TLS GD/IE
+pub const R_TILEGX_IMM8_X0_TLS_ADD: u32 = 118;
+/// X0 pipe "addi" for TLS GD
+pub const R_TILEGX_IMM8_X0_TLS_GD_ADD: u32 = 113;
+/// X1 pipe "addi" for TLS GD/IE
+pub const R_TILEGX_IMM8_X1_TLS_ADD: u32 = 119;
+/// X1 pipe "addi" for TLS GD
+pub const R_TILEGX_IMM8_X1_TLS_GD_ADD: u32 = 114;
+/// Y0 pipe "addi" for TLS GD/IE
+pub const R_TILEGX_IMM8_Y0_TLS_ADD: u32 = 120;
+/// Y0 pipe "addi" for TLS GD
+pub const R_TILEGX_IMM8_Y0_TLS_GD_ADD: u32 = 115;
+/// Y1 pipe "addi" for TLS GD/IE
+pub const R_TILEGX_IMM8_Y1_TLS_ADD: u32 = 121;
+/// Y1 pipe "addi" for TLS GD
+pub const R_TILEGX_IMM8_Y1_TLS_GD_ADD: u32 = 116;
+/// 32-bit ID of symbol's module
+pub const R_TILEGX_TLS_DTPMOD32: u32 = 109;
+/// 64-bit ID of symbol's module
+pub const R_TILEGX_TLS_DTPMOD64: u32 = 106;
+/// 32-bit offset in TLS block
+pub const R_TILEGX_TLS_DTPOFF32: u32 = 110;
+/// 64-bit offset in TLS block
+pub const R_TILEGX_TLS_DTPOFF64: u32 = 107;
+/// "jal" for TLS GD
+pub const R_TILEGX_TLS_GD_CALL: u32 = 112;
+/// "ld_tls" for TLS IE
+pub const R_TILEGX_TLS_IE_LOAD: u32 = 117;
+/// 32-bit offset in static TLS block
+pub const R_TILEGX_TLS_TPOFF32: u32 = 111;
+/// 64-bit offset in static TLS block
+pub const R_TILEGX_TLS_TPOFF64: u32 = 108;
+
+// ---------------------------------------------------------------------------
+// TILEPro Relocation Types (Supplemental)
+// ---------------------------------------------------------------------------
+/// X1 pipe destination 8-bit
+pub const R_TILEPRO_DEST_IMM8_X1: u32 = 55;
+/// X0 pipe 16-bit GOT offset
+pub const R_TILEPRO_IMM16_X0_GOT: u32 = 39;
+/// X0 pipe ha() 16-bit GOT offset
+pub const R_TILEPRO_IMM16_X0_GOT_HA: u32 = 45;
+/// X0 pipe high 16-bit GOT offset
+pub const R_TILEPRO_IMM16_X0_GOT_HI: u32 = 43;
+/// X0 pipe low 16-bit GOT offset
+pub const R_TILEPRO_IMM16_X0_GOT_LO: u32 = 41;
+/// X0 pipe PC relative ha() 16 bit
+pub const R_TILEPRO_IMM16_X0_HA_PCREL: u32 = 37;
+/// X0 pipe PC relative high 16 bit
+pub const R_TILEPRO_IMM16_X0_HI_PCREL: u32 = 35;
+/// X0 pipe PC relative low 16 bit
+pub const R_TILEPRO_IMM16_X0_LO_PCREL: u32 = 33;
+/// X0 pipe PC relative 16 bit
+pub const R_TILEPRO_IMM16_X0_PCREL: u32 = 31;
+/// X0 pipe 16-bit TLS GD offset
+pub const R_TILEPRO_IMM16_X0_TLS_GD: u32 = 66;
+/// X0 pipe ha() 16-bit TLS GD offset
+pub const R_TILEPRO_IMM16_X0_TLS_GD_HA: u32 = 72;
+/// X0 pipe high 16-bit TLS GD offset
+pub const R_TILEPRO_IMM16_X0_TLS_GD_HI: u32 = 70;
+/// X0 pipe low 16-bit TLS GD offset
+pub const R_TILEPRO_IMM16_X0_TLS_GD_LO: u32 = 68;
+/// X0 pipe 16-bit TLS IE offset
+pub const R_TILEPRO_IMM16_X0_TLS_IE: u32 = 74;
+/// X0 pipe ha() 16-bit TLS IE offset
+pub const R_TILEPRO_IMM16_X0_TLS_IE_HA: u32 = 80;
+/// X0 pipe high 16-bit TLS IE offset
+pub const R_TILEPRO_IMM16_X0_TLS_IE_HI: u32 = 78;
+/// X0 pipe low 16-bit TLS IE offset
+pub const R_TILEPRO_IMM16_X0_TLS_IE_LO: u32 = 76;
+/// X0 pipe 16-bit TLS LE offset
+pub const R_TILEPRO_IMM16_X0_TLS_LE: u32 = 85;
+/// X0 pipe ha() 16-bit TLS LE offset
+pub const R_TILEPRO_IMM16_X0_TLS_LE_HA: u32 = 91;
+/// X0 pipe high 16-bit TLS LE offset
+pub const R_TILEPRO_IMM16_X0_TLS_LE_HI: u32 = 89;
+/// X0 pipe low 16-bit TLS LE offset
+pub const R_TILEPRO_IMM16_X0_TLS_LE_LO: u32 = 87;
+/// X1 pipe 16-bit GOT offset
+pub const R_TILEPRO_IMM16_X1_GOT: u32 = 40;
+/// X1 pipe ha() 16-bit GOT offset
+pub const R_TILEPRO_IMM16_X1_GOT_HA: u32 = 46;
+/// X1 pipe high 16-bit GOT offset
+pub const R_TILEPRO_IMM16_X1_GOT_HI: u32 = 44;
+/// X1 pipe low 16-bit GOT offset
+pub const R_TILEPRO_IMM16_X1_GOT_LO: u32 = 42;
+/// X1 pipe PC relative ha() 16 bit
+pub const R_TILEPRO_IMM16_X1_HA_PCREL: u32 = 38;
+/// X1 pipe PC relative high 16 bit
+pub const R_TILEPRO_IMM16_X1_HI_PCREL: u32 = 36;
+/// X1 pipe PC relative low 16 bit
+pub const R_TILEPRO_IMM16_X1_LO_PCREL: u32 = 34;
+/// X1 pipe PC relative 16 bit
+pub const R_TILEPRO_IMM16_X1_PCREL: u32 = 32;
+/// X1 pipe 16-bit TLS GD offset
+pub const R_TILEPRO_IMM16_X1_TLS_GD: u32 = 67;
+/// X1 pipe ha() 16-bit TLS GD offset
+pub const R_TILEPRO_IMM16_X1_TLS_GD_HA: u32 = 73;
+/// X1 pipe high 16-bit TLS GD offset
+pub const R_TILEPRO_IMM16_X1_TLS_GD_HI: u32 = 71;
+/// X1 pipe low 16-bit TLS GD offset
+pub const R_TILEPRO_IMM16_X1_TLS_GD_LO: u32 = 69;
+/// X1 pipe 16-bit TLS IE offset
+pub const R_TILEPRO_IMM16_X1_TLS_IE: u32 = 75;
+/// X1 pipe ha() 16-bit TLS IE offset
+pub const R_TILEPRO_IMM16_X1_TLS_IE_HA: u32 = 81;
+/// X1 pipe high 16-bit TLS IE offset
+pub const R_TILEPRO_IMM16_X1_TLS_IE_HI: u32 = 79;
+/// X1 pipe low 16-bit TLS IE offset
+pub const R_TILEPRO_IMM16_X1_TLS_IE_LO: u32 = 77;
+/// X1 pipe 16-bit TLS LE offset
+pub const R_TILEPRO_IMM16_X1_TLS_LE: u32 = 86;
+/// X1 pipe ha() 16-bit TLS LE offset
+pub const R_TILEPRO_IMM16_X1_TLS_LE_HA: u32 = 92;
+/// X1 pipe high 16-bit TLS LE offset
+pub const R_TILEPRO_IMM16_X1_TLS_LE_HI: u32 = 90;
+/// X1 pipe low 16-bit TLS LE offset
+pub const R_TILEPRO_IMM16_X1_TLS_LE_LO: u32 = 88;
+/// X0 pipe "addi" for TLS GD
+pub const R_TILEPRO_IMM8_X0_TLS_GD_ADD: u32 = 61;
+/// X1 pipe "addi" for TLS GD
+pub const R_TILEPRO_IMM8_X1_TLS_GD_ADD: u32 = 62;
+/// Y0 pipe "addi" for TLS GD
+pub const R_TILEPRO_IMM8_Y0_TLS_GD_ADD: u32 = 63;
+/// Y1 pipe "addi" for TLS GD
+pub const R_TILEPRO_IMM8_Y1_TLS_GD_ADD: u32 = 64;
+/// X0 pipe mm "end"
+pub const R_TILEPRO_MMEND_X0: u32 = 48;
+/// X1 pipe mm "end"
+pub const R_TILEPRO_MMEND_X1: u32 = 50;
+/// X0 pipe mm "start"
+pub const R_TILEPRO_MMSTART_X0: u32 = 47;
+/// X1 pipe mm "start"
+pub const R_TILEPRO_MMSTART_X1: u32 = 49;
+/// X0 pipe shift amount
+pub const R_TILEPRO_SHAMT_X0: u32 = 51;
+/// X1 pipe shift amount
+pub const R_TILEPRO_SHAMT_X1: u32 = 52;
+/// Y0 pipe shift amount
+pub const R_TILEPRO_SHAMT_Y0: u32 = 53;
+/// Y1 pipe shift amount
+pub const R_TILEPRO_SHAMT_Y1: u32 = 54;
+/// ID of module containing symbol
+pub const R_TILEPRO_TLS_DTPMOD32: u32 = 82;
+/// Offset in TLS block
+pub const R_TILEPRO_TLS_DTPOFF32: u32 = 83;
+/// "jal" for TLS GD
+pub const R_TILEPRO_TLS_GD_CALL: u32 = 60;
+/// "lw_tls" for TLS IE
+pub const R_TILEPRO_TLS_IE_LOAD: u32 = 65;
+/// Offset in static TLS block
+pub const R_TILEPRO_TLS_TPOFF32: u32 = 84;
+
+// ---------------------------------------------------------------------------
+// Section Header Flags (Supplemental)
+// ---------------------------------------------------------------------------
+pub const SHF_ALPHA_GPREL: u32 = 0x10000000;
+/// spec insns w/o recovery
+pub const SHF_IA_64_NORECOV: u32 = 0x20000000;
+/// section near gp
+pub const SHF_IA_64_SHORT: u32 = 0x10000000;
+pub const SHF_MIPS_ADDR: u32 = 0x40000000;
+pub const SHF_MIPS_LOCAL: u32 = 0x04000000;
+pub const SHF_MIPS_MERGE: u32 = 0x20000000;
+pub const SHF_MIPS_NAMES: u32 = 0x02000000;
+pub const SHF_MIPS_NODUPE: u32 = 0x01000000;
+pub const SHF_MIPS_NOSTRIP: u32 = 0x08000000;
+pub const SHF_MIPS_STRINGS: u32 = 0x80000000;
+/// Section far from gp.
+pub const SHF_PARISC_HUGE: u32 = 0x40000000;
+/// Static branch prediction code.
+pub const SHF_PARISC_SBP: u32 = 0x80000000;
+/// Section with short addressing.
+pub const SHF_PARISC_SHORT: u32 = 0x20000000;
+
+// ---------------------------------------------------------------------------
+// Special Section Indices (Supplemental)
+// ---------------------------------------------------------------------------
+/// Small common symbols
+pub const SHN_MIPS_SCOMMON: u32 = 0xff03;
+/// Small undefined symbols
+pub const SHN_MIPS_SUNDEFINED: u32 = 0xff04;
+/// Section for tentatively declared
+pub const SHN_PARISC_ANSI_COMMON: u32 = 0xff00;
+/// Common blocks in huge model.
+pub const SHN_PARISC_HUGE_COMMON: u32 = 0xff01;
+
+// ---------------------------------------------------------------------------
+// Section Header Types (Supplemental)
+// ---------------------------------------------------------------------------
+pub const SHT_ALPHA_DEBUG: u32 = 0x70000001;
+pub const SHT_ALPHA_REGINFO: u32 = 0x70000002;
+/// extension bits
+pub const SHT_IA_64_EXT: u32 = SHT_LOPROC;
+/// unwind bits
+pub const SHT_IA_64_UNWIND: u32 = SHT_LOPROC + 1;
+pub const SHT_MIPS_AUXSYM: u32 = 0x70000016;
+/// Conflicting symbols
+pub const SHT_MIPS_CONFLICT: u32 = 0x70000002;
+pub const SHT_MIPS_CONTENT: u32 = 0x7000000c;
+/// MIPS ECOFF debugging information
+pub const SHT_MIPS_DEBUG: u32 = 0x70000005;
+pub const SHT_MIPS_DELTACLASS: u32 = 0x7000001d;
+pub const SHT_MIPS_DELTADECL: u32 = 0x7000001f;
+pub const SHT_MIPS_DELTAINST: u32 = 0x7000001c;
+pub const SHT_MIPS_DELTASYM: u32 = 0x7000001b;
+pub const SHT_MIPS_DENSE: u32 = 0x70000013;
+pub const SHT_MIPS_EH_REGION: u32 = 0x70000027;
+/// Event section.
+pub const SHT_MIPS_EVENTS: u32 = 0x70000021;
+pub const SHT_MIPS_EXTSYM: u32 = 0x70000012;
+pub const SHT_MIPS_FDESC: u32 = 0x70000011;
+/// Global data area sizes
+pub const SHT_MIPS_GPTAB: u32 = 0x70000003;
+pub const SHT_MIPS_IFACE: u32 = 0x7000000b;
+/// Shared objects used in link
+pub const SHT_MIPS_LIBLIST: u32 = 0x70000000;
+pub const SHT_MIPS_LINE: u32 = 0x70000019;
+pub const SHT_MIPS_LOCSTR: u32 = 0x70000018;
+pub const SHT_MIPS_LOCSYM: u32 = 0x70000015;
+pub const SHT_MIPS_MSYM: u32 = 0x70000001;
+/// Miscellaneous options.
+pub const SHT_MIPS_OPTIONS: u32 = 0x7000000d;
+pub const SHT_MIPS_OPTSYM: u32 = 0x70000017;
+pub const SHT_MIPS_PACKAGE: u32 = 0x70000007;
+pub const SHT_MIPS_PACKSYM: u32 = 0x70000008;
+pub const SHT_MIPS_PDESC: u32 = 0x70000014;
+pub const SHT_MIPS_PDR_EXCEPTION: u32 = 0x70000029;
+pub const SHT_MIPS_PIXIE: u32 = 0x70000023;
+/// Register usage information
+pub const SHT_MIPS_REGINFO: u32 = 0x70000006;
+pub const SHT_MIPS_RELD: u32 = 0x70000009;
+pub const SHT_MIPS_RFDESC: u32 = 0x7000001a;
+pub const SHT_MIPS_SHDR: u32 = 0x70000010;
+pub const SHT_MIPS_SYMBOL_LIB: u32 = 0x70000020;
+pub const SHT_MIPS_TRANSLATE: u32 = 0x70000022;
+/// Reserved for SGI/MIPS compilers
+pub const SHT_MIPS_UCODE: u32 = 0x70000004;
+pub const SHT_MIPS_WHIRL: u32 = 0x70000026;
+pub const SHT_MIPS_XLATE: u32 = 0x70000024;
+pub const SHT_MIPS_XLATE_DEBUG: u32 = 0x70000025;
+pub const SHT_MIPS_XLATE_OLD: u32 = 0x70000028;
+/// Debug info for optimized code.
+pub const SHT_PARISC_DOC: u32 = 0x70000002;
+/// Contains product specific ext.
+pub const SHT_PARISC_EXT: u32 = 0x70000000;
+/// Unwind information.
+pub const SHT_PARISC_UNWIND: u32 = 0x70000001;
+
+// ---------------------------------------------------------------------------
+// Symbol Binding (Supplemental)
+// ---------------------------------------------------------------------------
+pub const STB_MIPS_SPLIT_COMMON: u8 = 13;
+
+// ---------------------------------------------------------------------------
+// Symbol Other Values (Supplemental)
+// ---------------------------------------------------------------------------
+/// No PV required.
+pub const STO_ALPHA_NOPV: u8 = 0x80;
+/// PV only used for initial ldgp.
+pub const STO_ALPHA_STD_GPLOAD: u8 = 0x88;
+pub const STO_MIPS_DEFAULT: u8 = 0x0;
+pub const STO_MIPS_HIDDEN: u8 = 0x2;
+pub const STO_MIPS_INTERNAL: u8 = 0x1;
+pub const STO_MIPS_PLT: u8 = 0x8;
+pub const STO_MIPS_PROTECTED: u8 = 0x3;
+pub const STO_MIPS_SC_ALIGN_UNUSED: u8 = 0xff;
+
+// ---------------------------------------------------------------------------
+// Symbol Types (Supplemental)
+// ---------------------------------------------------------------------------
+pub const STT_HP_OPAQUE: u8 = STT_LOOS + 0x1;
+pub const STT_HP_STUB: u8 = STT_LOOS + 0x2;
+/// Millicode function entry point.
+pub const STT_PARISC_MILLICODE: u8 = 13;
+/// Global register reserved to app.
+pub const STT_SPARC_REGISTER: u8 = 13;
+
+// ---------------------------------------------------------------------------
+// ELF Helper Functions (additional macro equivalents from elf.h)
+// Note: elf_st_bind/type/info/visibility, elf32/64_r_sym/type/info already
+// exist above. These add the remaining ELF macro function translations.
+// ---------------------------------------------------------------------------
+
+/// ELF32 move symbol index (from `ELF32_M_SYM` macro)
+#[inline]
+pub const fn elf32_m_sym(info: u32) -> u32 { info >> 8 }
+/// ELF32 move size (from `ELF32_M_SIZE` macro)
+#[inline]
+pub const fn elf32_m_size(info: u32) -> u8 { info as u8 }
+/// ELF32 move info (from `ELF32_M_INFO` macro)
+#[inline]
+pub const fn elf32_m_info(sym: u32, size: u8) -> u32 { (sym << 8) + (size as u32) }
+/// ELF64 move symbol index (from `ELF64_M_SYM` macro)
+#[inline]
+pub const fn elf64_m_sym(info: u64) -> u64 { info >> 8 }
+/// ELF64 move size (from `ELF64_M_SIZE` macro)
+#[inline]
+pub const fn elf64_m_size(info: u64) -> u8 { info as u8 }
+/// ELF64 move info (from `ELF64_M_INFO` macro)
+#[inline]
+pub const fn elf64_m_info(sym: u64, size: u8) -> u64 { (sym << 8) + (size as u64) }
+
+/// ELF32 ST bind (from `ELF32_ST_BIND` macro)
+#[inline]
+pub const fn elf32_st_bind(val: u8) -> u8 { val >> 4 }
+/// ELF32 ST type (from `ELF32_ST_TYPE` macro)
+#[inline]
+pub const fn elf32_st_type(val: u8) -> u8 { val & 0xf }
+/// ELF32 ST info (from `ELF32_ST_INFO` macro)
+#[inline]
+pub const fn elf32_st_info(bind: u8, stype: u8) -> u8 { (bind << 4) + (stype & 0xf) }
+/// ELF32 ST visibility (from `ELF32_ST_VISIBILITY` macro)
+#[inline]
+pub const fn elf32_st_visibility(o: u8) -> u8 { o & 0x03 }
+
+/// ELF64 ST bind (from `ELF64_ST_BIND` macro)
+#[inline]
+pub const fn elf64_st_bind(val: u8) -> u8 { val >> 4 }
+/// ELF64 ST type (from `ELF64_ST_TYPE` macro)
+#[inline]
+pub const fn elf64_st_type(val: u8) -> u8 { val & 0xf }
+/// ELF64 ST info (from `ELF64_ST_INFO` macro)
+#[inline]
+pub const fn elf64_st_info(bind: u8, stype: u8) -> u8 { (bind << 4) + (stype & 0xf) }
+/// ELF64 ST visibility (from `ELF64_ST_VISIBILITY` macro)
+#[inline]
+pub const fn elf64_st_visibility(o: u8) -> u8 { o & 0x03 }
+
+/// Extract ARM EABI version from ELF flags (from `EF_ARM_EABI_VERSION` macro)
+#[inline]
+pub const fn ef_arm_eabi_version(flags: u32) -> u32 { flags & EF_ARM_EABIMASK }
+
+/// Dynamic tag value index (from `DT_VALTAGIDX` macro)
+#[inline]
+pub const fn dt_valtagidx(tag: u32) -> u32 { DT_VALRNGHI.wrapping_sub(tag) }
+/// Dynamic tag address index (from `DT_ADDRTAGIDX` macro)
+#[inline]
+pub const fn dt_addrtagidx(tag: u32) -> u32 { DT_ADDRRNGHI.wrapping_sub(tag) }
+/// Dynamic tag version index (from `DT_VERSIONTAGIDX` macro)
+#[inline]
+pub const fn dt_versiontagidx(tag: u32) -> u32 { DT_VERNEEDNUM.wrapping_sub(tag) }

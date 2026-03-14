@@ -2,7 +2,7 @@
 name = "tinycc-rs"
 version = "0.9.28-rc.0"
 edition = "2021"
-rust-version = "1.80"
+rust-version = "1.70"
 description = "A memory-safe Rust port of Tiny C Compiler (TCC)"
 license = "LGPL-2.1-or-later"
 repository = "https://github.com/TinyCC/tinycc"
