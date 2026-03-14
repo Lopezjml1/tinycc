@@ -6,4 +6,5 @@
 //! - `macho` — Mach-O executable/dylib (macOS backend, future)
 //! - `coff` — COFF output for C67 target (future)
 
+pub mod coff;
 pub mod elf;
