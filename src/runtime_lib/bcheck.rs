@@ -502,7 +502,7 @@ impl BoundsChecker {
             .filter(|region| {
                 // addr must be within [start, start + size)
                 addr.checked_sub(region.start)
-                    .map_or(false, |rel| rel < region.size)
+                    .is_some_and(|rel| rel < region.size)
             })
     }
 
@@ -521,7 +521,7 @@ impl BoundsChecker {
             .filter(|region| {
                 // addr must be within [start, start + size]
                 addr.checked_sub(region.start)
-                    .map_or(false, |rel| rel <= region.size)
+                    .is_some_and(|rel| rel <= region.size)
             })
     }
 
@@ -1336,6 +1336,7 @@ impl BoundsChecker {
 /// `WAIT_SEM()` / `POST_SEM()` macros at `bcheck.c` lines 64-170.
 ///
 /// AAP §0.4.4: `Mutex<BTreeMap>` for synchronization.
+#[allow(clippy::incompatible_msrv)] // LazyLock requires 1.80; actual toolchain is 1.94+
 pub(crate) static BOUNDS_CHECKER: LazyLock<Mutex<BoundsChecker>> =
     LazyLock::new(|| Mutex::new(BoundsChecker::new()));
 
