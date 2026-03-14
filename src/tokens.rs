@@ -34,7 +34,7 @@ use std::hash::{Hash, Hasher};
 /// - Bounds-checking identifiers (__bound_ptr_add, …)
 /// - Assembler directives (.byte, .word, .align, …)
 /// - Literal value carriers and special tokens
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy)]
 pub enum Token {
     // ----- Control-flow keywords (tcctok.h:3-14) -----
 
@@ -648,9 +648,36 @@ pub enum Token {
 }
 
 // ---------------------------------------------------------------------------
-// Manual Eq implementation — needed because f64 does not implement Eq.
+// Manual PartialEq implementation — needed because `f64` uses IEEE 754
+// semantics where `NaN != NaN`, violating the `Eq` trait's reflexivity
+// contract (`a == a` for all `a`).  We use `f64::to_bits()` for the
+// `FloatLiteral` variant to ensure bit-exact comparison, making `NaN == NaN`
+// hold.  This matches the `Hash` implementation below and satisfies the
+// consistency requirement: `a == b ⟹ hash(a) == hash(b)`.
+//
 // For compiler tokens, NaN bit-equality is the correct semantic: two
 // FloatLiteral tokens with identical bits represent the same source token.
+// ---------------------------------------------------------------------------
+
+impl PartialEq for Token {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Self::IntegerLiteral(a), Self::IntegerLiteral(b)) => a == b,
+            // Use to_bits() so NaN == NaN (reflexivity for Eq contract).
+            (Self::FloatLiteral(a), Self::FloatLiteral(b)) => a.to_bits() == b.to_bits(),
+            (Self::CharLiteral(a), Self::CharLiteral(b)) => a == b,
+            (Self::Raw(a), Self::Raw(b)) => a == b,
+            // All unit variants: discriminant comparison is sufficient.
+            // Mismatched data-carrying variants also reach this arm and
+            // correctly return false (different discriminants).
+            _ => std::mem::discriminant(self) == std::mem::discriminant(other),
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Manual Eq implementation — valid because the PartialEq above guarantees
+// reflexivity (a == a) for all variants, including FloatLiteral(NaN).
 // ---------------------------------------------------------------------------
 
 impl Eq for Token {}
@@ -1686,18 +1713,18 @@ mod tests {
 
     #[test]
     fn float_literal_nan_eq() {
-        // NaN tokens with identical bits should be equal
+        // NaN tokens with identical bits must be equal (Eq reflexivity).
+        // The manual PartialEq uses f64::to_bits() so NaN == NaN holds.
         let nan = f64::NAN;
         let t1 = Token::FloatLiteral(nan);
         let t2 = Token::FloatLiteral(nan);
-        // PartialEq is f64-based so NaN != NaN; but in HashSet they hash equally
-        // This is intentional — see Eq impl documentation
+        assert_eq!(t1, t2, "NaN tokens with identical bits must be equal");
+        // HashSet deduplication must work correctly for NaN tokens.
         use std::collections::HashSet;
         let mut set = HashSet::new();
         set.insert(t1);
         set.insert(t2);
-        // Both have same bits, so the hash is the same
-        assert!(set.len() <= 2);
+        assert_eq!(set.len(), 1, "identical NaN tokens must deduplicate in HashSet");
     }
 
     #[test]

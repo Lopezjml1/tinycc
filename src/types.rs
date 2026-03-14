@@ -1031,10 +1031,131 @@ pub const TCC_OUTPUT_DLL: i32 = 4;
 /// Preprocess only.
 pub const TCC_OUTPUT_PREPROCESS: i32 = 5;
 
+/// Compiler output type — specifies what the compiler should produce.
+///
+/// C equivalent: `TCC_OUTPUT_MEMORY` / `TCC_OUTPUT_EXE` / `TCC_OUTPUT_OBJ` /
+/// `TCC_OUTPUT_DLL` / `TCC_OUTPUT_PREPROCESS` constants from `libtcc.h:68-72`.
+///
+/// Used by [`TccContext::set_output_type()`](crate) to configure the
+/// compilation pipeline before adding files.
+///
+/// AAP §0.8.5: Required enum type for the `TccContext::set_output_type()` method.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum OutputType {
+    /// Compile and run in memory (default).
+    /// C equivalent: `TCC_OUTPUT_MEMORY` (value 1).
+    Memory = 1,
+    /// Generate a native executable.
+    /// C equivalent: `TCC_OUTPUT_EXE` (value 2).
+    Exe = 2,
+    /// Generate a relocatable object file (`.o`).
+    /// C equivalent: `TCC_OUTPUT_OBJ` (value 3).
+    Obj = 3,
+    /// Generate a dynamic shared library (`.so` / `.dll` / `.dylib`).
+    /// C equivalent: `TCC_OUTPUT_DLL` (value 4).
+    Dll = 4,
+    /// Preprocess only — emit preprocessed source to stdout.
+    /// C equivalent: `TCC_OUTPUT_PREPROCESS` (value 5).
+    Preprocess = 5,
+}
+
+impl OutputType {
+    /// Returns the integer constant matching the C `TCC_OUTPUT_*` value.
+    pub const fn as_i32(self) -> i32 {
+        self as i32
+    }
+}
+
+impl TryFrom<i32> for OutputType {
+    type Error = crate::error::TccError;
+
+    /// Convert from a C-style `TCC_OUTPUT_*` integer constant.
+    ///
+    /// Returns `Err(TccError::UnsupportedTarget)` for values outside the
+    /// valid range `1..=5`.
+    fn try_from(value: i32) -> Result<Self, Self::Error> {
+        match value {
+            TCC_OUTPUT_MEMORY => Ok(Self::Memory),
+            TCC_OUTPUT_EXE => Ok(Self::Exe),
+            TCC_OUTPUT_OBJ => Ok(Self::Obj),
+            TCC_OUTPUT_DLL => Ok(Self::Dll),
+            TCC_OUTPUT_PREPROCESS => Ok(Self::Preprocess),
+            _ => Err(crate::error::TccError::UnsupportedTarget(
+                format!("invalid output type: {value}"),
+            )),
+        }
+    }
+}
+
+impl std::fmt::Display for OutputType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Memory => write!(f, "memory"),
+            Self::Exe => write!(f, "exe"),
+            Self::Obj => write!(f, "obj"),
+            Self::Dll => write!(f, "dll"),
+            Self::Preprocess => write!(f, "preprocess"),
+        }
+    }
+}
+
 /// ELF output format (default).
 pub const TCC_OUTPUT_FORMAT_ELF: i32 = 0;
 /// Binary image output format.
 pub const TCC_OUTPUT_FORMAT_BINARY: i32 = 1;
 /// COFF output format.
 pub const TCC_OUTPUT_FORMAT_COFF: i32 = 2;
+
+/// Output file format — specifies the binary format for the generated output.
+///
+/// C equivalent: `TCC_OUTPUT_FORMAT_ELF` / `TCC_OUTPUT_FORMAT_BINARY` /
+/// `TCC_OUTPUT_FORMAT_COFF` constants from `tcc.h:1527-1529`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum OutputFormat {
+    /// ELF output format (default on Unix-like systems).
+    /// C equivalent: `TCC_OUTPUT_FORMAT_ELF` (value 0).
+    Elf = 0,
+    /// Raw binary image output format.
+    /// C equivalent: `TCC_OUTPUT_FORMAT_BINARY` (value 1).
+    Binary = 1,
+    /// COFF output format (used by C67 target).
+    /// C equivalent: `TCC_OUTPUT_FORMAT_COFF` (value 2).
+    Coff = 2,
+}
+
+impl OutputFormat {
+    /// Returns the integer constant matching the C `TCC_OUTPUT_FORMAT_*` value.
+    pub const fn as_i32(self) -> i32 {
+        self as i32
+    }
+}
+
+impl TryFrom<i32> for OutputFormat {
+    type Error = crate::error::TccError;
+
+    /// Convert from a C-style `TCC_OUTPUT_FORMAT_*` integer constant.
+    ///
+    /// Returns `Err(TccError::UnsupportedTarget)` for values outside the
+    /// valid range `0..=2`.
+    fn try_from(value: i32) -> Result<Self, Self::Error> {
+        match value {
+            TCC_OUTPUT_FORMAT_ELF => Ok(Self::Elf),
+            TCC_OUTPUT_FORMAT_BINARY => Ok(Self::Binary),
+            TCC_OUTPUT_FORMAT_COFF => Ok(Self::Coff),
+            _ => Err(crate::error::TccError::UnsupportedTarget(
+                format!("invalid output format: {value}"),
+            )),
+        }
+    }
+}
+
+impl std::fmt::Display for OutputFormat {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Elf => write!(f, "elf"),
+            Self::Binary => write!(f, "binary"),
+            Self::Coff => write!(f, "coff"),
+        }
+    }
+}
 
