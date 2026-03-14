@@ -1,4 +1,12 @@
-[target.'cfg(all())']
+# Clippy lint enforcement for tinycc-rs
+# These lints ensure integer safety across all modules, which is critical
+# for the C-to-Rust migration CVE remediation strategy.
+#
+# CVE-2006-0635: cast_sign_loss prevents implicit signed/unsigned coercion
+# General safety: cast_possible_truncation and cast_possible_wrap prevent
+#                 silent integer truncation and wrapping
+
+[build]
 rustflags = [
     "-Dclippy::cast_sign_loss",
     "-Dclippy::cast_possible_truncation",
