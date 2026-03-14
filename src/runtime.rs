@@ -27,12 +27,9 @@
 //!
 //! C equivalent: `tccrun.c` (1,556 lines)
 
-// Runtime engine — JIT execution, W^X enforcement, and signal handling require
-// size casts for memory addresses, page sizes, and function pointer offsets.
+// Runtime engine — cast safety allows are applied at function level per
+// AAP §0.8.1 to preserve CVE-2006-0635 compile-time enforcement for new code.
 // Platform-specific syscall wrappers contain the only permitted unsafe blocks.
-#![allow(clippy::cast_possible_truncation)]
-#![allow(clippy::cast_possible_wrap)]
-#![allow(clippy::cast_sign_loss)]
 
 // Module-level lint configuration for runtime engine.
 //
@@ -334,6 +331,7 @@ impl RtGlobalState {
 ///
 /// When the `selinux` feature is enabled (which provides `libc`), queries
 /// `sysconf(_SC_PAGESIZE)`. Otherwise falls back to `DEFAULT_PAGE_SIZE`.
+#[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation, clippy::cast_possible_wrap)]
 fn page_size() -> usize {
     #[cfg(feature = "selinux")]
     {
@@ -500,6 +498,7 @@ fn flush_icache(addr: usize, len: usize) {
 // and off_t/size_t for sizes. All values originate from validated page-aligned sizes.
 #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss, clippy::cast_possible_wrap)]
 #[cfg(all(unix, feature = "selinux"))]
+#[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation, clippy::cast_possible_wrap)]
 fn selinux_mmap_pair(size: usize) -> TccResult<(usize, usize)> {
     use libc::{
         c_char, close, ftruncate, mmap, unlink, MAP_FAILED, MAP_FIXED, MAP_SHARED, PROT_EXEC,
@@ -574,6 +573,7 @@ fn selinux_mmap_pair(size: usize) -> TccResult<(usize, usize)> {
 ///
 /// C equivalent: `set_exception_handler()` at tccrun.c:1338-1366
 #[cfg(all(unix, feature = "selinux"))]
+#[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation, clippy::cast_possible_wrap)]
 fn install_signal_handler() {
     // SAFETY: Signal handler function pointer is a valid Rust extern "C" fn;
     // previous handler is saved for restoration by the OS. The sigaction
@@ -674,6 +674,7 @@ fn install_signal_handler() {
 /// the RX mapping to the RW mapping (non-zero only on SELinux).
 ///
 /// C equivalent: `rt_mem()` at tccrun.c:111-138
+#[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation, clippy::cast_possible_wrap)]
 fn rt_mem(state: &mut TccState, size: usize) -> TccResult<usize> {
     #[cfg(all(unix, feature = "selinux"))]
     {
@@ -895,6 +896,7 @@ fn tcc_relocate_ex(
 /// Remove all `STB_LOCAL` symbols, keeping only global symbols.
 ///
 /// C equivalent: `cleanup_symbols()` at tccrun.c:264-280
+#[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation, clippy::cast_possible_wrap)]
 fn cleanup_symbols(state: &mut TccState) {
     // Find the symtab section — it's typically the first section or
     // we search by name. We use a simple heuristic matching the C code.
@@ -999,6 +1001,7 @@ fn cleanup_symbols(state: &mut TccState) {
 /// Free all sections except the symbol table and its dependencies.
 ///
 /// C equivalent: `cleanup_sections()` at tccrun.c:283-297
+#[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation, clippy::cast_possible_wrap)]
 fn cleanup_sections(state: &mut TccState) {
     let symtab_idx = find_symtab_idx(state);
     let strtab_idx = if symtab_idx < state.sections.len() {
@@ -1131,6 +1134,7 @@ fn st_unlink(state: &TccState) {
 // ELF struct field casts: st_name (u32→usize for string table offset),
 // st_size/st_value (u64→usize for address comparisons). Values are from ELF headers.
 #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+#[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation, clippy::cast_possible_wrap)]
 fn rt_elfsym(rc: &RtContext, wanted_pc: usize) -> Option<(String, usize)> {
     if rc.esym_start == 0 || rc.esym_end == 0 || rc.elf_str == 0 {
         return None;
@@ -1262,6 +1266,7 @@ unsafe fn read_stab_sym_from_addr(addr: RawAddr) -> StabSym {
 /// C equivalent: `rt_printline()` at tccrun.c:679-779
 // STABS n_value (u32) → usize for PC comparison. Values from validated ELF data.
 #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+#[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation, clippy::cast_possible_wrap)]
 fn rt_printline(rc: &RtContext, wanted_pc: usize, bi: &mut BtInfo) -> usize {
     if rc.stab_sym == 0 || rc.stab_sym_end == 0 || rc.stab_str == 0 {
         return 0;
@@ -1409,6 +1414,7 @@ const DW_LNE_HI_USER_MINUS_1: u8 = 254;
 // DWARF state machine decoding requires extensive casts between u8/u16/u32/u64
 // header fields and usize offsets. All values originate from validated DWARF data.
 #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss, clippy::cast_possible_wrap)]
+#[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation, clippy::cast_possible_wrap)]
 fn rt_printline_dwarf(rc: &RtContext, wanted_pc: usize, bi: &mut BtInfo) -> usize {
     if rc.dwarf_line == 0 || rc.dwarf_line_end == 0 {
         return 0;
@@ -1768,6 +1774,7 @@ fn read_uleb128(data: &[u8], cursor: &mut usize) -> u64 {
 // LEB128 decoding accumulates into i64 then truncates to i32 — this matches
 // the DWARF spec where signed LEB128 values fit in 32 bits for line info.
 #[allow(clippy::cast_possible_truncation)]
+#[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation, clippy::cast_possible_wrap)]
 fn read_sleb128(data: &[u8], cursor: &mut usize) -> i32 {
     let mut result: i64 = 0;
     let mut shift: u32 = 0;
@@ -2071,6 +2078,7 @@ fn rt_get_caller_pc(frame: &RtFrame, level: i32) -> Option<usize> {
 ///
 /// # Errors
 /// Returns `TccError::Link` if relocation fails.
+#[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation, clippy::cast_possible_wrap)]
 pub fn relocate(state: &mut TccState) -> TccResult<()> {
     if state.run_ptr != 0 {
         return Err(TccError::Link(
@@ -2118,6 +2126,7 @@ pub fn relocate(state: &mut TccState) -> TccResult<()> {
 /// Returns `TccError::Link` if the entry point cannot be found.
 // JIT entry point address cast (u64→usize) is necessary for function pointer transmute.
 #[allow(clippy::cast_possible_truncation)]
+#[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation, clippy::cast_possible_wrap)]
 pub fn run(state: &mut TccState, argc: i32, argv: &[&str]) -> TccResult<i32> {
     // The run_main field is a symbol table index for the entry point.
     // If non-zero, it specifies a custom entry; otherwise we use "_runmain".
@@ -2338,6 +2347,7 @@ pub fn tcc_setjmp(state: &mut TccState, top_func_addr: usize) {
 /// Always returns 0 (matching C convention).
 // Backtrace level tracking uses i32→usize for frame level indexing.
 #[allow(clippy::cast_sign_loss)]
+#[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation, clippy::cast_possible_wrap)]
 pub fn tcc_backtrace(frame: &RtFrame, message: &str) -> i32 {
     eprintln!("{message}");
 
@@ -2420,6 +2430,7 @@ pub fn tcc_backtrace(frame: &RtFrame, message: &str) -> i32 {
 // ===========================================================================
 
 #[cfg(test)]
+#[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation, clippy::cast_possible_wrap)]
 mod tests {
     use super::*;
 
@@ -2523,6 +2534,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation, clippy::cast_possible_wrap)]
     fn test_rt_exit_zero_constant() {
         assert_eq!(RT_EXIT_ZERO, 0xE0E0_0E0E_u32 as i32);
     }

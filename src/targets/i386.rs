@@ -20,11 +20,11 @@
 //! This entire module is compiled only when `feature = "i386"` is enabled
 //! in Cargo.toml (AAP §0.8.3).
 
-// Clippy: these are acceptable in a code-generation backend where register
-// names, opcode mnemonics, and low-level bit manipulation are pervasive.
-#![allow(clippy::cast_possible_truncation)]
-#![allow(clippy::cast_sign_loss)]
-#![allow(clippy::cast_possible_wrap)]
+// Clippy: non-cast allows are acceptable in a code-generation backend where
+// register names, opcode mnemonics, and low-level bit manipulation are pervasive.
+// Cast safety allows (cast_sign_loss, cast_possible_truncation, cast_possible_wrap)
+// are applied at impl-block/function level per AAP §0.8.1 to preserve CVE-2006-0635
+// compile-time enforcement for new code added outside these blocks.
 #![allow(clippy::cast_lossless)]
 #![allow(clippy::too_many_lines)]
 #![allow(clippy::similar_names)]
@@ -495,6 +495,9 @@ pub struct I386Backend {
     pub func_bound_add_epilog: bool,
 }
 
+// i386 instruction encoding: ModRM, SIB, and immediate fields require
+// u32↔i32↔u8 casts with ISA-defined bit ranges.
+#[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation, clippy::cast_possible_wrap)]
 impl I386Backend {
     /// Create a new i386 backend with default state.
     pub fn new() -> Self {
@@ -522,6 +525,7 @@ fn emit_byte(state: &mut TccState, c: u8) -> TccResult<()> {
 /// Emit a multi-byte opcode and a 32-bit displacement, returning the offset
 /// of the displacement for later patching.
 /// C equivalent: `oad()` (i386-gen.c:148-155).
+#[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation, clippy::cast_possible_wrap)]
 pub fn oad(state: &mut TccState, c: u32, s: i32) -> TccResult<i32> {
     o_internal(state, c)?;
     let ind = state.ind;
@@ -532,6 +536,7 @@ pub fn oad(state: &mut TccState, c: u32, s: i32) -> TccResult<i32> {
 /// Internal multi-byte opcode emission.
 /// Emits 1-4 bytes from a u32 opcode value (big-endian within the u32).
 /// C equivalent: `o()` (i386-gen.c:129-135).
+#[allow(clippy::cast_possible_truncation)]
 fn o_internal(state: &mut TccState, c: u32) -> TccResult<()> {
     if c >= 0x0100_0000 {
         codegen::g(state, (c >> 24) as u8)?;
@@ -555,6 +560,7 @@ fn sym_for_reloc(sym_id: SymId) -> Symbol {
 /// Emit a 32-bit address or displacement for a symbol reference.
 /// Adds a relocation entry for the symbol.
 /// C equivalent: `gen_addr32()` (i386-gen.c:200-210).
+#[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation)]
 pub fn gen_addr32(state: &mut TccState, _r: u16, sym: Option<SymId>, c: i64) -> TccResult<()> {
     if let Some(sym_idx) = sym {
         let sec_idx = state.cur_text_section;
@@ -568,6 +574,7 @@ pub fn gen_addr32(state: &mut TccState, _r: u16, sym: Option<SymId>, c: i64) -> 
 
 /// Emit a PC-relative 32-bit address for a symbol reference.
 /// C equivalent: `gen_addrpc32()` (i386-gen.c:215-225).
+#[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation)]
 pub fn gen_addrpc32(state: &mut TccState, _r: u16, sym: Option<SymId>, c: i64) -> TccResult<()> {
     if let Some(sym_idx) = sym {
         let sec_idx = state.cur_text_section;
@@ -583,6 +590,7 @@ pub fn gen_addrpc32(state: &mut TccState, _r: u16, sym: Option<SymId>, c: i64) -
 /// Encode a ModR/M byte and optional SIB/displacement for an operand.
 ///
 /// C equivalent: `gen_modrm()` (i386-gen.c:231-287).
+#[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation, clippy::cast_possible_wrap)]
 pub fn gen_modrm(
     state: &mut TccState,
     op_reg: i32,
@@ -618,6 +626,7 @@ pub fn gen_modrm(
 
 /// Adjust the stack pointer by `val` bytes (add esp, val).
 /// C equivalent: `gadd_sp()` (i386-gen.c:453-462).
+#[allow(clippy::cast_possible_truncation)]
 pub fn gadd_sp(state: &mut TccState, val: i32) -> TccResult<()> {
     if val == i32::from(val as i8) {
         // add esp, imm8: 83 c4 XX
@@ -633,6 +642,7 @@ pub fn gadd_sp(state: &mut TccState, val: i32) -> TccResult<()> {
 
 /// Generate a static call instruction (E8 displacement).
 /// C equivalent: `gen_static_call()` (i386-gen.c:464-475).
+#[allow(clippy::cast_possible_truncation)]
 pub fn gen_static_call(state: &mut TccState, v: i64) -> TccResult<()> {
     oad(state, 0xe8, v as i32)?;
     Ok(())
@@ -692,6 +702,9 @@ pub fn gen_bound_call(state: &mut TccState, _func_name: &str) -> TccResult<()> {
 // CodegenBackend Implementation for I386Backend
 // =========================================================================
 
+// CodegenBackend: opcode emission, register ops, and address computation
+// use bit-field casts constrained by i386 ISA encoding rules.
+#[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation, clippy::cast_possible_wrap)]
 impl CodegenBackend for I386Backend {
     /// Return preprocessor target definitions for i386.
     /// C equivalent: `target_machine_defs` (i386-gen.c:87-90).
@@ -1369,6 +1382,9 @@ impl CodegenBackend for I386Backend {
 // Additional CodegenBackend methods (not in trait but exported)
 // =========================================================================
 
+// Additional codegen helpers: displacement and conditional-jump encoding
+// use i32↔u32 casts for opcode byte composition.
+#[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation, clippy::cast_possible_wrap)]
 impl I386Backend {
     /// Generate conditional jump to known address.
     /// C equivalent: `gjmp_cond_addr()` (i386-gen.c:787-795).
@@ -1482,6 +1498,9 @@ impl I386Backend {
 // LinkerBackend Implementation for I386Backend
 // =========================================================================
 
+// LinkerBackend: relocation patching and PLT generation use offset/address
+// casts constrained by ELF32 relocation field widths.
+#[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation, clippy::cast_possible_wrap)]
 impl LinkerBackend for I386Backend {
     /// Classify relocation as code (1) or data (0).
     /// C equivalent: `code_reloc()` (i386-link.c:32-56).
@@ -1814,6 +1833,7 @@ impl LinkerBackend for I386Backend {
 
 /// Encode a full ModR/M byte for assembler operands.
 /// C equivalent: `asm_modrm()` (i386-asm.c).
+#[allow(clippy::cast_sign_loss, clippy::cast_possible_wrap)]
 pub fn asm_modrm(state: &mut TccState, reg: i32, sv: &SValue) -> TccResult<()> {
     // Delegate to gen_modrm with SValue's register and constant info
     let r = sv.r;
@@ -1878,6 +1898,7 @@ pub fn asm_opcode(
 // ===========================================================================
 
 #[cfg(test)]
+#[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation, clippy::cast_possible_wrap)]
 mod tests {
     use super::*;
 

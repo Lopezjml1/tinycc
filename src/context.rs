@@ -464,6 +464,26 @@ pub(crate) struct TccState {
     // Symbol table
     // -----------------------------------------------------------------------
 
+    /// Local symbol stack — function-scope declarations.
+    /// C field: `Sym *local_stack` (tcc.h:846).
+    pub(crate) local_stack: Vec<Symbol>,
+
+    /// Global symbol stack — file-scope declarations.
+    /// C field: `Sym *global_stack` (tcc.h:847).
+    pub(crate) global_stack: Vec<Symbol>,
+
+    /// Local label stack — labels defined in the current function.
+    /// C field: `Sym *local_label_stack` (tcc.h:854).
+    pub(crate) local_label_stack: Vec<Symbol>,
+
+    /// Global label stack — cross-function label references.
+    /// C field: `Sym *global_label_stack` (tcc.h:855).
+    pub(crate) global_label_stack: Vec<Symbol>,
+
+    /// Current local variable offset from frame pointer (grows negative).
+    /// C field: `int loc` in tccgen.c global state.
+    pub(crate) loc: i64,
+
     /// Per-symbol attributes (indexed by symbol number).
     /// C field: `SymAttr *sym_attrs / int nb_sym_attrs` (tcc.h:933-934).
     pub(crate) sym_attrs: Vec<SymAttr>,
@@ -674,6 +694,11 @@ impl Default for TccState {
             inline_fns: Vec::new(),
 
             // Symbol table
+            local_stack: Vec::new(),
+            global_stack: Vec::new(),
+            local_label_stack: Vec::new(),
+            global_label_stack: Vec::new(),
+            loc: 0,
             sym_attrs: Vec::new(),
             sym_ext: Vec::new(),
 

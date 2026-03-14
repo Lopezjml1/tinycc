@@ -10,9 +10,6 @@
 #![allow(non_upper_case_globals)]
 #![allow(dead_code)]
 #![allow(clippy::unreadable_literal)]
-#![allow(clippy::cast_possible_truncation)]
-#![allow(clippy::cast_sign_loss)]
-#![allow(clippy::cast_possible_wrap)]
 
 // ELF format definitions — struct field prefixes (e_*, sh_*, st_*, p_*, etc.)
 // preserve the ELF specification naming convention from elf.h for traceability.
@@ -3878,6 +3875,7 @@ pub const STT_SPARC_REGISTER: u8 = 13;
 pub const fn elf32_m_sym(info: u32) -> u32 { info >> 8 }
 /// ELF32 move size (from `ELF32_M_SIZE` macro)
 #[inline]
+#[allow(clippy::cast_possible_truncation)]
 pub const fn elf32_m_size(info: u32) -> u8 { info as u8 }
 /// ELF32 move info (from `ELF32_M_INFO` macro)
 #[inline]
@@ -3887,6 +3885,7 @@ pub const fn elf32_m_info(sym: u32, size: u8) -> u32 { (sym << 8) + (size as u32
 pub const fn elf64_m_sym(info: u64) -> u64 { info >> 8 }
 /// ELF64 move size (from `ELF64_M_SIZE` macro)
 #[inline]
+#[allow(clippy::cast_possible_truncation)]
 pub const fn elf64_m_size(info: u64) -> u8 { info as u8 }
 /// ELF64 move info (from `ELF64_M_INFO` macro)
 #[inline]

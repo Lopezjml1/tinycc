@@ -18,13 +18,9 @@
 //! - 15 exponent bits (bits 112–126 / x1 bits 48–62)
 //! - 112 mantissa bits (bits 0–111 / x1 bits 0–47 + x0 bits 0–63)
 
-// This module implements low-level IEEE 754 quad-precision arithmetic
-// using explicit bit manipulation. Casts between integer types of
-// different signs and widths are pervasive; their safety is maintained
-// by algorithmic invariants documented at each use site.
-#![allow(clippy::cast_sign_loss)]
-#![allow(clippy::cast_possible_truncation)]
-#![allow(clippy::cast_possible_wrap)]
+// IEEE 754 quad-precision arithmetic — cast safety allows are applied at
+// impl-block/function level per AAP §0.8.1 to preserve CVE-2006-0635
+// compile-time enforcement for new code.
 #![allow(clippy::cast_lossless)]
 #![allow(clippy::similar_names)]
 #![allow(clippy::many_single_char_names)]
@@ -54,6 +50,7 @@ pub(crate) struct QuadFloat {
     pub(crate) x1: u64,
 }
 
+#[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation, clippy::cast_possible_wrap)]
 impl QuadFloat {
     /// Exponent bias for quad-precision IEEE 754 (2^14 − 1 = 16383).
     pub(crate) const BIAS: i32 = 16383;
@@ -142,6 +139,7 @@ impl QuadFloat {
 /// For subnormals the exponent is set to 1 so that normalisation works.
 ///
 /// Returns `(sign, exp, mnt_lo, mnt_hi)`.
+#[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation, clippy::cast_possible_wrap)]
 fn unpack(q: QuadFloat) -> (bool, i32, u64, u64) {
     let sign = (q.x1 >> 63) != 0;
     let mut exp = ((q.x1 >> 48) & 0x7FFF) as i32;
@@ -217,6 +215,7 @@ fn detect_nans(
 /// C equivalent: `f3_normalise()` in `lib/lib-arm64.c` lines 116–133.
 ///
 /// Uses a binary-search style shift to minimise the number of iterations.
+#[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation, clippy::cast_possible_wrap)]
 fn normalize(exp: &mut i32, mnt_lo: &mut u64, mnt_hi: &mut u64) {
     if (*mnt_lo | *mnt_hi) == 0 {
         return;
@@ -246,6 +245,7 @@ fn normalize(exp: &mut i32, mnt_lo: &mut u64, mnt_hi: &mut u64) {
 ///
 /// Bit 0 of `x0` (the "sticky bit") is set to 1 whenever any bits would
 /// be shifted out, ensuring correct rounding in [`round`].
+#[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation, clippy::cast_possible_wrap)]
 fn sticky_shift(sh: i32, x0: &mut u64, x1: &mut u64) {
     if sh >= 128 {
         *x0 = u64::from((*x0 | *x1) != 0);
@@ -273,6 +273,7 @@ fn sticky_shift(sh: i32, x0: &mut u64, x1: &mut u64) {
 /// C equivalent: `f3_round()` in `lib/lib-arm64.c` lines 153–189.
 ///
 /// Implements round-to-nearest-even (IEEE 754 default).
+#[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation, clippy::cast_possible_wrap)]
 fn round(sign: bool, mut exp: i32, lo: u64, hi: u64) -> QuadFloat {
     let mut x0 = lo;
     let mut x1 = hi;
@@ -979,6 +980,7 @@ pub(crate) fn floatunditf(a: u64) -> QuadFloat {
 /// - `-1` if `a < b`
 /// - `1`  if `a > b`
 /// - `2`  if unordered (either operand is NaN)
+#[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation, clippy::cast_possible_wrap)]
 fn cmp(a: QuadFloat, b: QuadFloat) -> i32 {
     let ax0 = a.x0;
     let ax1 = a.x1;
@@ -1120,6 +1122,7 @@ pub(crate) fn arm64_clear_cache(_beg: usize, _end: usize) {
 // ---------------------------------------------------------------------------
 
 #[cfg(test)]
+#[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation, clippy::cast_possible_wrap)]
 mod tests {
     use super::*;
 

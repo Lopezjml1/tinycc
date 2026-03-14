@@ -12,13 +12,10 @@
 //!
 //! C equivalent: `tccelf.c` (4,116 lines)
 
-// ELF linker — cross-platform binary format manipulation requires extensive size
-// casts between usize/u64/u32/u16 for section offsets, symbol indices, and header
-// fields. Struct patterns and variable naming follow the original C implementation
-// for traceability. Complex functions are faithfully ported from tccelf.c.
-#![allow(clippy::cast_possible_truncation)]
-#![allow(clippy::cast_possible_wrap)]
-#![allow(clippy::cast_sign_loss)]
+// ELF linker — cast safety allows (cast_sign_loss, cast_possible_truncation,
+// cast_possible_wrap) are applied at function level per AAP §0.8.1 to preserve
+// CVE-2006-0635 compile-time enforcement for new code added outside annotated
+// functions. Struct patterns and variable naming follow the original tccelf.c.
 #![allow(clippy::field_reassign_with_default)]
 #![allow(clippy::manual_let_else)]
 #![allow(clippy::match_same_arms)]
@@ -159,6 +156,7 @@ pub struct ReadOnlyInf {
 
 /// Return section flags for RELRO (Relocation Read-Only) sections.
 /// C equivalent: `shf_RELRO` at tccelf.c line 54
+#[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation, clippy::cast_possible_wrap)]
 pub fn shf_relro() -> u64 {
     #[cfg(target_os = "openbsd")]
     { SHF_ALLOC as u64 }
@@ -168,6 +166,7 @@ pub fn shf_relro() -> u64 {
 
 /// Return section flags for read-only data sections.
 /// C equivalent: implicit in tccelf.c section creation
+#[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation, clippy::cast_possible_wrap)]
 pub fn shf_rdata() -> u64 {
     #[cfg(target_os = "macos")]
     { (SHF_ALLOC | SHF_WRITE) as u64 }
@@ -265,6 +264,7 @@ pub(crate) fn read_sym_entry(data: &[u8], index: usize) -> Elf64Sym {
 /// for private sections).
 ///
 /// C equivalent: `new_section()` at tccelf.c line 215
+#[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation, clippy::cast_possible_wrap)]
 pub fn new_section(state: &mut TccState, name: &str, sh_type: u32, sh_flags: u32) -> usize {
     let mut sec = Section::default();
     sec.name = name.to_string();
@@ -331,6 +331,7 @@ pub fn section_ptr_add(sec: &mut Section, size: usize) -> usize {
 /// Returns the byte offset of the string within the section data.
 ///
 /// C equivalent: `put_elf_str()` at tccelf.c line 363
+#[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation, clippy::cast_possible_wrap)]
 pub fn put_elf_str(sec: &mut Section, s: &str) -> u32 {
     let len = s.len() + 1; // include NUL
     let offset = section_ptr_add(sec, len);
@@ -370,6 +371,7 @@ pub(crate) fn read_cstr(data: &[u8], offset: usize) -> String {
 /// Rebuild the ELF hash table for a symbol table section after modifications.
 ///
 /// C equivalent: `rebuild_hash()` at tccelf.c line 392
+#[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation, clippy::cast_possible_wrap)]
 pub fn rebuild_hash(sections: &mut [Section], symtab_idx: usize, nb_buckets: usize) {
     let hash_idx = match sections[symtab_idx].hash {
         Some(h) => h,
@@ -404,6 +406,7 @@ pub fn rebuild_hash(sections: &mut [Section], symtab_idx: usize, nb_buckets: usi
 /// Initialize a symbol table section with its associated string table and hash.
 ///
 /// C equivalent: `init_symtab()` at tccelf.c line 257
+#[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation, clippy::cast_possible_wrap)]
 pub fn init_symtab(sections: &mut [Section], symtab_idx: usize,
                    strtab_idx: usize, hash_idx: usize, _flags: u32) {
     // Put empty string at offset 0 in string table (ELF requirement)
@@ -445,6 +448,7 @@ pub fn new_symtab(state: &mut TccState, name: &str, sh_type: u32, sh_flags: u32,
 /// Initialize ELF linker state: create standard sections (.text, .data, .bss, etc.).
 ///
 /// C equivalent: `tccelf_new()` at tccelf.c line 60
+#[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation, clippy::cast_possible_wrap)]
 pub fn tccelf_new(state: &mut TccState) -> TccResult<()> {
     // Section 0 is always NULL (ELF requirement)
     if state.sections.is_empty() {
@@ -610,6 +614,7 @@ pub fn put_elf_sym(state: &mut TccState, sec_idx: usize,
 /// Returns the symbol index or None if not found.
 ///
 /// C equivalent: `find_elf_sym()` at tccelf.c line 475
+#[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation, clippy::cast_possible_wrap)]
 pub fn find_elf_sym(state: &TccState, sec_idx: usize, name: &str) -> Option<i32> {
     let hash_idx = state.sections[sec_idx].hash?;
     let strtab_idx = state.sections[sec_idx].link?;
@@ -639,6 +644,7 @@ pub fn find_elf_sym(state: &TccState, sec_idx: usize, name: &str) -> Option<i32>
 /// symbols per ELF binding precedence rules.
 ///
 /// C equivalent: `set_elf_sym()` at tccelf.c ~line 530
+#[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation, clippy::cast_possible_wrap)]
 pub fn set_elf_sym(state: &mut TccState, value: u64, size: u64,
                    info: u8, other: u8, shndx: u16, name: &str) -> i32 {
     // .symtab must exist — index 0 is the ELF null section, not a valid symtab.
@@ -680,6 +686,7 @@ pub fn set_elf_sym(state: &mut TccState, value: u64, size: u64,
 /// Get the runtime address of a named symbol.
 ///
 /// C equivalent: `get_sym_addr()` at tccelf.c line 498
+#[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation, clippy::cast_possible_wrap)]
 pub fn get_sym_addr(state: &TccState, name: &str, err: bool) -> TccResult<u64> {
     let symtab_idx = find_section_index(state, ".symtab").unwrap_or(0);
     if let Some(idx) = find_elf_sym(state, symtab_idx, name) {
@@ -721,6 +728,7 @@ pub fn tcc_get_symbol(state: &TccState, name: &str) -> Option<*const ()> {
 /// LIBTCCAPI: Add an external symbol with a given value.
 ///
 /// C equivalent: `tcc_add_symbol()` at tccelf.c ~line 518
+#[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation, clippy::cast_possible_wrap)]
 pub fn tcc_add_symbol(state: &mut TccState, name: &str, val: *const ()) -> TccResult<()> {
     let addr = val as u64;
     set_elf_sym(state, addr, 0,
@@ -731,6 +739,7 @@ pub fn tcc_add_symbol(state: &mut TccState, name: &str, val: *const ()) -> TccRe
 /// Iterate over all ELF symbols, calling `callback` for each.
 ///
 /// C equivalent: `list_elf_symbols()` at tccelf.c ~line 525
+#[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation, clippy::cast_possible_wrap)]
 pub fn list_elf_symbols(state: &TccState, callback: &dyn Fn(&str, *const ())) {
     let symtab_idx = match find_section_index(state, ".symtab") {
         Some(i) => i,
@@ -785,6 +794,7 @@ pub fn get_sym_attr(state: &mut TccState, index: usize, alloc: bool) -> &mut Sym
 /// Updates all relocation sections that reference these symbols.
 ///
 /// C equivalent: `sort_syms()` at tccelf.c ~line 602
+#[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation, clippy::cast_possible_wrap)]
 pub fn sort_syms(state: &mut TccState, sec_idx: usize) {
     let nb_syms = state.sections[sec_idx].data_offset / ELF_SYM_SIZE;
     if nb_syms <= 1 { return; }
@@ -890,6 +900,7 @@ pub fn put_elf_reloc(rel_sec: &mut Section, sym_sec: &Section,
 /// Returns the section index if created, or None for static links.
 ///
 /// C equivalent: `create_gnu_hash()` at tccelf.c ~line 1100
+#[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation, clippy::cast_possible_wrap)]
 pub fn create_gnu_hash(state: &mut TccState) -> TccResult<Option<usize>> {
     let dynsym_idx = match find_section_index(state, ".dynsym") {
         Some(i) => i,
@@ -936,6 +947,7 @@ pub fn create_gnu_hash(state: &mut TccState) -> TccResult<Option<usize>> {
 /// Reports undefined symbols as errors if `do_resolve` is true.
 ///
 /// C equivalent: `relocate_syms()` at tccelf.c ~line 940
+#[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation, clippy::cast_possible_wrap)]
 pub fn relocate_syms(state: &mut TccState, do_resolve: bool) -> TccResult<()> {
     let symtab_idx = match find_section_index(state, ".symtab") {
         Some(i) => i,
@@ -981,6 +993,7 @@ pub fn relocate_syms(state: &mut TccState, do_resolve: bool) -> TccResult<()> {
 /// Target-architecture-specific relocation logic is dispatched here.
 ///
 /// C equivalent: `relocate_section()` at tccelf.c ~line 990
+#[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation, clippy::cast_possible_wrap)]
 pub fn relocate_section(state: &mut TccState, target_sec_idx: usize,
                         rel_sec_idx: usize) -> TccResult<()> {
     let entry_size = if state.sections[rel_sec_idx].sh_type == SHT_RELA {
@@ -1025,6 +1038,7 @@ pub fn relocate_section(state: &mut TccState, target_sec_idx: usize,
 
 /// Apply a single relocation to target data based on relocation type.
 /// Supports common x86-64 relocation types.
+#[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation, clippy::cast_possible_wrap)]
 fn apply_relocation(data: &mut [u8], offset: usize, rel_type: u32,
                     value: u64, _pc: u64) {
     match rel_type {
@@ -1054,6 +1068,7 @@ fn apply_relocation(data: &mut [u8], offset: usize, rel_type: u32,
 /// Apply relocations to all sections in the output.
 ///
 /// C equivalent: `relocate_sections()` at tccelf.c ~line 1050
+#[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation, clippy::cast_possible_wrap)]
 pub fn relocate_sections(state: &mut TccState) -> TccResult<()> {
     let num_sections = state.sections.len();
     for s in 0..num_sections {
@@ -1078,6 +1093,7 @@ pub fn relocate_sections(state: &mut TccState) -> TccResult<()> {
 /// the correct jump offsets to GOT entries.
 ///
 /// C equivalent: target-specific `relocate_plt()` integrated here
+#[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation, clippy::cast_possible_wrap)]
 pub fn relocate_plt(state: &mut TccState) -> TccResult<()> {
     let plt_idx = match find_section_index(state, ".plt") {
         Some(i) => i,
@@ -1116,6 +1132,7 @@ pub fn relocate_plt(state: &mut TccState) -> TccResult<()> {
 /// Move COMMON symbols to the BSS section, allocating space for each.
 ///
 /// C equivalent: `resolve_common_syms()` at tccelf.c ~line 1800
+#[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation, clippy::cast_possible_wrap)]
 pub fn resolve_common_syms(state: &mut TccState) -> TccResult<()> {
     let symtab_idx = match find_section_index(state, ".symtab") {
         Some(i) => i,
@@ -1151,6 +1168,7 @@ pub fn resolve_common_syms(state: &mut TccState) -> TccResult<()> {
 /// Returns the GOT symbol index.
 ///
 /// C equivalent: `build_got()` at tccelf.c ~line 1200
+#[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation, clippy::cast_possible_wrap)]
 pub fn build_got(state: &mut TccState) -> i32 {
     // Create .got section
     let got_idx = new_section(state, ".got", SHT_PROGBITS,
@@ -1177,6 +1195,7 @@ pub fn build_got(state: &mut TccState) -> i32 {
 /// Add a GOT entry for a symbol, creating PLT entry if needed.
 ///
 /// C equivalent: `put_got_entry()` at tccelf.c ~line 1250
+#[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation, clippy::cast_possible_wrap)]
 pub fn put_got_entry(state: &mut TccState, reloc_type: i32,
                      sym_index: i32) -> TccResult<()> {
     let need_plt = is_plt_reloc(reloc_type as u32);
@@ -1254,6 +1273,7 @@ fn is_plt_reloc(rel_type: u32) -> bool {
 /// Walk all relocations and create GOT/PLT entries as needed.
 ///
 /// C equivalent: `build_got_entries()` at tccelf.c ~line 1350
+#[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation, clippy::cast_possible_wrap)]
 pub fn build_got_entries(state: &mut TccState, _got_sym: i32) -> TccResult<()> {
     let num_sections = state.sections.len();
     // Collect relocation sections to process
@@ -1298,6 +1318,7 @@ pub fn build_got_entries(state: &mut TccState, _got_sym: i32) -> TccResult<()> {
 /// Set or create a global symbol pointing to a section + offset.
 ///
 /// C equivalent: `set_global_sym()` at tccelf.c ~line 1600
+#[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation, clippy::cast_possible_wrap)]
 pub fn set_global_sym(state: &mut TccState, name: &str,
                       sec: Option<usize>, offs: u64) {
     let shndx = match sec {
@@ -1311,6 +1332,7 @@ pub fn set_global_sym(state: &mut TccState, name: &str,
 /// Add __start_ and __stop_ boundary symbols for init/fini array sections.
 ///
 /// C equivalent: `add_init_array_defines()` at tccelf.c ~line 1620
+#[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation, clippy::cast_possible_wrap)]
 pub fn add_init_array_defines(state: &mut TccState, section_name: &str) {
     let sec_idx = find_section_index(state, section_name);
     let start_name = format!("__start_{}", section_name.trim_start_matches('.'));
@@ -1327,6 +1349,7 @@ pub fn add_init_array_defines(state: &mut TccState, section_name: &str) {
 /// Add a function pointer to an `init_array` or `fini_array` section.
 ///
 /// C equivalent: `add_array()` at tccelf.c ~line 1640
+#[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation, clippy::cast_possible_wrap)]
 pub fn add_array(state: &mut TccState, section_name: &str, sym: i32) -> TccResult<()> {
     let sec_idx = if let Some(i) = find_section_index(state, section_name) { i } else {
         let idx = new_section(state, section_name, SHT_PROGBITS,
@@ -1517,6 +1540,7 @@ pub fn fill_got(state: &mut TccState) -> TccResult<()> {
 }
 
 /// Add a dynamic table entry to the .dynamic section.
+#[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation, clippy::cast_possible_wrap)]
 fn add_dynamic_entry(sec: &mut Section, tag: i64, val: u64) {
     let off = section_ptr_add(sec, ELF_DYN_SIZE);
     put_le64(&mut sec.data[off..off + 8], tag as u64);
@@ -1526,6 +1550,7 @@ fn add_dynamic_entry(sec: &mut Section, tag: i64, val: u64) {
 /// Fill the .dynamic section with DT_* entries for dynamic linking.
 ///
 /// C equivalent: `fill_dynamic()` at tccelf.c line 2491
+#[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation, clippy::cast_possible_wrap)]
 pub fn fill_dynamic(state: &mut TccState, dyn_sec_idx: usize,
                     dynstr_idx: usize) -> TccResult<()> {
     if dyn_sec_idx >= state.sections.len() { return Ok(()); }
@@ -1737,6 +1762,7 @@ fn write_elf_phdr<W: Write>(w: &mut W, phdr: &Elf64Phdr) -> io::Result<()> {
 /// dynamic linking setup, section layout, and binary writing.
 ///
 /// C equivalent: `elf_output_file()` at tccelf.c line 2905 (~225 lines)
+#[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation, clippy::cast_possible_wrap)]
 pub fn elf_output_file(state: &mut TccState, filename: &str) -> TccResult<()> {
     let is_obj = state.output_type == TCC_OUTPUT_OBJ;
     let is_dll = state.output_type == TCC_OUTPUT_DLL;
@@ -2035,6 +2061,7 @@ fn build_elf_ehdr(e_type: u16, machine: u16, entry: u64,
 }
 
 /// Convert a Section to an `Elf64Shdr` for output.
+#[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation, clippy::cast_possible_wrap)]
 fn section_to_shdr(sec: &Section) -> Elf64Shdr {
     Elf64Shdr {
         sh_name: sec.sh_name,
@@ -2086,6 +2113,7 @@ fn find_output_section_index(sorted: &[usize], sec_idx: usize) -> usize {
 /// Write an ELF object file (.o) — relocatable output.
 ///
 /// C equivalent: `elf_output_obj()` at tccelf.c line 3106
+#[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation, clippy::cast_possible_wrap)]
 fn write_elf_object(state: &mut TccState, filename: &str,
                     sorted: &[usize], shstrtab_idx: usize) -> TccResult<()> {
     // Assign section name offsets already done
@@ -2229,6 +2257,7 @@ pub fn tcc_object_type(reader: &mut dyn Read) -> TccResult<FileType> {
 /// Load an ELF object file (.o), merging its sections and symbols into state.
 ///
 /// C equivalent: `tcc_load_object_file()` at tccelf.c ~line 3180
+#[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation, clippy::cast_possible_wrap)]
 pub fn tcc_load_object_file(state: &mut TccState, reader: &mut dyn Read,
                             filename: &str) -> TccResult<()> {
     // Read entire file into memory
@@ -2478,6 +2507,7 @@ pub fn tcc_load_archive(state: &mut TccState, filename: &str) -> TccResult<()> {
 /// Load a shared library (.so) file, importing its dynamic symbol table.
 ///
 /// C equivalent: `tcc_load_dll()` at tccelf.c ~line 3800
+#[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation, clippy::cast_possible_wrap)]
 pub fn tcc_load_dll(state: &mut TccState, filename: &str) -> TccResult<()> {
     let file = File::open(filename).map_err(TccError::Io)?;
     let mut data = Vec::new();
@@ -2715,6 +2745,7 @@ fn load_file_by_type(state: &mut TccState, filename: &str) -> TccResult<()> {
 // ===========================================================================
 
 #[cfg(test)]
+#[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation, clippy::cast_possible_wrap)]
 mod tests {
     use super::*;
     use crate::types::Section;

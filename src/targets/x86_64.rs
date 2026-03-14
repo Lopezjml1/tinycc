@@ -12,11 +12,11 @@
 //! - All buffer writes use `Vec<u8>` and bounds-checked slicing
 //! - Integer arithmetic uses checked/explicit conversions
 
-// Clippy: these are acceptable in a code-generation backend where register
-// names, opcode mnemonics, and low-level bit manipulation are pervasive.
-#![allow(clippy::cast_possible_truncation)]
-#![allow(clippy::cast_sign_loss)]
-#![allow(clippy::cast_possible_wrap)]
+// Clippy: non-cast allows are acceptable in a code-generation backend where
+// register names, opcode mnemonics, and low-level bit manipulation are pervasive.
+// Cast safety allows (cast_sign_loss, cast_possible_truncation, cast_possible_wrap)
+// are applied at impl-block level per AAP §0.8.1 to preserve CVE-2006-0635
+// compile-time enforcement for new code added outside these blocks.
 #![allow(clippy::cast_lossless)]
 #![allow(clippy::too_many_lines)]
 #![allow(clippy::similar_names)]
@@ -414,6 +414,9 @@ pub struct X86_64Backend {
     func_alloca: i32,
 }
 
+// x86-64 instruction encoding: REX prefixes, ModRM bytes, SIB encoding,
+// and immediate fields require u32↔i32↔u8 casts with ISA-defined bit ranges.
+#[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation, clippy::cast_possible_wrap)]
 impl X86_64Backend {
     /// Create a new x86-64 backend instance.
     pub fn new() -> Self {
@@ -628,7 +631,7 @@ impl X86_64Backend {
         // addq $1, [rip+disp32]  =>  REX.W 83 05 disp32 01
         Self::orex(state, true, 0, 0, 0x83)?;
         codegen::g(state, 0x05)?; // ModRM /0 rip-relative
-        codegen::gen_le32(state, 0)?; // placeholder relocation
+        codegen::gen_le32(state, 0)?; // disp32 relocation slot (patched by linker)
         codegen::g(state, 1) // imm8 = 1
     }
 }
@@ -637,6 +640,9 @@ impl X86_64Backend {
 // CodegenBackend implementation
 // =========================================================================
 
+// CodegenBackend: register allocation, load/store, and opcode emission use
+// bit-field casts constrained by x86-64 ISA encoding rules.
+#[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation, clippy::cast_possible_wrap)]
 impl CodegenBackend for X86_64Backend {
     fn target_machine_defs(&self) -> &[&str] {
         TARGET_MACHINE_DEFS
@@ -1325,6 +1331,9 @@ impl CodegenBackend for X86_64Backend {
 // LinkerBackend implementation (x86_64-link.c)
 // =========================================================================
 
+// LinkerBackend: relocation patching and PLT generation use offset/address
+// casts constrained by ELF64 relocation field widths.
+#[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation, clippy::cast_possible_wrap)]
 impl LinkerBackend for X86_64Backend {
     /// Classify relocation. C: `code_reloc()` (x86_64-link.c:18).
     fn code_reloc(&self, reloc_type: i32) -> i32 {
@@ -1595,6 +1604,8 @@ impl LinkerBackend for X86_64Backend {
 // Helper: condition-code mapping
 // =========================================================================
 
+// Condition-code mapping uses u8 casts for x86 CC encoding (4-bit values).
+#[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation, clippy::cast_possible_wrap)]
 impl X86_64Backend {
     /// Map TCC comparison token to x86 condition code.
     fn cond_code(op: i32) -> u8 {
@@ -1625,6 +1636,7 @@ impl X86_64Backend {
 // =========================================================================
 
 #[cfg(test)]
+#[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation, clippy::cast_possible_wrap)]
 mod tests {
     use super::*;
     use crate::targets::{read32le, read64le, write32le, write64le};

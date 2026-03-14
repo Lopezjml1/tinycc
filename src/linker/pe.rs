@@ -24,13 +24,9 @@
 //! - Unwind information for structured exception handling (x86\_64)
 //! - PDB debug info stub generation
 
-// PE/COFF linker — Windows executable format handling requires extensive size casts
-// between usize/u64/u32/u16 for RVAs, section alignments, and import/export table
-// offsets. Struct field prefixes (e_*, ...) preserve PE format naming conventions.
-// Complex functions and variable names are faithfully ported from tccpe.c.
-#![allow(clippy::cast_possible_truncation)]
-#![allow(clippy::cast_possible_wrap)]
-#![allow(clippy::cast_sign_loss)]
+// PE/COFF linker — cast safety allows are applied at impl-block/function level
+// per AAP §0.8.1 to preserve CVE-2006-0635 compile-time enforcement for new code.
+// Struct field prefixes (e_*, ...) preserve PE format naming conventions.
 #![allow(clippy::field_reassign_with_default)]
 #![allow(clippy::items_after_statements)]
 #![allow(clippy::manual_let_else)]
@@ -260,6 +256,7 @@ pub struct ImageOptionalHeader32 {
     pub data_directory: [ImageDataDirectory; IMAGE_NUMBEROF_DIRECTORY_ENTRIES],
 }
 
+#[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation, clippy::cast_possible_wrap)]
 impl Default for ImageOptionalHeader32 {
     fn default() -> Self {
         Self {
@@ -319,6 +316,7 @@ pub struct ImageOptionalHeader64 {
     pub data_directory: [ImageDataDirectory; IMAGE_NUMBEROF_DIRECTORY_ENTRIES],
 }
 
+#[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation, clippy::cast_possible_wrap)]
 impl Default for ImageOptionalHeader64 {
     fn default() -> Self {
         Self {
@@ -730,6 +728,7 @@ fn pe_set_datadir(opt_hdr: &mut Vec<u8>, is_64bit: bool, index: usize, addr: u32
 
 /// Tracked write with running checksum accumulation.
 /// C equivalent: `pe_fwrite()` at tccpe.c line 448
+#[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation, clippy::cast_possible_wrap)]
 fn pe_fwrite(data: &[u8], writer: &mut dyn Write, pe: &mut PeInfo) -> TccResult<()> {
     writer.write_all(data).map_err(TccError::Io)?;
     // Accumulate PE checksum: sum of all u16 words, wrapping
@@ -748,6 +747,7 @@ fn pe_fwrite(data: &[u8], writer: &mut dyn Write, pe: &mut PeInfo) -> TccResult<
 
 /// Write padding zeros to reach a target file position.
 /// C equivalent: `pe_fpad()` at tccpe.c line 460
+#[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation, clippy::cast_possible_wrap)]
 fn pe_fpad(writer: &mut dyn Write, pe: &mut PeInfo, new_pos: u32) -> TccResult<()> {
     while pe.pos < new_pos {
         let chunk = std::cmp::min((new_pos - pe.pos) as usize, 4096);
@@ -845,6 +845,7 @@ fn pe_add_coffsym(
 
 /// Classify a section into a PE section class by name and flags.
 /// C equivalent: `pe_section_class()` at tccpe.c line 1149
+#[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation, clippy::cast_possible_wrap)]
 fn pe_section_class(sec: &Section) -> PeSectionClass {
     let name = &sec.name;
     let sh_type = sec.sh_type;
@@ -891,6 +892,7 @@ fn pe_section_class(sec: &Section) -> PeSectionClass {
 
 /// Find or create an import entry for a given DLL symbol index.
 /// C equivalent: `pe_add_import()` at tccpe.c line 827
+#[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation, clippy::cast_possible_wrap)]
 fn pe_add_import(pe: &mut PeInfo, state: &TccState, imp_sym: i32) -> usize {
     // Read the symbol to find which DLL it belongs to
     let dynsym_idx = state.sections.iter().position(|s| s.name == ".dynsym").unwrap_or(0);
@@ -924,6 +926,7 @@ fn pe_add_import(pe: &mut PeInfo, state: &TccState, imp_sym: i32) -> usize {
 
 /// Build import directory table, IAT, and ILT entries.
 /// C equivalent: `pe_build_imports()` at tccpe.c line 869
+#[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation, clippy::cast_possible_wrap)]
 fn pe_build_imports(pe: &mut PeInfo, state: &mut TccState) -> TccResult<()> {
     if pe.imp_info.is_empty() {
         return Ok(());
@@ -1085,6 +1088,7 @@ struct ExportSortEntry {
 
 /// Build export directory table.
 /// C equivalent: `pe_build_exports()` at tccpe.c line 975
+#[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation, clippy::cast_possible_wrap)]
 fn pe_build_exports(pe: &mut PeInfo, state: &mut TccState) -> TccResult<()> {
     let symtab_idx = state.sections.iter().position(|s| s.name == ".symtab");
     let symtab_idx = match symtab_idx {
@@ -1216,6 +1220,7 @@ fn pe_build_exports(pe: &mut PeInfo, state: &mut TccState) -> TccResult<()> {
 
 /// Build the PE base relocation table (.reloc section).
 /// C equivalent: `pe_build_reloc()` at tccpe.c line 1082
+#[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation, clippy::cast_possible_wrap)]
 fn pe_build_reloc(pe: &mut PeInfo, state: &mut TccState) -> TccResult<()> {
     let reloc_idx = match pe.reloc {
         Some(i) => i,
@@ -1313,6 +1318,7 @@ fn pe_build_reloc(pe: &mut PeInfo, state: &mut TccState) -> TccResult<()> {
 
 /// Assign virtual addresses to all PE sections, building import/export/reloc tables.
 /// C equivalent: `pe_assign_addresses()` at tccpe.c line 1185
+#[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation, clippy::cast_possible_wrap)]
 fn pe_assign_addresses(pe: &mut PeInfo, state: &mut TccState) -> TccResult<()> {
     // Create .reloc section for DLLs and EXEs
     if pe.pe_type == PeType::Dll || pe.pe_type == PeType::Exe || pe.pe_type == PeType::Gui {
@@ -1435,6 +1441,7 @@ fn pe_assign_addresses(pe: &mut PeInfo, state: &mut TccState) -> TccResult<()> {
 /// Check all undefined symbols, resolving them against DLL imports or
 /// creating thunk trampolines for indirect calls.
 /// C equivalent: `pe_check_symbols()` at tccpe.c line 1303
+#[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation, clippy::cast_possible_wrap)]
 fn pe_check_symbols(pe: &mut PeInfo, state: &mut TccState) -> TccResult<()> {
     let symtab_idx = state.sections.iter().position(|s| s.name == ".symtab");
     let symtab_idx = match symtab_idx {
@@ -1555,6 +1562,7 @@ fn pe_check_symbols(pe: &mut PeInfo, state: &mut TccState) -> TccResult<()> {
 
 /// Write the complete PE file: headers, sections, and fixups.
 /// C equivalent: `pe_write()` at tccpe.c line 554
+#[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation, clippy::cast_possible_wrap)]
 fn pe_write(pe: &mut PeInfo, state: &mut TccState, writer: &mut dyn Write) -> TccResult<()> {
     let is_64 = pe.is_64bit();
     let num_sec = pe.sec_info.len();
@@ -1901,6 +1909,7 @@ fn read_cstr_from(data: &[u8], off: usize) -> String {
 
 /// Read export names from a PE DLL file on disk.
 /// C equivalent: `get_dllexports()` at tccpe.c line 1571
+#[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation, clippy::cast_possible_wrap)]
 fn get_dllexports(filename: &str) -> TccResult<Vec<String>> {
     let data = std::fs::read(filename).map_err(TccError::Io)?;
     if data.len() < 0x80 {
@@ -2222,6 +2231,7 @@ struct RuntimeFunction {
 /// Add `x86_64` unwind information for all functions.
 /// Creates .pdata and .xdata sections for structured exception handling (SEH).
 /// C equivalent: `pe_add_uwwind_info()` at tccpe.c line 1848
+#[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation, clippy::cast_possible_wrap)]
 fn pe_add_unwind_info_inner(state: &mut TccState) -> TccResult<()> {
     let text_idx = state.text_section_idx;
     let text_size = state.sections[text_idx].data_offset;
@@ -2288,6 +2298,7 @@ pub(crate) fn pe_add_unwind_data(state: &mut TccState) -> TccResult<()> {
 
 /// Determine PE output type and add CRT startup code and standard libraries.
 /// C equivalent: `pe_add_runtime()` at tccpe.c line 1904
+#[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation, clippy::cast_possible_wrap)]
 fn pe_add_runtime(state: &mut TccState, pe: &mut PeInfo) -> TccResult<()> {
     // Determine PE type from output_type
     let output_type = state.output_type;
@@ -2531,6 +2542,7 @@ pub(crate) fn pe_output_file(state: &mut TccState, filename: &str) -> TccResult<
 // ===========================================================================
 
 #[cfg(test)]
+#[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation, clippy::cast_possible_wrap)]
 mod tests {
     use super::*;
     use zerocopy::AsBytes;
@@ -2623,6 +2635,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation, clippy::cast_possible_wrap)]
     fn test_pe_section_class_enum() {
         assert_eq!(PeSectionClass::Text as u32, 0);
         assert_eq!(PeSectionClass::Rdata as u32, 1);
@@ -2632,6 +2645,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation, clippy::cast_possible_wrap)]
     fn test_pe_type_enum() {
         assert_eq!(PeType::Nul as u32, 0);
         assert_eq!(PeType::Dll as u32, 1);

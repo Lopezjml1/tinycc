@@ -20,13 +20,10 @@
 //! Every fallible function returns [`TccResult<T>`], replacing the C
 //! `setjmp`/`longjmp` error-handling pattern (AAP §0.8.1).
 
-// Debug info generation — STABS/DWARF handling requires size casts between
-// usize/u64/u32 for debug section offsets and line number tables. Complex
-// functions are faithfully ported from tccdbg.c (2,676 lines).
+// Debug info generation — cast safety allows are applied at function level
+// per AAP §0.8.1 to preserve CVE-2006-0635 compile-time enforcement for new code.
+// Functions are faithfully ported from tccdbg.c (2,676 lines).
 #![allow(clippy::assigning_clones)]
-#![allow(clippy::cast_possible_truncation)]
-#![allow(clippy::cast_possible_wrap)]
-#![allow(clippy::cast_sign_loss)]
 #![allow(clippy::too_many_arguments)]
 #![allow(clippy::too_many_lines)]
 #![allow(clippy::unnecessary_wraps)]
@@ -609,6 +606,7 @@ pub struct DebugState {
     cur_text_section_sym: i32,
 }
 
+#[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation, clippy::cast_possible_wrap)]
 impl Default for DebugState {
     fn default() -> Self {
         Self {
@@ -700,6 +698,7 @@ fn section_data8(sections: &mut [Section], sec_idx: usize, val: u64) {
 }
 
 /// Write a pointer-sized value (4 or 8 bytes) to a section's data buffer.
+#[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation, clippy::cast_possible_wrap)]
 fn section_data_ptr(sections: &mut [Section], sec_idx: usize, val: u64) {
     if PTR_SIZE == 4 {
         section_data4(sections, sec_idx, val as u32);
@@ -757,6 +756,7 @@ fn section_pad(sections: &mut [Section], sec_idx: usize, n: usize) {
 // =============================================================================
 
 /// Encode a `u64` as ULEB128 into a byte vector.
+#[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation, clippy::cast_possible_wrap)]
 fn dwarf_write_uleb128(buf: &mut Vec<u8>, mut val: u64) {
     loop {
         let byte = (val & 0x7f) as u8;
@@ -770,6 +770,7 @@ fn dwarf_write_uleb128(buf: &mut Vec<u8>, mut val: u64) {
 }
 
 /// Encode an `i64` as SLEB128 into a byte vector.
+#[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation, clippy::cast_possible_wrap)]
 fn dwarf_write_sleb128(buf: &mut Vec<u8>, mut val: i64) {
     loop {
         let byte = (val & 0x7f) as u8;
@@ -993,6 +994,7 @@ fn dwarf_sleb128_op(sections: &mut [Section], line_sec_idx: usize, val: i64) {
 /// `.debug_line_str`, `.eh_frame`) depending on the debug format selected.
 ///
 /// C equivalent: `tcc_debug_new(s1)` (tccdbg.c:317-395)
+#[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation, clippy::cast_possible_wrap)]
 pub fn debug_new(state: &mut TccState) -> TccResult<()> {
     let mut dstate = Box::new(DebugState::new());
     let dwarf_version = state.dwarf;
@@ -1132,6 +1134,7 @@ pub fn eh_frame_end(state: &mut TccState) -> TccResult<()> {
 /// Builds a binary search table mapping PC ranges to FDE entries.
 ///
 /// C equivalent: `tcc_eh_frame_hdr(s1)` (tccdbg.c:838-1065)
+#[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation, clippy::cast_possible_wrap)]
 pub fn eh_frame_hdr(state: &mut TccState) -> TccResult<()> {
     let eh_idx = find_section_idx(state, ".eh_frame");
     if eh_idx == 0 { return Ok(()); }
@@ -1564,6 +1567,7 @@ pub fn tcov_block_begin(state: &mut TccState) -> TccResult<()> {
 /// Records the ending line number for the current coverage range.
 ///
 /// C equivalent: `tcc_tcov_block_end(s1, line)` (tccdbg.c:2597-2610)
+#[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation, clippy::cast_possible_wrap)]
 pub fn tcov_block_end(state: &mut TccState, line: i32) -> TccResult<()> {
     if !state.test_coverage { return Ok(()); }
 
@@ -1763,6 +1767,7 @@ fn current_filename(state: &TccState) -> String {
 }
 
 /// Get current line number from the include stack.
+#[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation, clippy::cast_possible_wrap)]
 fn current_line_num(state: &TccState) -> i32 {
     state.include_stack.last().map_or(0, |f| f.line_num as i32)
 }
@@ -2164,6 +2169,7 @@ fn debug_end_stabs(state: &mut TccState) -> TccResult<()> {
 /// Emit DWARF line number info using special opcodes when possible.
 ///
 /// C equivalent: `tcc_debug_line()` DWARF branch (tccdbg.c:1431-1480)
+#[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation, clippy::cast_possible_wrap)]
 fn debug_line_dwarf(state: &mut TccState, cur_line: i32, cur_pc: i64) -> TccResult<()> {
     let line_sec = get_dwarf_line_sec(state);
 
@@ -2582,6 +2588,7 @@ fn emit_stabs_extern_sym(
 /// Emit DWARF typedef DIE.
 ///
 /// C equivalent: `tcc_debug_typedef()` DWARF branch (tccdbg.c:2480-2500)
+#[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation, clippy::cast_possible_wrap)]
 fn emit_dwarf_typedef(state: &mut TccState, sym: Option<SymId>) -> TccResult<()> {
     let info_idx = get_dwarf_info_sec(state);
     let str_idx = get_dwarf_str_sec(state);
@@ -2716,6 +2723,7 @@ fn debug_check_forw(state: &mut TccState, ctype: &CType, offset: usize) {
 // Unit tests
 // =============================================================================
 #[cfg(test)]
+#[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation, clippy::cast_possible_wrap)]
 mod tests {
     use super::*;
 
@@ -2903,6 +2911,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation, clippy::cast_possible_wrap)]
     fn test_debug_state_debug_next_type_default() {
         let ds = DebugState::default();
         assert!(ds.debug_next_type > 0, "debug_next_type should start at N_DEFAULT_DEBUG");

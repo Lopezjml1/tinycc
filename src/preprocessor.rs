@@ -1,6 +1,6 @@
-// Preprocessor — tokenizer and macro engine. Size casts for token positions,
-// variable naming, and control flow patterns follow the original tccpp.c.
-#![allow(clippy::cast_sign_loss)]
+// Preprocessor — tokenizer and macro engine. Cast safety allows are applied
+// at function level per AAP §0.8.1 to preserve CVE-2006-0635 compile-time
+// enforcement for new code. Variable naming follows the original tccpp.c.
 #![allow(clippy::items_after_statements)]
 #![allow(clippy::manual_let_else)]
 #![allow(clippy::no_effect_underscore_binding)]
@@ -292,6 +292,7 @@ impl Default for MacroDefinition {
     }
 }
 
+#[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation, clippy::cast_possible_wrap)]
 impl Default for PreprocessorState {
     fn default() -> Self {
         // Build the two-character operator table (matching tccpp.c:71-98).
@@ -621,6 +622,7 @@ pub fn tok_print(state: &PreprocessorState, tokens: &[Token], msg: &str) {
 /// Set a character class flag in the `isidnum_table`.
 ///
 /// C equivalent: `set_idnum()` in tccpp.c.
+#[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation, clippy::cast_possible_wrap)]
 pub fn set_idnum(state: &mut PreprocessorState, c: u8, val: u8) {
     state.isidnum_table[c as usize] = val;
 }

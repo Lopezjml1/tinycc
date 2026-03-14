@@ -2,11 +2,12 @@
 // integer casts between u8/u16/u32/i32/i64/u64 for register indices,
 // immediate fields, and opcode composition.  Identity operations
 // (e.g. `| (0 << 5)`) are kept for readability matching the ARM ARM.
+//
+// Cast lints (cast_sign_loss, cast_possible_truncation, cast_possible_wrap)
+// are applied at impl-block level rather than module level, so that new
+// free-standing functions are still checked by the crate-root deny.
 #![allow(clippy::bool_to_int_with_if)]
 #![allow(clippy::cast_lossless)]
-#![allow(clippy::cast_possible_truncation)]
-#![allow(clippy::cast_possible_wrap)]
-#![allow(clippy::cast_sign_loss)]
 #![allow(clippy::decimal_bitwise_operands)]
 #![allow(clippy::doc_markdown)]
 #![allow(clippy::identity_op)]
@@ -58,6 +59,7 @@
 //  Imports
 // ===========================================================================
 
+use crate::codegen;
 use crate::context::TccState;
 use crate::error::{TccError, TccResult};
 use crate::formats::elf::{
@@ -71,8 +73,8 @@ use crate::formats::elf::{
     R_AARCH64_MOVW_UABS_G3, R_AARCH64_NUM, R_AARCH64_PREL32, R_AARCH64_RELATIVE,
 };
 use crate::targets::{
-    add32le, add64le, read32le, write32le, write64le, CodegenBackend, GotPltEntry,
-    LinkerBackend,
+    add32le, add64le, read32le, read64le, write32le, write64le, CodegenBackend,
+    GotPltEntry, LinkerBackend,
 };
 use crate::types::{
     CType, CValue, SValue, SValueData, SValueSymInfo, Symbol, VT_BTYPE, VT_BOOL,
@@ -304,6 +306,7 @@ pub const RELOCATE_DLLPLT: i32 = 1;
 ///
 /// C equivalent: `intr(r)` (arm64-gen.c:102-106).
 #[inline]
+#[allow(clippy::cast_sign_loss)] // Register index is validated non-negative by debug_assert
 fn intr(r: i32) -> u32 {
     debug_assert!(r >= 0 && r <= 19, "intr: invalid GP register index {r}");
     if r == 19 {
@@ -319,6 +322,7 @@ fn intr(r: i32) -> u32 {
 ///
 /// C equivalent: `fltr(r)` (arm64-gen.c:108-111).
 #[inline]
+#[allow(clippy::cast_sign_loss)] // Register index validated non-negative by debug_assert
 fn fltr(r: i32) -> u32 {
     debug_assert!(
         r >= 20 && r <= 27,
@@ -339,6 +343,7 @@ fn is_freg(r: i32) -> bool {
 ///
 /// Used throughout the backend for immediate operand extraction.
 #[inline]
+#[allow(clippy::cast_possible_truncation)] // Floating-point to integer truncation is intentional
 fn sv_constant_value(sv: &SValue) -> i64 {
     match &sv.value {
         SValueData::Constant(cv) => match cv {
@@ -354,6 +359,7 @@ fn sv_constant_value(sv: &SValue) -> i64 {
 
 /// Extract a constant value as u64.
 #[inline]
+#[allow(clippy::cast_sign_loss)] // Bit-level reinterpretation of float bits to u64
 fn sv_constant_u64(sv: &SValue) -> u64 {
     match &sv.value {
         SValueData::Constant(cv) => match cv {
@@ -443,6 +449,8 @@ pub struct Arm64Backend {
 //  Arm64Backend — Construction and Private Helpers
 // ===========================================================================
 
+// Instruction encoding requires bit-width casts between u8/u16/u32/i32/i64/u64.
+#[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation, clippy::cast_possible_wrap)]
 impl Arm64Backend {
     /// Create a new AArch64 backend instance with default state.
     ///
@@ -873,18 +881,40 @@ impl Arm64Backend {
     ///
     /// C equivalent: `arm64_sym(rd, sv)` (arm64-gen.c helper).
     fn arm64_sym(state: &mut TccState, rd: u32, sv: &SValue) -> TccResult<()> {
+        let text_sec_idx = state.cur_text_section;
+        let insn_offset = state.sections.get(text_sec_idx)
+            .map(|s| s.data_offset)
+            .unwrap_or(0);
+
         // Emit ADRP + ADD for symbol references
         // ADRP Xd, #page   → 1_immlo(2)_10000_immhi(19)_Rd(5)
         Self::emit_insn(state, 0x9000_0000 | rd)?;
         // ADD Xd, Xd, #lo12 → 1_00_10001_00_imm12(12)_Rn(5)_Rd(5)
         Self::emit_insn(state, 0x9100_0000 | rd | (rd << 5))?;
 
-        // Add relocations for the symbol if present
+        // Emit relocations for VT_SYM references so the linker can patch
+        // the ADRP and ADD instructions with the symbol's final address.
         if (sv.r & VT_SYM) != 0 {
-            // The relocation entries would be added by the codegen module
-            // via greloca() when it detects VT_SYM on the SValue.
-            // The ADRP gets R_AARCH64_ADR_PREL_PG_HI21 and
-            // ADD gets R_AARCH64_ADD_ABS_LO12_NC.
+            if let SValueSymInfo::Sym(Some(ref sym)) = sv.sym_info {
+                let addend = match &sv.value {
+                    SValueData::Constant(CValue::Int(v)) => *v as i64,
+                    _ => 0,
+                };
+                // ADRP gets R_AARCH64_ADR_PREL_PG_HI21 (page-relative high bits)
+                codegen::greloca(
+                    state, text_sec_idx, sym,
+                    insn_offset as u64,
+                    R_AARCH64_ADR_PREL_PG_HI21 as i32,
+                    addend,
+                )?;
+                // ADD gets R_AARCH64_ADD_ABS_LO12_NC (low 12 bits)
+                codegen::greloca(
+                    state, text_sec_idx, sym,
+                    (insn_offset + 4) as u64,
+                    R_AARCH64_ADD_ABS_LO12_NC as i32,
+                    addend,
+                )?;
+            }
         }
         Ok(())
     }
@@ -1220,6 +1250,8 @@ impl Arm64Backend {
 //  gen_opil / gen_opf internal implementations
 // ===========================================================================
 
+// Instruction encoding arithmetic requires explicit bit-width casts.
+#[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation, clippy::cast_possible_wrap)]
 impl Arm64Backend {
     /// Unified integer operation handler for 32/64-bit operations.
     ///
@@ -1394,7 +1426,9 @@ impl Arm64Backend {
 //  CodegenBackend Trait Implementation (arm64-gen.c)
 // ===========================================================================
 
+// Instruction encoding and register mapping require bit-width casts.
 #[allow(unused_variables)]
+#[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation, clippy::cast_possible_wrap)]
 impl CodegenBackend for Arm64Backend {
     fn target_machine_defs(&self) -> &[&str] {
         TARGET_MACHINE_DEFS
@@ -1801,6 +1835,8 @@ impl CodegenBackend for Arm64Backend {
 //  LinkerBackend Trait Implementation (arm64-link.c)
 // ===========================================================================
 
+// Linker operations use bit-width casts for ELF relocation and address computation.
+#[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation, clippy::cast_possible_wrap)]
 impl LinkerBackend for Arm64Backend {
     /// Classify relocation as code (1) or data (0).
     /// C equivalent: `code_reloc(reloc_type)` (arm64-link.c:20-46).
@@ -2013,25 +2049,153 @@ impl LinkerBackend for Arm64Backend {
     }
 
     /// Create a PLT entry at the given GOT offset.
+    ///
+    /// Allocates a 32-byte PLT0 resolver header on first call, then appends a
+    /// 16-byte entry that stores the GOT offset (patched to instructions by
+    /// `relocate_plt` once final addresses are known).
+    ///
     /// C equivalent: `create_plt_entry(s1, got_offset, attr)` (arm64-link.c:82-116).
     fn create_plt_entry(
         &mut self,
-        _state: &mut TccState,
-        _got_offset: u32,
+        state: &mut TccState,
+        got_offset: u32,
     ) -> TccResult<u32> {
-        // Each PLT entry is 16 bytes (4 instructions):
-        //   ADRP  x16, GOT+offset
-        //   LDR   x17, [x16, #lo12(GOT+offset)]
-        //   ADD   x16, x16, #lo12(GOT+offset)
-        //   BR    x17
-        // In the full implementation, this writes to the PLT section
-        // and adds relocations for the GOT reference.
-        Ok(0)
+        let Some(plt_idx) = state.find_section(".plt") else {
+            return Ok(got_offset);
+        };
+
+        let sec = state.sections.get(plt_idx)
+            .ok_or_else(|| TccError::link("create_plt_entry: PLT section not found"))?;
+
+        // Reserve PLT0 header (32 bytes) on first entry
+        if sec.data_offset == 0 {
+            let sec = state.sections.get_mut(plt_idx)
+                .ok_or_else(|| TccError::link("create_plt_entry: PLT section not found"))?;
+            let start = sec.data.len();
+            sec.data.resize(start + 32, 0);
+            sec.data_offset += 32;
+        }
+
+        let sec = state.sections.get(plt_idx)
+            .ok_or_else(|| TccError::link("create_plt_entry: PLT section not found"))?;
+        let plt_offset = sec.data_offset as u32;
+
+        // Append 16-byte PLT entry: store GOT offset as 64-bit value.
+        // The actual ADRP+LDR+ADD+BR instructions are written by relocate_plt
+        // once final section addresses are known.
+        let sec = state.sections.get_mut(plt_idx)
+            .ok_or_else(|| TccError::link("create_plt_entry: PLT section not found"))?;
+        let start = sec.data.len();
+        sec.data.resize(start + 16, 0);
+        sec.data_offset += 16;
+
+        // Store got_offset as low 32 bits
+        write32le(&mut sec.data[start..], got_offset);
+        // Store high 32 bits (zero for 32-bit offsets)
+        write32le(&mut sec.data[start + 4..], 0);
+
+        Ok(plt_offset)
     }
 
-    /// Relocate PLT entries after final addresses.
-    /// C equivalent: `relocate_plt(s1)` (arm64-link.c:118-134).
-    fn relocate_plt(&mut self, _state: &mut TccState) -> TccResult<()> {
+    /// Relocate PLT entries after final section addresses are known.
+    ///
+    /// Writes the PLT0 resolver trampoline (STP+ADRP+LDR+ADD+BR+NOPs) and
+    /// patches each per-symbol PLT entry with ADRP+LDR+ADD+BR instructions
+    /// using page-relative offsets to the corresponding GOT slot.
+    ///
+    /// C equivalent: `relocate_plt(s1)` (arm64-link.c:118-164).
+    fn relocate_plt(&mut self, state: &mut TccState) -> TccResult<()> {
+        let Some(plt_idx) = state.find_section(".plt") else {
+            return Ok(());
+        };
+        let Some(got_idx) = state.find_section(".got") else {
+            return Ok(());
+        };
+
+        let got_addr = state.sections.get(got_idx).map(|s| s.sh_addr).unwrap_or(0);
+        let plt_addr = state.sections.get(plt_idx).map(|s| s.sh_addr).unwrap_or(0);
+
+        let sec = state.sections.get_mut(plt_idx)
+            .ok_or_else(|| TccError::link("relocate_plt: PLT section not found"))?;
+
+        if sec.data.len() < 32 {
+            return Ok(());
+        }
+
+        // --- PLT0 header (32 bytes): dynamic linker resolver trampoline ---
+        // GOT[1] holds the link_map pointer; GOT[2] holds the resolver address.
+        let got_page = got_addr.wrapping_add(16);
+        let plt0_page = plt_addr;
+        let off = (got_page >> 12).wrapping_sub(plt0_page >> 12);
+
+        // stp x16, x30, [sp, #-16]!
+        write32le(&mut sec.data[0..], 0xa9bf_7bf0);
+        // adrp x16, GOT+16 (page-relative)
+        write32le(&mut sec.data[4..],
+            0x9000_0010 | ((off & 0x1f_fffc) << 3) as u32 | ((off & 3) << 29) as u32);
+        // ldr x17, [x16, #lo12(GOT+16)]
+        write32le(&mut sec.data[8..],
+            0xf940_0211 | (((got_page & 0xff8) << 7) as u32));
+        // add x16, x16, #lo12(GOT+16)
+        write32le(&mut sec.data[12..],
+            0x9100_0210 | (((got_page & 0xfff) << 10) as u32));
+        // br x17
+        write32le(&mut sec.data[16..], 0xd61f_0220);
+        // nop × 3
+        write32le(&mut sec.data[20..], 0xd503_201f);
+        write32le(&mut sec.data[24..], 0xd503_201f);
+        write32le(&mut sec.data[28..], 0xd503_201f);
+
+        // --- Per-entry relocation (16 bytes each, starting at offset 32) ---
+        let data_len = sec.data.len();
+        let mut p = 32usize;
+        while p + 16 <= data_len {
+            let pc = plt_addr + p as u64;
+            // Read the stored GOT offset (64-bit) from the entry
+            let addr = got_addr + read64le(&sec.data[p..]);
+            let entry_off = (addr >> 12).wrapping_sub(pc >> 12);
+
+            if (entry_off.wrapping_add(1 << 20)) >> 21 != 0 {
+                return Err(TccError::link(&format!(
+                    "arm64: PLT relocation out of range (off=0x{entry_off:x}, addr=0x{addr:x}, pc=0x{pc:x})"
+                )));
+            }
+
+            // adrp x16, GOT+offset
+            write32le(&mut sec.data[p..],
+                0x9000_0010 | ((entry_off & 0x1f_fffc) << 3) as u32
+                | ((entry_off & 3) << 29) as u32);
+            // ldr x17, [x16, #lo12(GOT+offset)]
+            write32le(&mut sec.data[p + 4..],
+                0xf940_0211 | (((addr & 0xff8) << 7) as u32));
+            // add x16, x16, #lo12(GOT+offset)
+            write32le(&mut sec.data[p + 8..],
+                0x9100_0210 | (((addr & 0xfff) << 10) as u32));
+            // br x17
+            write32le(&mut sec.data[p + 12..], 0xd61f_0220);
+
+            p += 16;
+        }
+
+        // Patch GOT entries to point to PLT0 for lazy resolution
+        if let Some(plt_reloc_idx) = state.find_section(".rel.plt")
+            .or_else(|| state.find_section(".rela.plt"))
+        {
+            let plt_sh_addr = plt_addr;
+            let got_sec = state.sections.get_mut(got_idx)
+                .ok_or_else(|| TccError::link("relocate_plt: GOT section not found"))?;
+            // Each GOT entry for a PLT symbol initially points to PLT0
+            let got_data_len = got_sec.data.len();
+            let mut off = 0usize;
+            while off + 8 <= got_data_len {
+                let val = read64le(&got_sec.data[off..]);
+                if val == 0 {
+                    write64le(&mut got_sec.data[off..], plt_sh_addr);
+                }
+                off += 8;
+            }
+        }
+
         Ok(())
     }
 }

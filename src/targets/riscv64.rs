@@ -32,16 +32,9 @@
 //! - **CVE-2019-9754**: Macro stacks use `Vec` with `.pop()` returning `None`.
 //! - **CVE-2006-0635**: All signed/unsigned comparisons use explicit `TryInto`.
 
-// RISC-V instruction encoding requires extensive bit manipulation: extracting
-// immediate fields from 32-bit instruction words, encoding register numbers
-// (5-bit fields) into specific bit positions, and composing branch/jump offsets
-// from signed displacements. These operations inherently involve u32↔i32↔u8
-// casts with known-safe ranges defined by the RISC-V ISA specification.
-// Using per-expression #[allow] would require annotations on ~200+ lines of
-// instruction encoding logic, reducing readability without improving safety.
-#![allow(clippy::cast_possible_truncation)]
-#![allow(clippy::cast_sign_loss)]
-#![allow(clippy::cast_possible_wrap)]
+// Cast safety allows (cast_sign_loss, cast_possible_truncation, cast_possible_wrap)
+// are applied at impl-block/function level per AAP §0.8.1 to preserve CVE-2006-0635
+// compile-time enforcement for new code added outside these blocks.
 
 use crate::context::TccState;
 use crate::error::{TccError, TccResult};
@@ -452,6 +445,9 @@ pub(crate) struct Riscv64Backend {
     func_bound_add_epilog: bool,
 }
 
+// RISC-V instruction encoding: immediate fields, register indices (5-bit),
+// and branch/jump offsets require u32↔i32↔u8 casts within ISA-defined ranges.
+#[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation, clippy::cast_possible_wrap)]
 impl Riscv64Backend {
     /// Create a new RISC-V 64-bit backend instance.
     pub(crate) fn new() -> Self {
@@ -712,6 +708,9 @@ impl Riscv64Backend {
 //  CodegenBackend Implementation (riscv64-gen.c)
 // ===========================================================================
 
+// CodegenBackend: register allocation, load/store, and opcode emission use
+// bit-field casts constrained by RISC-V ISA encoding rules.
+#[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation, clippy::cast_possible_wrap)]
 #[allow(unused_variables)]
 impl CodegenBackend for Riscv64Backend {
     /// Return preprocessor macro definitions for RISC-V target.
@@ -1325,6 +1324,9 @@ impl CodegenBackend for Riscv64Backend {
 //  LinkerBackend Implementation (riscv64-link.c)
 // ===========================================================================
 
+// LinkerBackend: relocation patching and PLT generation use offset/address
+// casts constrained by ELF64 and RISC-V relocation field widths.
+#[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation, clippy::cast_possible_wrap)]
 impl LinkerBackend for Riscv64Backend {
     /// Classify relocation as code (1) or data (0).
     /// C equivalent: `code_reloc()` in `riscv64-link.c:27-62`.
@@ -1636,6 +1638,8 @@ impl LinkerBackend for Riscv64Backend {
 //  Additional Backend Methods (riscv64-gen.c: various)
 // ===========================================================================
 
+// Additional codegen helpers: variadic args and coverage counters.
+#[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation, clippy::cast_possible_wrap)]
 impl Riscv64Backend {
     /// Generate variadic argument start.
     /// C equivalent: `gen_va_start()` in `riscv64-gen.c:929-933`.
@@ -1745,11 +1749,13 @@ fn encode_rs2(reg: u8) -> u32 {
 }
 
 /// Encode first source register for compressed instructions.
+#[allow(clippy::cast_possible_truncation)]
 fn c_encode_rs1(reg: u8) -> u16 {
     (reg_value(reg) as u16) << 7
 }
 
 /// Encode second source register for compressed instructions.
+#[allow(clippy::cast_possible_truncation)]
 fn c_encode_rs2(reg: u8) -> u16 {
     (reg_value(reg) as u16) << 2
 }
@@ -1945,6 +1951,7 @@ pub(crate) fn asm_compute_constraints(
 // ===========================================================================
 
 #[cfg(test)]
+#[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation, clippy::cast_possible_wrap)]
 mod tests {
     use super::*;
 

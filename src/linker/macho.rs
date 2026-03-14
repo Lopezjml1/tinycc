@@ -17,13 +17,10 @@
 //! - GOT/PLT stub generation for indirect symbol access
 //! - macOS SDK path discovery
 
-// Mach-O linker — macOS executable format handling requires extensive size casts
-// between usize/u64/u32/u8 for load command offsets, section addresses, and symbol
-// indices. Complex functions are faithfully ported from tccmacho.c.
+// Mach-O linker — cast safety allows are applied at impl-block/function level
+// per AAP §0.8.1 to preserve CVE-2006-0635 compile-time enforcement for new code.
+// Complex functions are faithfully ported from tccmacho.c.
 #![allow(clippy::assigning_clones)]
-#![allow(clippy::cast_possible_truncation)]
-#![allow(clippy::cast_possible_wrap)]
-#![allow(clippy::cast_sign_loss)]
 #![allow(clippy::field_reassign_with_default)]
 #![allow(clippy::items_after_statements)]
 #![allow(clippy::manual_let_else)]
@@ -754,6 +751,7 @@ fn uleb128_size(mut v: u64) -> usize {
 
 /// Write a ULEB128-encoded value to a buffer.
 /// C equivalent: `write_uleb128()` (tccmacho.c:544)
+#[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation, clippy::cast_possible_wrap)]
 fn write_uleb128(buf: &mut Vec<u8>, mut v: u64) {
     loop {
         let mut byte = (v & 0x7f) as u8;
@@ -804,6 +802,7 @@ fn nlist64_to_bytes(nl: &NList64) -> Vec<u8> {
 
 /// Add a load command to the Mach-O state, returning its index.
 /// C equivalent: `add_lc()` (tccmacho.c:476)
+#[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation, clippy::cast_possible_wrap)]
 fn add_lc(mo: &mut MachoState, cmd: u32, cmdsize: u32) -> usize {
     let idx = mo.load_commands.len();
     let mut lc = vec![0u8; cmdsize as usize];
@@ -817,6 +816,7 @@ fn add_lc(mo: &mut MachoState, cmd: u32, cmdsize: u32) -> usize {
 
 /// Add a segment command, returning its index in `load_commands`.
 /// C equivalent: `add_segment()` (tccmacho.c:490)
+#[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation, clippy::cast_possible_wrap)]
 fn add_segment(mo: &mut MachoState, name: &str) -> usize {
     let cmdsize = mem::size_of::<SegmentCommand64>() as u32;
     let idx = add_lc(mo, LC_SEGMENT_64, cmdsize);
@@ -854,6 +854,7 @@ fn read_seg_cmd(buf: &[u8]) -> (u64, u64, u64, u64, u32) {
 /// Add a section to a segment's load command, updating the segment's section count.
 /// Returns the 1-based Mach-O section number for this section.
 /// C equivalent: `add_section()` (tccmacho.c:502)
+#[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation, clippy::cast_possible_wrap)]
 fn add_section(mo: &mut MachoState, seg_idx: usize, sect_name: &str, seg_name: &str) -> i32 {
     let sec64_size = mem::size_of::<Section64>() as u32;
     let lc_idx = mo.seg2lc[seg_idx];
@@ -885,6 +886,7 @@ fn add_section(mo: &mut MachoState, seg_idx: usize, sect_name: &str, seg_name: &
 
 /// Add a dylib load command.
 /// C equivalent: `add_dylib()` (tccmacho.c:520)
+#[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation, clippy::cast_possible_wrap)]
 fn add_dylib(mo: &mut MachoState, name: &str) -> usize {
     let name_bytes = name.as_bytes();
     let name_offset = mem::size_of::<DylibCommand>() as u32;
@@ -1264,6 +1266,7 @@ fn convert_symbol(
 
 /// Convert all ELF symbols to Mach-O [`NList64`] symbols and build the symbol table.
 /// C equivalent: `convert_symbols()` (tccmacho.c:1082-1100)
+#[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation, clippy::cast_possible_wrap)]
 fn convert_symbols(state: &mut TccState, mo: &mut MachoState) -> TccResult<()> {
     let symtab_idx = match find_section_index(state, ".symtab") {
         Some(idx) => idx,
@@ -1790,6 +1793,7 @@ fn common_prefix(a: &[u8], b: &[u8]) -> usize {
 }
 
 /// First pass: compute the serialized size of a trie node.
+#[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation, clippy::cast_possible_wrap)]
 fn serialize_trie_node(node: &TrieNode, _buf: &mut Vec<u8>) -> TccResult<usize> {
     let mut size = 0usize;
 
@@ -1817,6 +1821,7 @@ fn serialize_trie_node(node: &TrieNode, _buf: &mut Vec<u8>) -> TccResult<usize> 
 }
 
 /// Emit a trie node to the output buffer with correct offsets.
+#[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation, clippy::cast_possible_wrap)]
 fn emit_trie_node(node: &TrieNode, buf: &mut Vec<u8>) -> TccResult<()> {
     // Terminal info
     if let Some(address) = node.address {
@@ -2853,6 +2858,7 @@ pub(crate) fn macho_load_tbd(
 }
 
 /// Add a DLL reference to the state's loaded DLLs list.
+#[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation, clippy::cast_possible_wrap)]
 fn add_dll_ref(state: &mut TccState, name: &str) -> TccResult<()> {
     // Check if already loaded
     for dll in &state.loaded_dlls {
@@ -3053,6 +3059,7 @@ pub(crate) fn macho_load_dll(
 }
 
 /// Find the correct architecture slice in a fat binary.
+#[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation, clippy::cast_possible_wrap)]
 fn find_fat_slice(data: &[u8]) -> TccResult<(usize, usize)> {
     if data.len() < 8 {
         return Err(TccError::link("fat binary too small"));
@@ -3215,6 +3222,7 @@ pub(crate) fn tcc_add_macos_sdkpath(
 // ===========================================================================
 
 #[cfg(test)]
+#[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation, clippy::cast_possible_wrap)]
 mod tests {
     use super::*;
 

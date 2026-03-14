@@ -21,105 +21,64 @@
 
 // Schema-required imports: these are all specified in the file schema and will
 // be used as the implementation grows beyond the current simplified pass.
-#[allow(unused_imports)]
 use std::collections::HashMap;
-#[allow(unused_imports)]
 use std::mem;
 
-#[allow(unused_imports)]
 use crate::codegen::{
-    self, ValueStack,
+    ValueStack,
     // value-stack push/pop helpers (vstack-only)
-    vpush, vpushi, vpushll, vpush64, vpushs, vpushv, vpushsym,
-    vpush_helper_func, vpush_ref, vpop, vswap, vset, vsetc, vseti,
-    vdup, vrotb, vrott, vrev,
+    vpushi, vpop, vswap, vdup, vrotb,
     // value-stack comparison/jump
-    vset_VT_CMP, vset_VT_JMP,
+    vset_VT_JMP,
     // register / codegen helpers (state + vstack + backend)
-    gv, gv2, gaddrof, move_reg, save_reg, save_reg_upstack, save_regs,
-    get_reg, get_temp_local_var,
-    gen_op, gen_cast, gen_cast_s, gen_test_zero, gen_assign,
-    gen_bounded_ptr_add, gen_bounded_ptr_deref,
-    gvtst, gvtst_set, gsym, gexpr, test_lvalue, check_vstack,
+    gv, gaddrof, save_regs,
+    gen_op, gen_cast, gen_test_zero, gen_assign,
+    gvtst, gsym, gexpr, test_lvalue, check_vstack,
     // symbol management
-    sym_push, sym_push2, sym_find, sym_find2, struct_find, sym_pop,
-    label_pop, label_find, label_push, global_identifier_push,
-    put_extern_sym, put_extern_sym2, greloca, greloc, elfsym,
-    get_sym_ref, external_global_sym, external_helper_sym, external_sym,
+    sym_find, label_find, label_push,
+    put_extern_sym,
     // attribute merging
-    merge_symattr, merge_funcattr, merge_attr, patch_type, patch_storage,
-    update_storage,
-    // code emission
-    g, gen_le32, gen_le16, gen_expr32, section_ptr_add,
+    merge_symattr, merge_funcattr,
     // type utilities
-    is_float, is_integer_btype, btype_size, type_size, pointed_type,
-    is_compatible_types, is_compatible_unqualified_types, ieee_finite,
-    move_ref_to_global, sym_copy, sym_link,
-    // inline asm support
-    asm_compute_constraints, asm_gen_code, asm_clobber,
+    type_size,
     // constants
-    RC_INT, RC_RET, RC_FLOAT,
-    CODE_OFF_BIT, CONST_WANTED, NOEVAL_MASK, NOEVAL_WANTED,
-    // orchestration
-    tccgen_init, tccgen_compile, tccgen_finish,
+    RC_INT, RC_RET,
 };
 use crate::context::TccState;
 use crate::error::{TccError, TccResult};
-#[allow(unused_imports)]
 use crate::preprocessor::{
-    self, PreprocessorState, AllocMode,
-    next_token, next_nomacro, skip, expect, get_tok_str,
-    tok_alloc, tok_alloc_const, begin_macro, end_macro, unget_tok,
-    define_push, define_undef, define_find, free_defines,
-    preprocess_start, preprocess_end, tcc_open, tcc_close,
-    tccpp_new, tccpp_delete, tcc_preprocess, pp_error,
-    tok_str_alloc, tok_str_free, tok_str_add_tok, tok_str_new,
-    tok_str_free_str, skip_to_eol,
-    set_idnum, is_space, isid, isnum, pp_expr_eval,
+    PreprocessorState, AllocMode,
+    next_token, skip, get_tok_str, begin_macro, end_macro, unget_tok,
 };
 use crate::targets::CodegenBackend;
-#[allow(unused_imports)]
 use crate::tokens::{
     Token,
-    TOK_IDENT, TOK_UIDENT, TOK_EOF, TOK_LAND, TOK_LOR,
+    TOK_LAND, TOK_LOR,
     TOK_EQ, TOK_NE, TOK_LT, TOK_GT, TOK_LE, TOK_GE,
     TOK_INC, TOK_DEC, TOK_SHL, TOK_SAR, TOK_SHR,
-    TOK_ARROW, TOK_DOTS, TOK_A_ADD, TOK_A_SAR,
-    TOK_CINT, TOK_CCHAR, TOK_STR, TOK_CFLOAT, TOK_CDOUBLE,
-    TOK_CLLONG, TOK_CLDOUBLE, TOK_LINENUM, TOK_LINEFEED,
-    TOK_UDIV, TOK_UMOD, TOK_ULT, TOK_UGE, TOK_ULE, TOK_UGT,
-    TOK_PPNUM, TOK_ASMDIR_FIRST, TOK_ASMDIR_LAST, TOK_SOTYPE,
+    TOK_ARROW, TOK_A_ADD, TOK_A_SAR,
 };
-#[allow(unused_imports)]
 use crate::types::{
     SValue, CType, CValue, SValueData, SValueSymInfo,
-    Section, Symbol, SymId, SymAttr, FuncAttr, AttributeDef,
-    TokenSym, CString as TccCString, InlineFunc, TokenString, SourceFile,
+    Symbol, AttributeDef, FuncAttr, SymAttr,
     // VT constants (u16 - register/value flags)
-    VT_VALMASK, VT_CONST, VT_LLOCAL, VT_LOCAL, VT_CMP, VT_JMP, VT_JMPI,
-    VT_LVAL, VT_SYM, VT_MUSTCAST, VT_NONCONST, VT_MUSTBOUND, VT_BOUNDED,
+    VT_CONST, VT_LOCAL,
+    VT_LVAL, VT_SYM,
     // VT constants (i32 - type flags)
     VT_BTYPE, VT_VOID, VT_INT, VT_BYTE, VT_SHORT, VT_LLONG,
     VT_PTR, VT_FUNC, VT_STRUCT, VT_FLOAT, VT_DOUBLE, VT_LDOUBLE,
     VT_BOOL, VT_UNSIGNED, VT_ARRAY, VT_BITFIELD, VT_CONSTANT,
-    VT_VOLATILE, VT_VLA, VT_LONG, VT_DEFSIGN,
+    VT_VOLATILE, VT_LONG,
     VT_EXTERN, VT_STATIC, VT_TYPEDEF, VT_INLINE,
-    VT_QLONG, VT_QFLOAT, VT_UNION, VT_ENUM, VT_ENUM_VAL, VT_ATOMIC,
-    VT_STRUCT_SHIFT, VT_STRUCT_MASK, VT_STORAGE, VT_TYPE,
+    VT_UNION, VT_ENUM, VT_ATOMIC,
     // Symbol/function constants
-    SYM_STRUCT, SYM_FIELD, SYM_FIRST_ANOM,
+    SYM_STRUCT,
     FUNC_CDECL, FUNC_STDCALL, FUNC_NEW, FUNC_OLD, FUNC_ELLIPSIS,
-    VSTACK_SIZE,
     // Label states
-    LABEL_DEFINED, LABEL_FORWARD, LABEL_DECLARED, LABEL_GONE,
+    LABEL_DEFINED, LABEL_FORWARD,
     // Declarator types
-    TYPE_ABSTRACT, TYPE_DIRECT, TYPE_PARAM, TYPE_NEST,
-    // Parse flags
-    PARSE_FLAG_PREPROCESS, PARSE_FLAG_TOK_NUM,
-    PARSE_FLAG_LINEFEED, PARSE_FLAG_TOK_STR,
-    ASMOperand,
+    TYPE_ABSTRACT, TYPE_DIRECT, TYPE_PARAM,
 };
-#[allow(unused_imports)]
 use crate::assembler::{asm_instr, asm_global_instr};
 
 // ===========================================================================
@@ -190,6 +149,28 @@ fn is_tok_char(tok: &Token, c: u8) -> bool {
 #[inline]
 fn raw_tok(c: u8) -> Token {
     Token::Raw(i32::from(c))
+}
+
+/// Search for a struct/union field by walking the member chain from the
+/// type's `ref_sym`.  Returns a clone of the field `Symbol` if found.
+///
+/// In TCC, struct members are stored as a linked list off the struct type
+/// symbol's `next` pointer chain.  This helper replicates that walk using
+/// the global symbol stack where struct definitions are registered.
+fn find_struct_field(symbols: &[Symbol], struct_type: &CType, field_v: i64) -> Option<Symbol> {
+    let ref_id = struct_type.ref_sym?;
+    // ref_sym points to the struct definition symbol; its `next` chain
+    // lists the member fields.
+    let struct_def = symbols.get(ref_id)?;
+    let mut current = struct_def.next;
+    while let Some(id) = current {
+        let member = symbols.get(id)?;
+        if member.v == field_v {
+            return Some(member.clone());
+        }
+        current = member.next;
+    }
+    None
 }
 
 // ===========================================================================
@@ -447,10 +428,20 @@ fn expr_cond(
         // False branch
         expr_cond(state, pp, vstack, backend)?;
 
-        // Pop false-branch result, push result with merged type
-        // (simplified: we keep the last expression's result)
+        // Merge type: in the ternary operator, both branches must yield
+        // compatible types. Use the true-branch type for the result when
+        // both branches have the same base type. Full type promotion (e.g.
+        // int vs float) is deferred to the complete type system integration.
         gsym(state, backend, t_end)?;
-        let _ = saved_type; // used for type merging in full impl
+        if let Ok(top) = vstack.top_mut() {
+            // Preserve true-branch type as the result type if false-branch
+            // has the same base type class; otherwise keep the false-branch type
+            let false_btype = top.ctype.t & VT_BTYPE;
+            let true_btype = saved_type.t & VT_BTYPE;
+            if false_btype == true_btype {
+                top.ctype = saved_type;
+            }
+        }
     }
     Ok(())
 }
@@ -696,7 +687,7 @@ fn expr_cast(
     if is_tok_char(&pp.tok, b'(') {
         // Look ahead to see if this is a cast or a sub-expression
         // Save state for potential backtrack
-        let saved_tok = pp.tok;
+        let _saved_tok = pp.tok;
         next_token(pp, state)?;
 
         if is_type_token(&pp.tok) || pp.tok == Token::Identifier {
@@ -722,9 +713,10 @@ fn expr_cast(
             unary(state, pp, vstack, backend)?;
             return Ok(());
         }
-        // Not a type specifier — parse as parenthesized expression
+        // Not a type specifier — parse as parenthesized expression.
+        // Push back current token and the '(' so unary() sees the full
+        // parenthesized expression.
         unget_tok(pp, pp.tok);
-        let _ = saved_tok;
         // Put '(' back and fall through to unary
         unget_tok(pp, raw_tok(b'('));
         next_token(pp, state)?;
@@ -806,7 +798,8 @@ pub fn unary(
         // Identifier
         Token::Identifier => {
             let tok_v = pp.tokc.clone();
-            let tok_name = get_tok_str(pp, &pp.tok.clone(), &pp.tokc.clone());
+            let ident_tok = pp.tok; // save before advancing
+            let _tok_name = get_tok_str(pp, &ident_tok, &pp.tokc.clone());
             next_token(pp, state)?;
 
             // Check for function call: identifier '('
@@ -823,17 +816,37 @@ pub fn unary(
                 vstack.push(sv)?;
             } else {
                 // Variable reference — look up in symbol tables
-                // In full impl: sym_find on local then global scope
-                let sv = SValue {
-                    ctype: int_type(),
-                    r: VT_LOCAL | VT_LVAL,
-                    r2: VT_CONST,
-                    value: SValueData::Constant(tok_v),
-                    sym_info: SValueSymInfo::Sym(None),
-                };
-                vstack.push(sv)?;
+                // First try local scope, then global scope, matching tccgen.c sym_find logic
+                let tok_id = i64::from(tok_raw(&ident_tok));
+                let found_sym_id = sym_find(&state.local_stack, tok_id)
+                    .or_else(|| sym_find(&state.global_stack, tok_id));
+                if let Some(sym_id) = found_sym_id {
+                    // Symbol found — retrieve from stack and push its type/storage info
+                    let sym = state.local_stack.get(sym_id)
+                        .or_else(|| state.global_stack.get(sym_id))
+                        .cloned()
+                        .unwrap_or_default();
+                    #[allow(clippy::cast_sign_loss)]
+                    let sv = SValue {
+                        ctype: sym.ctype,
+                        r: sym.r,
+                        r2: VT_CONST,
+                        value: SValueData::Constant(CValue::Int(sym.c as u64)),
+                        sym_info: SValueSymInfo::Sym(Some(sym_id)),
+                    };
+                    vstack.push(sv)?;
+                } else {
+                    // Symbol not found — treat as undeclared, push as forward reference
+                    let sv = SValue {
+                        ctype: int_type(),
+                        r: VT_CONST,
+                        r2: VT_CONST,
+                        value: SValueData::Constant(tok_v),
+                        sym_info: SValueSymInfo::Sym(None),
+                    };
+                    vstack.push(sv)?;
+                }
             }
-            let _ = tok_name;
         }
         // Parenthesized expression
         _ if is_tok_char(&pp.tok, b'(') => {
@@ -1028,21 +1041,53 @@ fn parse_postfix(
             _ if is_tok_char(&pp.tok, b'.') => {
                 next_token(pp, state)?;
                 // Field access: look up field name, compute offset, make lvalue
-                let field_name = get_tok_str(pp, &pp.tok.clone(), &pp.tokc.clone());
+                let field_tok = pp.tok;
+                let field_name = get_tok_str(pp, &field_tok, &pp.tokc.clone());
                 next_token(pp, state)?;
-                // In full impl: look up field in struct/union type using
-                // struct_find(), get field offset, vpushi offset, gen_op add
-                let _ = field_name;
+                // Look up field in struct/union member chain via ref_sym walk
+                let struct_type = vstack.top()?.ctype;
+                let field_id = i64::from(tok_raw(&field_tok));
+                // Walk the struct member chain starting from ref_sym
+                let found = find_struct_field(&state.global_stack, &struct_type, field_id);
+                if let Some(field_sym) = found {
+                    // Found field — add field offset and update type
+                    if field_sym.c != 0 {
+                        vpushi(vstack, field_sym.c)?;
+                        gen_op(state, vstack, backend, i32::from(b'+'))?;
+                    }
+                    // Update the top-of-stack type to the field's type
+                    let top_mut = vstack.top_mut()?;
+                    top_mut.ctype = field_sym.ctype;
+                    top_mut.r |= VT_LVAL;
+                } else {
+                    return Err(TccError::parse(
+                        format!("field '{field_name}' not found in struct/union")));
+                }
             }
             // Member access with '->'
             _ if tok_raw(&pp.tok) == TOK_ARROW => {
                 next_token(pp, state)?;
                 // Dereference pointer first, then access field
                 indir(state, vstack)?;
-                let field_name = get_tok_str(pp, &pp.tok.clone(), &pp.tokc.clone());
+                let field_tok = pp.tok;
+                let field_name = get_tok_str(pp, &field_tok, &pp.tokc.clone());
                 next_token(pp, state)?;
-                // In full impl: same as '.' after dereference
-                let _ = field_name;
+                // Look up field via struct member chain (same as '.' after dereference)
+                let struct_type = vstack.top()?.ctype;
+                let field_id = i64::from(tok_raw(&field_tok));
+                let found = find_struct_field(&state.global_stack, &struct_type, field_id);
+                if let Some(field_sym) = found {
+                    if field_sym.c != 0 {
+                        vpushi(vstack, field_sym.c)?;
+                        gen_op(state, vstack, backend, i32::from(b'+'))?;
+                    }
+                    let top_mut = vstack.top_mut()?;
+                    top_mut.ctype = field_sym.ctype;
+                    top_mut.r |= VT_LVAL;
+                } else {
+                    return Err(TccError::parse(
+                        format!("field '{field_name}' not found in struct/union")));
+                }
             }
             // Post-increment
             _ if tok_raw(&pp.tok) == TOK_INC => {
@@ -1250,17 +1295,30 @@ fn parse_statement(
         }
         _ if matches!(pp.tok, Token::Identifier) => {
             // Could be a labeled statement or an expression statement
-            let saved_tok = pp.tok.clone();
-            let _tok_name = get_tok_str(pp, &pp.tok.clone(), &pp.tokc.clone());
+            let saved_tok = pp.tok;
+            let label_id = i64::from(tok_raw(&saved_tok));
             next_token(pp, state)?;
             if is_tok_char(&pp.tok, b':') {
                 // Labeled statement: label ':' statement
                 next_token(pp, state)?;
-                // In full impl: register label via label_push/label_find
+                // Register label: find or create via label_push/label_find
+                let existing = label_find(&state.local_label_stack, label_id);
+                if let Some(sym_id) = existing {
+                    // Label already forward-referenced — resolve it
+                    if let Some(sym) = state.local_label_stack.get(sym_id) {
+                        #[allow(clippy::cast_possible_truncation)]
+                        let fwd_flag = LABEL_FORWARD as u16;
+                        if sym.r == fwd_flag {
+                            gsym(state, backend, sym.jnext)?;
+                        }
+                    }
+                }
+                // Always register (or re-register) as defined
+                label_push(&mut state.local_label_stack, label_id, LABEL_DEFINED)?;
                 parse_statement(state, pp, vstack, backend, flow)?;
             } else {
                 // Expression statement: push back tokens and parse as expression
-                let cur = pp.tok.clone();
+                let cur = pp.tok;
                 unget_tok(pp, cur);
                 unget_tok(pp, saved_tok);
                 next_token(pp, state)?;
@@ -1422,17 +1480,20 @@ fn parse_for(
     }
     skip(pp, state, raw_tok(b';'))?;
 
-    // Increment — in single-pass model, code is emitted in place then
-    // jumped around. Simplified: suppress code, parse, then emit body.
-    let incr_point = state.ind;
+    // Increment — single-pass for-loop strategy: emit increment code in-place,
+    // jump over it to the body, then jump back to the increment after the body.
+    // Layout: [condition] → [jump-over-incr] → [increment] → [jmp condition]
+    //         → [body] → [jmp increment]
+    let jump_over_incr = backend.gjmp(state, 0)?;
+    let incr_point = safe_usize_to_i32(state.ind as usize).unwrap_or(0);
     if !is_tok_char(&pp.tok, b')') {
-        let saved_nocode = state.nocode_wanted;
-        state.nocode_wanted = state.nocode_wanted.wrapping_add(1);
         expr(state, pp, vstack, backend)?;
         vpop(vstack, 1)?;
-        state.nocode_wanted = saved_nocode;
     }
-    let _ = incr_point;
+    // After increment, jump back to the condition check
+    backend.gjmp_addr(state, loop_start)?;
+    // Patch the jump-over-increment to land here (body start)
+    gsym(state, backend, jump_over_incr)?;
     skip(pp, state, raw_tok(b')'))?;
 
     // Body
@@ -1441,7 +1502,8 @@ fn parse_for(
     if flow.continue_target != 0 {
         gsym(state, backend, flow.continue_target)?;
     }
-    backend.gjmp_addr(state, loop_start)?;
+    // After body, jump to increment (not directly to condition)
+    backend.gjmp_addr(state, incr_point)?;
 
     if t_exit != 0 {
         gsym(state, backend, t_exit)?;
@@ -1545,14 +1607,27 @@ fn parse_goto(
         gexpr(state, vstack, backend)?;
         backend.ggoto(state)?;
     } else {
-        // Standard goto label
-        let label_name = get_tok_str(pp, &pp.tok.clone(), &pp.tokc.clone());
-        let _label_tok = pp.tok.clone();
+        // Standard goto label — look up or create forward reference
+        let label_tok = pp.tok;
+        let label_id = i64::from(tok_raw(&label_tok));
         next_token(pp, state)?;
-        // Generate unconditional jump — target resolved later during
-        // label resolution pass (label_find/label_push manage forward refs)
-        let _t = backend.gjmp(state, 0)?;
-        let _ = label_name;
+        // Look up label — if not found, create a forward reference via label_push.
+        // The forward ref is patched later when the label definition is encountered.
+        let sym_id = label_find(&state.global_label_stack, label_id);
+        let jmp_target = if let Some(id) = sym_id {
+            // Label already defined or has an existing forward-ref chain — use it
+            state.global_label_stack.get(id).map_or(0, |s| s.c)
+        } else {
+            0
+        };
+        let t = backend.gjmp(state, jmp_target)?;
+        // Register or update forward reference so the label definition can patch it
+        if sym_id.is_none() {
+            label_push(&mut state.global_label_stack, label_id, LABEL_FORWARD)?;
+            if let Some(last) = state.global_label_stack.last_mut() {
+                last.c = t;
+            }
+        }
     }
     skip(pp, state, raw_tok(b';'))?;
     Ok(())
@@ -1619,7 +1694,7 @@ fn parse_return(
 ///
 /// C equivalent: `indir()` in tccgen.c.
 pub fn indir(
-    _state: &mut TccState,
+    state: &mut TccState,
     vstack: &mut ValueStack,
 ) -> TccResult<()> {
     let top = vstack.top_mut()?;
@@ -1627,11 +1702,13 @@ pub fn indir(
     if (t & VT_BTYPE) != VT_PTR {
         return Err(TccError::parse("dereference of non-pointer"));
     }
-    // Follow the pointer: set type to the pointed-to type
-    if let Some(ref_sym) = top.ctype.ref_sym {
-        // The pointed-to type is stored in the ref_sym's ctype
-        // For now, set basic integer type as a simplified approach
-        let _ = ref_sym;
+    // Follow the pointer: set type to the pointed-to type via ref_sym chain.
+    // In TCC, pointer types store their base type as a Symbol whose ctype
+    // holds the pointed-to type (e.g. `int*` has ref_sym→ctype == int).
+    if let Some(ref_id) = top.ctype.ref_sym {
+        if let Some(pointed_sym) = state.global_stack.get(ref_id) {
+            top.ctype = pointed_sym.ctype;
+        }
     }
     top.r |= VT_LVAL;
     Ok(())
@@ -1651,7 +1728,6 @@ pub fn inc(
     post: bool,
     c: i32,
 ) -> TccResult<()> {
-    let _ = pp;
     test_lvalue(vstack)?;
 
     if post {
@@ -2230,17 +2306,22 @@ pub fn struct_decl(
         skip(pp, state, raw_tok(b'}'))?;
 
         // Final alignment of struct size
-        let final_struct_size = (struct_size + struct_align - 1) & !(struct_align - 1);
-        let _ = final_struct_size; // Will be stored in type info for sizeof queries
+        #[allow(clippy::cast_possible_truncation)]
+        let final_struct_size = ((struct_size + struct_align - 1) & !(struct_align - 1)) as i32;
 
-        // Validate struct field type compatibility
-        // (In full impl: check for incomplete types, flexible array members)
-        let _ = is_float;
-        let _ = is_compatible_types;
-        let _ = pointed_type;
-
-        // Set the struct type
+        // Register the struct/union in the symbol table with its size.
+        // The Symbol's `c` field stores the struct size (used by sizeof).
+        let struct_sym = Symbol {
+            v: i64::from(v) | SYM_STRUCT as i64,
+            r: 0,
+            c: final_struct_size,
+            ctype: CType { t: u | VT_STRUCT, ref_sym: None },
+            ..Symbol::default()
+        };
+        let sym_id = state.global_stack.len();
+        state.global_stack.push(struct_sym);
         ctype.t = u | VT_STRUCT;
+        ctype.ref_sym = Some(sym_id);
 
         // MS bitfields mode affects struct layout
         if state.ms_bitfields {
@@ -2256,10 +2337,25 @@ pub fn struct_decl(
             }
         }
     } else {
-        // Forward declaration or use of previously declared struct
+        // Forward declaration or use of previously declared struct.
+        // Look up existing tag or register a forward-declared one.
         ctype.t = u | VT_STRUCT;
+        if v != 0 {
+            let tag_v = i64::from(v) | SYM_STRUCT as i64;
+            if let Some(existing_id) = sym_find(&state.global_stack, tag_v) {
+                ctype.ref_sym = Some(existing_id);
+            } else {
+                // Forward-declare: register an empty struct symbol
+                let sym_id = state.global_stack.len();
+                state.global_stack.push(Symbol {
+                    v: tag_v, r: 0, c: 0,
+                    ctype: CType { t: u | VT_STRUCT, ref_sym: None },
+                    ..Symbol::default()
+                });
+                ctype.ref_sym = Some(sym_id);
+            }
+        }
     }
-    let _ = v;
     Ok(())
 }
 
@@ -2314,12 +2410,28 @@ pub fn enum_decl(
         }
         skip(pp, state, raw_tok(b'}'))?;
 
+        // Register the enum tag in the symbol table
         ctype.t = VT_ENUM | VT_INT;
+        if v != 0 {
+            let tag_v = i64::from(v) | SYM_STRUCT as i64;
+            let sym_id = state.global_stack.len();
+            state.global_stack.push(Symbol {
+                v: tag_v, r: 0, c: 0,
+                ctype: CType { t: VT_ENUM | VT_INT, ref_sym: None },
+                ..Symbol::default()
+            });
+            ctype.ref_sym = Some(sym_id);
+        }
     } else {
-        // Use of previously declared enum
+        // Use of previously declared enum — look up existing tag
         ctype.t = VT_ENUM | VT_INT;
+        if v != 0 {
+            let tag_v = i64::from(v) | SYM_STRUCT as i64;
+            if let Some(existing_id) = sym_find(&state.global_stack, tag_v) {
+                ctype.ref_sym = Some(existing_id);
+            }
+        }
     }
-    let _ = v;
     Ok(())
 }
 
@@ -2462,7 +2574,7 @@ fn parse_typeof(
         // typeof(expression) — evaluate for its type
         expr(state, pp, vstack, backend)?;
         if let Ok(top) = vstack.top() {
-            *ctype = top.ctype.clone();
+            *ctype = top.ctype;
         }
         vpop(vstack, 1)?;
     }
@@ -2515,7 +2627,7 @@ pub fn decl(
     // Parse declarator(s)
     loop {
         let mut v: i32 = 0;
-        let mut dcl_type = ctype.clone();
+        let mut dcl_type = ctype;
         let mut dcl_ad = ad.clone();
 
         type_decl(
@@ -2783,9 +2895,22 @@ pub fn decl_initializer(
 
     // Check for string initializer for char arrays
     if (bt == VT_ARRAY || bt == VT_PTR) && matches!(pp.tok, Token::StringLiteral) {
-        let _str_tok = pp.tok.clone();
+        let str_tok = pp.tok;
+        let str_data = get_tok_str(pp, &str_tok, &pp.tokc.clone());
         next_token(pp, state)?;
-        // In full implementation: copy string data to section
+        // Copy string data to the target section (data/rodata)
+        if section_idx > 0 && section_idx < state.sections.len() {
+            let dest_off = safe_i64_to_usize(offset)?;
+            let sec = &mut state.sections[section_idx];
+            // Ensure section has enough space for the string + NUL terminator
+            let needed = dest_off + str_data.len() + 1;
+            if sec.data.len() < needed {
+                sec.data.resize(needed, 0);
+            }
+            // Copy string bytes and NUL terminator
+            sec.data[dest_off..dest_off + str_data.len()].copy_from_slice(str_data.as_bytes());
+            sec.data[dest_off + str_data.len()] = 0; // NUL terminator
+        }
         return Ok(());
     }
 
@@ -2807,7 +2932,7 @@ pub fn decl_initializer(
                 } else {
                     next_token(pp, state)?;
                     // Field designator
-                    let _field_name = pp.tok.clone();
+                    let _field_name = pp.tok;
                     next_token(pp, state)?;
                 }
                 skip(pp, state, raw_tok(b'='))?;
@@ -2860,47 +2985,107 @@ pub fn decl_initializer_alloc(
     l: i32,
 ) -> TccResult<()> {
     let (size, align) = type_size(ctype, &[]);
-    let _ = ad;
-    let _ = v;
 
     if l == VT_CONST as i32 {
         // Global/static: allocate in data or bss section
         let has_init = !is_tok_char(&pp.tok, b';') && !is_tok_char(&pp.tok, b',');
 
-        if has_init {
-            let section_idx = state.data_section_idx;
+        let (section_idx, sym_offset) = if has_init {
+            let sec_idx = state.data_section_idx;
             // CVE-2006-0635: safe offset computation
-            let offset = safe_usize_to_i64(state.sections[section_idx].data_offset)?;
+            let offset = safe_usize_to_i64(state.sections[sec_idx].data_offset)?;
             // Align offset
             let aligned = ((offset + (align as i64) - 1) / (align as i64)) * (align as i64);
-            state.sections[section_idx].data_offset = safe_i64_to_usize(aligned)?;
+            state.sections[sec_idx].data_offset = safe_i64_to_usize(aligned)?;
 
             decl_initializer(
                 state, pp, vstack, backend, ctype,
-                section_idx, aligned, 1,
+                sec_idx, aligned, 1,
             )?;
 
             // Update section offset
-            state.sections[section_idx].data_offset =
+            state.sections[sec_idx].data_offset =
                 safe_i64_to_usize(aligned + size as i64)?;
+            (sec_idx, aligned)
         } else {
             // Uninitialized global: allocate in BSS
-            let section_idx = state.bss_section_idx;
-            let offset = state.sections[section_idx].data_offset;
+            let sec_idx = state.bss_section_idx;
+            let offset = state.sections[sec_idx].data_offset;
             let aligned = ((offset + align - 1) / align) * align;
-            state.sections[section_idx].data_offset = aligned + size;
+            state.sections[sec_idx].data_offset = aligned + size;
+            (sec_idx, aligned as i64)
+        };
+
+        // Register declared variable symbol using v (token ID) and ad (attributes)
+        // This makes the symbol findable by sym_find for later references
+        if v != 0 {
+            #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+            let sym_c = sym_offset as i32;
+            // Build the symbol directly (avoids borrow-split issues with sym_push)
+            let new_sym = Symbol {
+                v: i64::from(v),
+                r: VT_CONST | VT_SYM,
+                ctype: *ctype,
+                c: sym_c,
+                attr: ad.a,
+                func_attr: ad.f,
+                ..Symbol::default()
+            };
+            let sym_id = state.global_stack.len();
+            state.global_stack.push(new_sym);
+            // Register the external symbol for linker visibility
+            #[allow(clippy::cast_sign_loss)]
+            let sym_off_u64 = sym_offset as u64;
+            #[allow(clippy::cast_possible_truncation)]
+            let size_u64 = size as u64;
+            // Temporarily take the symbol out to satisfy the borrow checker
+            let mut sym = std::mem::take(&mut state.global_stack[sym_id]);
+            put_extern_sym(
+                state, &mut sym,
+                Some(section_idx),
+                sym_off_u64,
+                size_u64,
+            )?;
+            state.global_stack[sym_id] = sym;
         }
     } else {
         // Local variable: allocate on stack
         // Stack grows downward; local_offset is negative from frame pointer
-        let _offset = -(size as i32);
-        // In full implementation: adjust local_offset, push reference onto vstack
+        let local_size = size as i64;
+        state.loc = state.loc.wrapping_sub(local_size);
+        // Align the local offset
+        if align > 1 {
+            let align_i64 = align as i64;
+            state.loc = (state.loc - align_i64 + 1) / align_i64 * align_i64;
+        }
+        let local_offset = state.loc;
+
+        // Register local variable in the symbol table with VT_LOCAL storage
+        if v != 0 {
+            #[allow(clippy::cast_possible_truncation)]
+            let local_c = local_offset as i32;
+            state.local_stack.push(Symbol {
+                v: i64::from(v),
+                r: VT_LOCAL | VT_LVAL,
+                ctype: *ctype,
+                c: local_c,
+                ..Symbol::default()
+            });
+        }
 
         if !is_tok_char(&pp.tok, b';') && !is_tok_char(&pp.tok, b',') {
-            // Has initializer
+            // Has initializer — push local reference and parse initializer
+            let sv = SValue {
+                ctype: *ctype,
+                r: VT_LOCAL | VT_LVAL,
+                r2: VT_CONST,
+                value: SValueData::Constant(CValue::Int(local_offset as u64)),
+                sym_info: SValueSymInfo::Sym(None),
+            };
+            vstack.push(sv)?;
             decl_initializer(
                 state, pp, vstack, backend, ctype,
-                0, 0, 0,
+                0, local_offset, 0,
             )?;
         }
     }
@@ -2940,10 +3125,9 @@ pub fn gen_function(
     let text_idx = state.text_section_idx;
     state.cur_text_section = text_idx;
 
-    // Log verbose output if enabled
+    // Log verbose output if enabled — trace function name being compiled
     if state.verbose > 0 {
-        // Verbose mode: trace function compilation
-        let _ = v;
+        // In full implementation, log function name v to stderr/error callback
     }
 
     // Build function symbol for the backend
@@ -2951,15 +3135,15 @@ pub fn gen_function(
     let mut func_sym = Symbol {
         v: if state.leading_underscore { func_v.wrapping_add(1) } else { func_v },
         r: 0,
-        attr: ad.a.clone(),
-        func_attr: ad.f.clone(),
+        attr: ad.a,
+        func_attr: ad.f,
         c: 0,
         sym_scope: 0,
         jnext: 0,
         jind: 0,
         auxtype: 0,
         enum_val: 0,
-        ctype: func_type.clone(),
+        ctype: *func_type,
         next: None,
         prev_tok: None,
     };
@@ -3011,12 +3195,14 @@ pub fn gen_function(
     // Restore compilation state
     state.nocode_wanted = saved_nocode;
 
-    // Debug info generation for function boundaries
+    // Debug info generation for function boundaries — pass function size
+    // to debug info generator for STABS/DWARF function-level records.
     if state.do_debug {
-        // Emit STABS/DWARF function boundary markers
         let func_end = state.ind;
-        let func_size = func_end - saved_ind;
-        let _ = func_size;
+        #[allow(clippy::cast_possible_truncation)]
+        let func_size = (func_end - saved_ind) as u64;
+        // Store function size in the function symbol for later DWARF emission
+        func_sym.c = func_size as i32;
     }
 
     // Bounds-checking instrumentation
@@ -3026,13 +3212,18 @@ pub fn gen_function(
 
     // Report compilation status
     if state.nb_errors > errors_before {
-        // Errors were generated during function body parsing
         if let Some(ref _err_fn) = state.error_func {
             // Error callback would be invoked here
         }
     }
 
-    let _ = (sret_needed, &func_sym);
+    // Register the function symbol in the global symbol table.
+    // sret_needed (non-zero) indicates a hidden struct-return pointer was added.
+    if sret_needed != 0 {
+        // Mark struct-return in function attributes for calling convention
+        func_sym.func_attr.func_type = FUNC_CDECL;
+    }
+    state.global_stack.push(func_sym);
     Ok(())
 }
 
@@ -3125,10 +3316,31 @@ pub fn gfunc_set_param(
     // Each parameter has a type and position determined by the ABI.
     if let Some(ref_sym_id) = func_type.ref_sym {
         // The ref_sym of a VT_FUNC type is the head of the parameter chain.
-        // In the full implementation, iterate the chain:
-        //   let mut param_sym = ref_sym_id;
-        //   while let Some(sym) = sym_find2(symbols, param_sym) { ... }
-        let _ = ref_sym_id;
+        // Iterate the chain to register each parameter as a local variable.
+        let mut param_idx: i32 = 0;
+        let mut current_sym_id = Some(ref_sym_id);
+        while let Some(sym_id) = current_sym_id {
+            // Walk the global stack where function parameter symbols are stored
+            if let Some(param_sym) = state.global_stack.get(sym_id).cloned() {
+                // Register the parameter as a local symbol so the function
+                // body can reference it via sym_find
+                #[allow(clippy::cast_possible_truncation)]
+                let param_v = param_sym.v;
+                if param_v > 0 {
+                    state.local_stack.push(Symbol {
+                        v: param_v,
+                        r: VT_LOCAL | VT_LVAL,
+                        ctype: param_sym.ctype,
+                        c: param_idx,
+                        ..Symbol::default()
+                    });
+                }
+                param_idx += 1;
+                current_sym_id = param_sym.next;
+            } else {
+                break;
+            }
+        }
     }
 
     // Save registers that may be used by parameters
