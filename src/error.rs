@@ -23,7 +23,7 @@
 use std::num::TryFromIntError;
 use thiserror::Error;
 
-/// Error types produced by the TinyCC Rust compiler.
+/// Error types produced by the `TinyCC` Rust compiler.
 ///
 /// Every fallible operation in the compiler returns [`TccResult<T>`], which
 /// uses this enum as its error type.  The variants are designed so that each

@@ -21,7 +21,7 @@
 //!
 //! # Rust Translation
 //!
-//! Since TinyCC is a compiler that *emits* code (rather than linking itself as
+//! Since `TinyCC` is a compiler that *emits* code (rather than linking itself as
 //! a shared library), this module provides a helper struct [`DsoHandle`] that
 //! generates the appropriate zero-initialized bytes for the `__dso_handle`
 //! symbol in the compiled output's data section. The actual address resolution
@@ -69,7 +69,7 @@ impl DsoHandle {
     ///
     /// * `pointer_size` — Size of a pointer on the target architecture in bytes.
     ///   Typically 4 for 32-bit targets (i386, ARM) or 8 for 64-bit targets
-    ///   (x86_64, AArch64, RISC-V 64).
+    ///   (`x86_64`, `AArch64`, RISC-V 64).
     ///
     /// # Returns
     ///

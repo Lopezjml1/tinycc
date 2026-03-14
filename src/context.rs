@@ -1342,6 +1342,19 @@ pub struct TccContext {
 //
 // Compile serialization is handled by `COMPILE_MUTEX`, and the `TccContext`
 // is only accessed by one thread at a time (required by `libtcc_test_mt.c`).
+//
+// SAFETY: `TccContext` wraps `TccState` whose fields are all owned types:
+// Vec, String, HashMap, PathBuf, Option<Box<dyn Fn>>, and std::fs::File.
+// All of these types implement `Send`. The `Box<dyn Fn(&str)>` error callback
+// is stored behind `Option` and only accessed from the owning thread.
+// The automatic `Send` derivation fails only because of the `dyn Fn` trait
+// object which does not have a `Send` bound in its type definition, but the
+// callback is never shared across threads — it is set once and called only
+// from the compilation thread that holds the `COMPILE_MUTEX` guard.
+// This `unsafe impl Send` is required by `libtcc_test_mt.c` which moves
+// `TccContext` instances between threads for concurrent compilation.
+// Note: This is a marker trait impl (AAP §0.7.2 exception) — no unsafe code
+// blocks are involved, only a type-system assertion about thread safety.
 unsafe impl Send for TccContext {}
 
 // ---------------------------------------------------------------------------

@@ -1,3 +1,6 @@
+// ARM cache flush — wrapper returns Result for API consistency.
+#![allow(clippy::unnecessary_wraps)]
+
 // Copyright (c) 2024 tinycc-rs contributors
 // SPDX-License-Identifier: MIT OR LGPL-2.1-or-later
 //
@@ -31,7 +34,7 @@
 //! in `src/runtime.rs` per AAP §0.7.2, which mandates that `unsafe` blocks
 //! for platform syscalls reside exclusively in that module.
 //!
-//! On non-ARM targets (x86, x86-64, AArch64, RISC-V), the instruction cache
+//! On non-ARM targets (x86, x86-64, `AArch64`, RISC-V), the instruction cache
 //! is kept coherent by hardware, so `clear_cache` is a no-op that returns
 //! `Ok(())` immediately.
 //!
@@ -41,9 +44,9 @@
 //!   The kernel documentation notes this is a private interface, but TCC
 //!   uses it because there is no standard userspace API for cache flushing
 //!   on ARM Linux.
-//! - **AArch64**: Uses a different mechanism (`DC CVAU` / `IC IVAU` instructions
+//! - **`AArch64`**: Uses a different mechanism (`DC CVAU` / `IC IVAU` instructions
 //!   or `__builtin___clear_cache`); see `src/runtime_lib/arm64_math.rs` for
-//!   the AArch64 cache flush path.
+//!   the `AArch64` cache flush path.
 //! - **x86/x86-64**: Cache coherent by design; no flush needed.
 
 use crate::error::TccResult;
@@ -181,7 +184,7 @@ pub fn clear_cache(beginning: usize, end: usize) -> TccResult<()> {
 
 /// No-op cache flush for non-ARM targets.
 ///
-/// On x86, x86-64, AArch64, and RISC-V architectures, the instruction
+/// On x86, x86-64, `AArch64`, and RISC-V architectures, the instruction
 /// cache is kept coherent with the data cache by hardware. No explicit
 /// flush is needed after writing machine code to memory.
 ///

@@ -1,7 +1,7 @@
 //! ELF (Executable and Linkable Format) binary format definitions.
 //!
 //! This module provides Rust struct definitions and constants translated from
-//! the original TinyCC `elf.h` header (3,324 lines). All structs use `#[repr(C)]`
+//! the original `TinyCC` `elf.h` header (3,324 lines). All structs use `#[repr(C)]`
 //! for binary compatibility with the ELF specification.
 //!
 //! C equivalent: `elf.h`
@@ -13,6 +13,10 @@
 #![allow(clippy::cast_possible_truncation)]
 #![allow(clippy::cast_sign_loss)]
 #![allow(clippy::cast_possible_wrap)]
+
+// ELF format definitions — struct field prefixes (e_*, sh_*, st_*, p_*, etc.)
+// preserve the ELF specification naming convention from elf.h for traceability.
+#![allow(clippy::struct_field_names)]
 
 // ---------------------------------------------------------------------------
 // ELF Type Aliases (elf.h lines 27-70)
@@ -60,7 +64,7 @@ pub type Elf64Versym = Elf64Half;
 // ELF Identification Constants (elf.h lines 117-173)
 // ---------------------------------------------------------------------------
 
-/// Number of bytes in e_ident[]
+/// Number of bytes in `e_ident`[]
 pub const EI_NIDENT: usize = 16;
 /// File identification byte 0 index
 pub const EI_MAG0: usize = 0;
@@ -104,7 +108,7 @@ pub const EI_VERSION: usize = 6;
 pub const EI_OSABI: usize = 7;
 /// UNIX System V ABI
 pub const ELFOSABI_NONE: u8 = 0;
-/// Alias for ELFOSABI_NONE
+/// Alias for `ELFOSABI_NONE`
 pub const ELFOSABI_SYSV: u8 = 0;
 /// HP-UX
 pub const ELFOSABI_HPUX: u8 = 1;
@@ -488,8 +492,8 @@ pub struct Elf32Sym {
 }
 
 /// 64-bit ELF symbol table entry.
-/// IMPORTANT: Field order differs from Elf32_Sym — st_info/st_other/st_shndx
-/// come before st_value/st_size in the 64-bit variant.
+/// IMPORTANT: Field order differs from `Elf32_Sym` — `st_info/st_other/st_shndx`
+/// come before `st_value/st_size` in the 64-bit variant.
 /// C equivalent: `Elf64_Sym` (elf.h:407-416)
 #[repr(C)]
 #[derive(Debug, Clone, Copy)]
@@ -610,8 +614,8 @@ pub struct Elf32Phdr {
 }
 
 /// 64-bit ELF program header.
-/// IMPORTANT: p_flags is in position 2 (after p_type), unlike Elf32_Phdr
-/// where p_flags is in position 7.
+/// IMPORTANT: `p_flags` is in position 2 (after `p_type`), unlike `Elf32_Phdr`
+/// where `p_flags` is in position 7.
 /// C equivalent: `Elf64_Phdr` (elf.h:570-580)
 #[repr(C)]
 #[derive(Debug, Clone, Copy)]
@@ -640,27 +644,27 @@ pub struct Elf64Phdr {
 
 /// 32-bit ELF dynamic section entry.
 /// The C union `d_un { d_val, d_ptr }` is modeled as a single `d_val` field
-/// since both union members have the same size (Elf32_Word).
+/// since both union members have the same size (`Elf32_Word`).
 /// C equivalent: `Elf32_Dyn` (elf.h:664-673)
 #[repr(C)]
 #[derive(Debug, Clone, Copy)]
 pub struct Elf32Dyn {
     /// Dynamic entry type tag
     pub d_tag: Elf32Sword,
-    /// Integer or address value (union d_val/d_ptr)
+    /// Integer or address value (union `d_val/d_ptr`)
     pub d_val: Elf32Word,
 }
 
 /// 64-bit ELF dynamic section entry.
 /// The C union `d_un { d_val, d_ptr }` is modeled as a single `d_val` field
-/// since both union members have the same size (Elf64_Xword).
+/// since both union members have the same size (`Elf64_Xword`).
 /// C equivalent: `Elf64_Dyn` (elf.h:674-682)
 #[repr(C)]
 #[derive(Debug, Clone, Copy)]
 pub struct Elf64Dyn {
     /// Dynamic entry type tag
     pub d_tag: Elf64Sxword,
-    /// Integer or address value (union d_val/d_ptr)
+    /// Integer or address value (union `d_val/d_ptr`)
     pub d_val: Elf64Xword,
 }
 
@@ -707,7 +711,7 @@ pub struct Elf32Verdef {
     pub vd_version: Elf32Half,
     /// Version information flags
     pub vd_flags: Elf32Half,
-    /// Version index (VER_NDX_*)
+    /// Version index (`VER_NDX`_*)
     pub vd_ndx: Elf32Half,
     /// Number of associated aux entries
     pub vd_cnt: Elf32Half,
@@ -728,7 +732,7 @@ pub struct Elf64Verdef {
     pub vd_version: Elf64Half,
     /// Version information flags
     pub vd_flags: Elf64Half,
-    /// Version index (VER_NDX_*)
+    /// Version index (`VER_NDX`_*)
     pub vd_ndx: Elf64Half,
     /// Number of associated aux entries
     pub vd_cnt: Elf64Half,
@@ -837,7 +841,7 @@ pub struct Elf64Vernaux {
 pub struct Elf32AuxvT {
     /// Entry type
     pub a_type: u32,
-    /// Integer value (union a_val)
+    /// Integer value (union `a_val`)
     pub a_val: u32,
 }
 
@@ -848,7 +852,7 @@ pub struct Elf32AuxvT {
 pub struct Elf64AuxvT {
     /// Entry type
     pub a_type: u64,
-    /// Integer value (union a_val)
+    /// Integer value (union `a_val`)
     pub a_val: u64,
 }
 
@@ -924,22 +928,22 @@ pub struct Elf64Lib {
 // Helper Functions (ELF macros)
 // ---------------------------------------------------------------------------
 
-/// Extract symbol binding from st_info.
+/// Extract symbol binding from `st_info`.
 /// C equivalent: `ELF32_ST_BIND` / `ELF64_ST_BIND` macro
 #[inline]
 pub const fn elf_st_bind(val: u8) -> u8 { val >> 4 }
 
-/// Extract symbol type from st_info.
+/// Extract symbol type from `st_info`.
 /// C equivalent: `ELF32_ST_TYPE` / `ELF64_ST_TYPE` macro
 #[inline]
 pub const fn elf_st_type(val: u8) -> u8 { val & 0xf }
 
-/// Construct st_info from binding and type.
+/// Construct `st_info` from binding and type.
 /// C equivalent: `ELF32_ST_INFO` / `ELF64_ST_INFO` macro
 #[inline]
 pub const fn elf_st_info(bind: u8, sym_type: u8) -> u8 { (bind << 4) + (sym_type & 0xf) }
 
-/// Extract symbol visibility from st_other.
+/// Extract symbol visibility from `st_other`.
 /// C equivalent: `ELF32_ST_VISIBILITY` / `ELF64_ST_VISIBILITY` macro
 #[inline]
 pub const fn elf_st_visibility(other: u8) -> u8 { other & 0x03 }
@@ -954,7 +958,7 @@ pub const fn elf32_r_sym(val: u32) -> u32 { val >> 8 }
 #[inline]
 pub const fn elf32_r_type(val: u32) -> u32 { val & 0xff }
 
-/// Construct r_info (32-bit).
+/// Construct `r_info` (32-bit).
 /// C equivalent: `ELF32_R_INFO` macro
 #[inline]
 pub const fn elf32_r_info(sym: u32, r_type: u32) -> u32 { (sym << 8) + (r_type & 0xff) }
@@ -969,7 +973,7 @@ pub const fn elf64_r_sym(i: u64) -> u64 { i >> 32 }
 #[inline]
 pub const fn elf64_r_type(i: u64) -> u64 { i & 0xffffffff }
 
-/// Construct r_info (64-bit).
+/// Construct `r_info` (64-bit).
 /// C equivalent: `ELF64_R_INFO` macro
 #[inline]
 pub const fn elf64_r_info(sym: u64, r_type: u64) -> u64 { (sym << 32) + r_type }
@@ -2827,9 +2831,9 @@ pub const EF_SPARC_EXT_MASK: u32 = 0xFFFF00;
 pub const EF_SPARC_HAL_R1: u32 = 0x000400;
 /// little endian data
 pub const EF_SPARC_LEDATA: u32 = 0x800000;
-/// Sun UltraSPARC1 extensions
+/// Sun `UltraSPARC1` extensions
 pub const EF_SPARC_SUN_US1: u32 = 0x000200;
-/// Sun UltraSPARCIII extensions
+/// Sun `UltraSPARCIII` extensions
 pub const EF_SPARC_SUN_US3: u32 = 0x000800;
 
 // ---------------------------------------------------------------------------
@@ -2841,7 +2845,7 @@ pub const ELFMAG: &[u8; 4] = b"\x7fELF";
 pub const ELFOSABI_AROS: u32 = 15;
 /// Linux TMS320C6000.
 pub const ELFOSABI_C6000_LINUX: u32 = 65;
-/// FenixOS.
+/// `FenixOS`.
 pub const ELFOSABI_FENIXOS: u32 = 16;
 /// Hewlett-Packard Non-Stop Kernel.
 pub const ELFOSABI_NSK: u32 = 14;
@@ -3034,7 +3038,7 @@ pub const RHF_GUARANTEE_START_INIT: u32 = 1 << 7;
 pub const RHF_NONE: u32 = 0;
 /// Hash size not power of 2
 pub const RHF_NOTPOT: u32 = 1 << 1;
-/// Ignore LD_LIBRARY_PATH
+/// Ignore `LD_LIBRARY_PATH`
 pub const RHF_NO_LIBRARY_REPLACEMENT: u32 = 1 << 2;
 pub const RHF_NO_MOVE: u32 = 1 << 3;
 pub const RHF_NO_UNRES_UNDEF: u32 = 1 << 13;
@@ -3357,7 +3361,7 @@ pub const R_PARISC_TLS_DTPOFF64: u32 = 245;
 pub const R_PARISC_TLS_GD14R: u32 = 235;
 /// GD 21-bit left.
 pub const R_PARISC_TLS_GD21L: u32 = 234;
-/// GD call to __t_g_a.
+/// GD call to __`t_g_a`.
 pub const R_PARISC_TLS_GDCALL: u32 = 236;
 pub const R_PARISC_TLS_IE14R: u32 = R_PARISC_LTOFF_TP14R;
 pub const R_PARISC_TLS_IE21L: u32 = R_PARISC_LTOFF_TP21L;
@@ -3365,7 +3369,7 @@ pub const R_PARISC_TLS_IE21L: u32 = R_PARISC_LTOFF_TP21L;
 pub const R_PARISC_TLS_LDM14R: u32 = 238;
 /// LD module 21-bit left.
 pub const R_PARISC_TLS_LDM21L: u32 = 237;
-/// LD module call to __t_g_a.
+/// LD module call to __`t_g_a`.
 pub const R_PARISC_TLS_LDMCALL: u32 = 239;
 /// LD offset 14-bit right.
 pub const R_PARISC_TLS_LDO14R: u32 = 241;
@@ -3611,7 +3615,7 @@ pub const R_TILEGX_TLS_DTPOFF32: u32 = 110;
 pub const R_TILEGX_TLS_DTPOFF64: u32 = 107;
 /// "jal" for TLS GD
 pub const R_TILEGX_TLS_GD_CALL: u32 = 112;
-/// "ld_tls" for TLS IE
+/// "`ld_tls`" for TLS IE
 pub const R_TILEGX_TLS_IE_LOAD: u32 = 117;
 /// 32-bit offset in static TLS block
 pub const R_TILEGX_TLS_TPOFF32: u32 = 111;
@@ -3625,13 +3629,13 @@ pub const R_TILEGX_TLS_TPOFF64: u32 = 108;
 pub const R_TILEPRO_DEST_IMM8_X1: u32 = 55;
 /// X0 pipe 16-bit GOT offset
 pub const R_TILEPRO_IMM16_X0_GOT: u32 = 39;
-/// X0 pipe ha() 16-bit GOT offset
+/// X0 pipe `ha()` 16-bit GOT offset
 pub const R_TILEPRO_IMM16_X0_GOT_HA: u32 = 45;
 /// X0 pipe high 16-bit GOT offset
 pub const R_TILEPRO_IMM16_X0_GOT_HI: u32 = 43;
 /// X0 pipe low 16-bit GOT offset
 pub const R_TILEPRO_IMM16_X0_GOT_LO: u32 = 41;
-/// X0 pipe PC relative ha() 16 bit
+/// X0 pipe PC relative `ha()` 16 bit
 pub const R_TILEPRO_IMM16_X0_HA_PCREL: u32 = 37;
 /// X0 pipe PC relative high 16 bit
 pub const R_TILEPRO_IMM16_X0_HI_PCREL: u32 = 35;
@@ -3641,7 +3645,7 @@ pub const R_TILEPRO_IMM16_X0_LO_PCREL: u32 = 33;
 pub const R_TILEPRO_IMM16_X0_PCREL: u32 = 31;
 /// X0 pipe 16-bit TLS GD offset
 pub const R_TILEPRO_IMM16_X0_TLS_GD: u32 = 66;
-/// X0 pipe ha() 16-bit TLS GD offset
+/// X0 pipe `ha()` 16-bit TLS GD offset
 pub const R_TILEPRO_IMM16_X0_TLS_GD_HA: u32 = 72;
 /// X0 pipe high 16-bit TLS GD offset
 pub const R_TILEPRO_IMM16_X0_TLS_GD_HI: u32 = 70;
@@ -3649,7 +3653,7 @@ pub const R_TILEPRO_IMM16_X0_TLS_GD_HI: u32 = 70;
 pub const R_TILEPRO_IMM16_X0_TLS_GD_LO: u32 = 68;
 /// X0 pipe 16-bit TLS IE offset
 pub const R_TILEPRO_IMM16_X0_TLS_IE: u32 = 74;
-/// X0 pipe ha() 16-bit TLS IE offset
+/// X0 pipe `ha()` 16-bit TLS IE offset
 pub const R_TILEPRO_IMM16_X0_TLS_IE_HA: u32 = 80;
 /// X0 pipe high 16-bit TLS IE offset
 pub const R_TILEPRO_IMM16_X0_TLS_IE_HI: u32 = 78;
@@ -3657,7 +3661,7 @@ pub const R_TILEPRO_IMM16_X0_TLS_IE_HI: u32 = 78;
 pub const R_TILEPRO_IMM16_X0_TLS_IE_LO: u32 = 76;
 /// X0 pipe 16-bit TLS LE offset
 pub const R_TILEPRO_IMM16_X0_TLS_LE: u32 = 85;
-/// X0 pipe ha() 16-bit TLS LE offset
+/// X0 pipe `ha()` 16-bit TLS LE offset
 pub const R_TILEPRO_IMM16_X0_TLS_LE_HA: u32 = 91;
 /// X0 pipe high 16-bit TLS LE offset
 pub const R_TILEPRO_IMM16_X0_TLS_LE_HI: u32 = 89;
@@ -3665,13 +3669,13 @@ pub const R_TILEPRO_IMM16_X0_TLS_LE_HI: u32 = 89;
 pub const R_TILEPRO_IMM16_X0_TLS_LE_LO: u32 = 87;
 /// X1 pipe 16-bit GOT offset
 pub const R_TILEPRO_IMM16_X1_GOT: u32 = 40;
-/// X1 pipe ha() 16-bit GOT offset
+/// X1 pipe `ha()` 16-bit GOT offset
 pub const R_TILEPRO_IMM16_X1_GOT_HA: u32 = 46;
 /// X1 pipe high 16-bit GOT offset
 pub const R_TILEPRO_IMM16_X1_GOT_HI: u32 = 44;
 /// X1 pipe low 16-bit GOT offset
 pub const R_TILEPRO_IMM16_X1_GOT_LO: u32 = 42;
-/// X1 pipe PC relative ha() 16 bit
+/// X1 pipe PC relative `ha()` 16 bit
 pub const R_TILEPRO_IMM16_X1_HA_PCREL: u32 = 38;
 /// X1 pipe PC relative high 16 bit
 pub const R_TILEPRO_IMM16_X1_HI_PCREL: u32 = 36;
@@ -3681,7 +3685,7 @@ pub const R_TILEPRO_IMM16_X1_LO_PCREL: u32 = 34;
 pub const R_TILEPRO_IMM16_X1_PCREL: u32 = 32;
 /// X1 pipe 16-bit TLS GD offset
 pub const R_TILEPRO_IMM16_X1_TLS_GD: u32 = 67;
-/// X1 pipe ha() 16-bit TLS GD offset
+/// X1 pipe `ha()` 16-bit TLS GD offset
 pub const R_TILEPRO_IMM16_X1_TLS_GD_HA: u32 = 73;
 /// X1 pipe high 16-bit TLS GD offset
 pub const R_TILEPRO_IMM16_X1_TLS_GD_HI: u32 = 71;
@@ -3689,7 +3693,7 @@ pub const R_TILEPRO_IMM16_X1_TLS_GD_HI: u32 = 71;
 pub const R_TILEPRO_IMM16_X1_TLS_GD_LO: u32 = 69;
 /// X1 pipe 16-bit TLS IE offset
 pub const R_TILEPRO_IMM16_X1_TLS_IE: u32 = 75;
-/// X1 pipe ha() 16-bit TLS IE offset
+/// X1 pipe `ha()` 16-bit TLS IE offset
 pub const R_TILEPRO_IMM16_X1_TLS_IE_HA: u32 = 81;
 /// X1 pipe high 16-bit TLS IE offset
 pub const R_TILEPRO_IMM16_X1_TLS_IE_HI: u32 = 79;
@@ -3697,7 +3701,7 @@ pub const R_TILEPRO_IMM16_X1_TLS_IE_HI: u32 = 79;
 pub const R_TILEPRO_IMM16_X1_TLS_IE_LO: u32 = 77;
 /// X1 pipe 16-bit TLS LE offset
 pub const R_TILEPRO_IMM16_X1_TLS_LE: u32 = 86;
-/// X1 pipe ha() 16-bit TLS LE offset
+/// X1 pipe `ha()` 16-bit TLS LE offset
 pub const R_TILEPRO_IMM16_X1_TLS_LE_HA: u32 = 92;
 /// X1 pipe high 16-bit TLS LE offset
 pub const R_TILEPRO_IMM16_X1_TLS_LE_HI: u32 = 90;
@@ -3733,7 +3737,7 @@ pub const R_TILEPRO_TLS_DTPMOD32: u32 = 82;
 pub const R_TILEPRO_TLS_DTPOFF32: u32 = 83;
 /// "jal" for TLS GD
 pub const R_TILEPRO_TLS_GD_CALL: u32 = 60;
-/// "lw_tls" for TLS IE
+/// "`lw_tls`" for TLS IE
 pub const R_TILEPRO_TLS_IE_LOAD: u32 = 65;
 /// Offset in static TLS block
 pub const R_TILEPRO_TLS_TPOFF32: u32 = 84;

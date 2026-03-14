@@ -1,3 +1,16 @@
+// Utility tools — archiver, dependency generator, and impdef tool. Variable
+// naming and struct patterns follow the original tcctools.c for traceability.
+// Complex functions are faithfully ported from the C implementation.
+#![allow(clippy::doc_markdown)]
+#![allow(clippy::format_push_string)]
+#![allow(clippy::items_after_statements)]
+#![allow(clippy::manual_let_else)]
+#![allow(clippy::missing_errors_doc)]
+#![allow(clippy::needless_for_each)]
+#![allow(clippy::similar_names)]
+#![allow(clippy::struct_field_names)]
+#![allow(clippy::too_many_lines)]
+
 // Copyright (c) 2024 tinycc-rs contributors
 // SPDX-License-Identifier: MIT OR LGPL-2.1-or-later
 //
@@ -47,7 +60,7 @@ const ARFMAG: &[u8; 2] = b"`\n";
 /// Size of an archive member header in bytes.
 const AR_HDR_SIZE: usize = 60;
 
-/// Maximum length of the ar_name field in an archive header.
+/// Maximum length of the `ar_name` field in an archive header.
 const AR_NAME_MAX: usize = 16;
 
 // ---------------------------------------------------------------------------
@@ -60,12 +73,12 @@ const AR_NAME_MAX: usize = 16;
 /// Each field is a fixed-width ASCII string, right-padded with spaces.
 ///
 /// Layout (total 60 bytes):
-///   - ar_name:  16 bytes — member name (terminated with '/')
-///   - ar_date:  12 bytes — decimal modification time
-///   - ar_uid:    6 bytes — decimal user ID
-///   - ar_gid:    6 bytes — decimal group ID
-///   - ar_mode:   8 bytes — octal file mode
-///   - ar_size:  10 bytes — decimal file size in bytes
+///   - `ar_name`:  16 bytes — member name (terminated with '/')
+///   - `ar_date`:  12 bytes — decimal modification time
+///   - `ar_uid`:    6 bytes — decimal user ID
+///   - `ar_gid`:    6 bytes — decimal group ID
+///   - `ar_mode`:   8 bytes — octal file mode
+///   - `ar_size`:  10 bytes — decimal file size in bytes
 ///   - ar_fmag:   2 bytes — "`\n" magic
 #[derive(Clone)]
 struct ArHdr {
@@ -122,7 +135,7 @@ impl ArHdr {
         field[..len].copy_from_slice(&value[..len]);
     }
 
-    /// Set the ar_name field.  Names are terminated with '/'.
+    /// Set the `ar_name` field.  Names are terminated with '/'.
     /// C equivalent: tcctools.c:282-284.
     fn set_name(&mut self, name: &str) {
         self.ar_name = [b' '; 16];
@@ -132,9 +145,9 @@ impl ArHdr {
         self.ar_name[copy_len] = b'/';
     }
 
-    /// Set the ar_size field from an integer.
+    /// Set the `ar_size` field from an integer.
     fn set_size(&mut self, size: usize) {
-        let s = format!("{:<10}", size);
+        let s = format!("{size:<10}");
         Self::set_field(&mut self.ar_size, s.as_bytes());
     }
 
@@ -170,7 +183,7 @@ impl ArHdr {
         Ok(hdr)
     }
 
-    /// Parse the ar_size field as a `usize`.
+    /// Parse the `ar_size` field as a `usize`.
     fn parse_size(&self) -> TccResult<usize> {
         let s = std::str::from_utf8(&self.ar_size)
             .map_err(|_| TccError::link("invalid ar_size encoding"))?
@@ -681,7 +694,7 @@ pub fn tool_ar(args: &[String]) -> TccResult<i32> {
         })?;
         let base_name = Path::new(path_str)
             .file_name()
-            .map_or_else(|| path_str.to_string(), |n| n.to_string_lossy().into_owned());
+            .map_or_else(|| (*path_str).to_string(), |n| n.to_string_lossy().into_owned());
         if flag_v {
             eprintln!("ar: adding {base_name}");
         }
@@ -692,15 +705,12 @@ pub fn tool_ar(args: &[String]) -> TccResult<i32> {
     let mut all_symbols: Vec<(usize, String)> = Vec::new();
     if flag_s {
         for (idx, (_name, data)) in members.iter().enumerate() {
-            match extract_elf_symbols(data) {
-                Ok(syms) => {
-                    for s in syms {
-                        all_symbols.push((idx, s.name));
-                    }
+            if let Ok(syms) = extract_elf_symbols(data) {
+                for s in syms {
+                    all_symbols.push((idx, s.name));
                 }
-                Err(_) => {
-                    // Not an ELF file — skip (could be a plain object)
-                }
+            } else {
+                // Not an ELF file — skip (could be a plain object)
             }
         }
     }

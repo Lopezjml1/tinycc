@@ -1,11 +1,15 @@
 //! COFF (Common Object File Format) binary format definitions.
 //!
 //! This module provides Rust struct definitions and constants translated from
-//! the original TinyCC `coff.h` header (446 lines). All structs use `#[repr(C)]`
+//! the original `TinyCC` `coff.h` header (446 lines). All structs use `#[repr(C)]`
 //! for binary compatibility. These definitions are used primarily by the C67 DSP
 //! target's COFF linker backend and PE/COFF output.
 //!
 //! C equivalent: `coff.h`
+
+// COFF format definitions — struct field prefixes (f_*, s_*, r_*, n_*, ar_*)
+// preserve the COFF specification naming convention from coff.h for traceability.
+#![allow(clippy::struct_field_names)]
 
 // Allow dead_code: this is a data-definition module whose consumers
 // (src/linker/coff.rs, src/linker/pe.rs) are created by other agents.
@@ -82,7 +86,7 @@ pub(crate) const F_BYTE_ORDER: u16 = F_LITTLE | F_BIG;
 /// for I/O serialization.
 pub(crate) const FILHSZ: usize = 22;
 
-/// COFF C67 magic number (TMS320C6x DSP)
+/// COFF C67 magic number (`TMS320C6x` DSP)
 pub(crate) const COFF_C67_MAGIC: u16 = 0x00c2;
 
 // -------------------------------------------------------------------------

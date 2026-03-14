@@ -27,11 +27,11 @@ use std::hash::{Hash, Hasher};
 /// - Preprocessor keywords (define, include, ifdef, …)
 /// - Preprocessor magic identifiers (__LINE__, __FILE__, …)
 /// - Special identifiers (__func__, __nan__, …)
-/// - GCC builtin functions (__builtin_expect, …)
-/// - C11 atomic builtins (__atomic_store, …)
+/// - GCC builtin functions (__`builtin_expect`, …)
+/// - C11 atomic builtins (__`atomic_store`, …)
 /// - Pragma sub-tokens (pack, push, pop, …)
 /// - Runtime library identifiers (memcpy, __divdi3, …)
-/// - Bounds-checking identifiers (__bound_ptr_add, …)
+/// - Bounds-checking identifiers (__`bound_ptr_add`, …)
 /// - Assembler directives (.byte, .word, .align, …)
 /// - Literal value carriers and special tokens
 #[derive(Debug, Clone, Copy)]
@@ -605,7 +605,7 @@ pub enum Token {
     AsmDirCode16,
     /// `.code32` (i386) — C equivalent: `TOK_ASMDIR_code32`
     AsmDirCode32,
-    /// `.code64` (x86_64) — C equivalent: `TOK_ASMDIR_code64`
+    /// `.code64` (`x86_64`) — C equivalent: `TOK_ASMDIR_code64`
     AsmDirCode64,
     /// `.option` (riscv64) — C equivalent: `TOK_ASMDIR_option`
     AsmDirOption,

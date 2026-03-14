@@ -1,7 +1,7 @@
 //! STABS (Symbol Table) debug format definitions.
 //!
 //! This module provides STABS debug symbol type constants and the `nlist` struct,
-//! translated from the original TinyCC `stab.h` (17 lines) and `stab.def` (234 lines).
+//! translated from the original `TinyCC` `stab.h` (17 lines) and `stab.def` (234 lines).
 //! STABS is the legacy debug format used by TCC when DWARF is not selected.
 //!
 //! The `stab.def` file defines symbol types using the `__define_stab(NAME, CODE, STRING)`
@@ -10,6 +10,10 @@
 //! C equivalent: `stab.h` + `stab.def`
 
 // =============================================================================
+// STABS format definitions — struct field prefixes (n_*) preserve the STABS
+// specification naming convention from stab.h for traceability.
+#![allow(clippy::struct_field_names)]
+
 // Standard a.out symbol types (non-stab, 0x00–0x1F range)
 //
 // These come from the matrix comment at the end of stab.def. The low byte

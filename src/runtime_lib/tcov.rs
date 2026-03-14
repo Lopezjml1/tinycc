@@ -37,6 +37,9 @@
 //!     count*:lineno:source_text       (partial coverage)
 //! ```
 
+// Code coverage runtime — control flow patterns ported from tcov.c.
+#![allow(clippy::manual_let_else)]
+
 use std::collections::HashMap;
 use std::fs::{File, OpenOptions};
 use std::io::{self, BufRead, Read, Seek, SeekFrom, Write};
@@ -170,7 +173,7 @@ fn sort_coverage(files: &mut [TcovFile]) {
     for file in files.iter_mut() {
         file.functions
             .sort_by(|a, b| a.first_line.cmp(&b.first_line));
-        for func in file.functions.iter_mut() {
+        for func in &mut file.functions {
             func.lines.sort_by(|a, b| {
                 a.fline
                     .cmp(&b.fline)
@@ -307,15 +310,14 @@ fn write_coverage_report(
 ) -> TccResult<()> {
     // ---------- Global header ----------
     // C: fprintf(fp, "        -:    0:Runs:%u\n", runs);
-    writeln!(fp, "        -:    0:Runs:{}", runs).map_err(TccError::Io)?;
+    writeln!(fp, "        -:    0:Runs:{runs}").map_err(TccError::Io)?;
 
     // Global summary statistics
     let (total_files, total_funcs, total_blocks, total_run) = compute_summary(files);
     let pct = coverage_pct(total_blocks, total_run);
     writeln!(
         fp,
-        "        -:    0:All:{} Files:{} Functions:{} {:.02}%",
-        cov_filename, total_files, total_funcs, pct
+        "        -:    0:All:{cov_filename} Files:{total_files} Functions:{total_funcs} {pct:.02}%"
     )
     .map_err(TccError::Io)?;
 
@@ -351,7 +353,7 @@ fn write_coverage_report(
                 if !read_source_line(&mut src, &mut source_line)? {
                     break;
                 }
-                write!(fp, "        -:{:5}:{}", curline, source_line)
+                write!(fp, "        -:{curline:5}:{source_line}")
                     .map_err(TccError::Io)?;
                 curline = curline.saturating_add(1);
             }
@@ -406,7 +408,7 @@ fn write_coverage_report(
                     if !read_source_line(&mut src, &mut source_line)? {
                         break;
                     }
-                    write!(fp, "        -:{:5}:{}", curline, source_line)
+                    write!(fp, "        -:{curline:5}:{source_line}")
                         .map_err(TccError::Io)?;
                     curline = curline.saturating_add(1);
                 }
@@ -418,15 +420,15 @@ fn write_coverage_report(
                     }
                     if count == 0 {
                         // Uncovered: C format "    #####:%5u:%s"
-                        write!(fp, "    #####:{:5}:{}", curline, source_line)
+                        write!(fp, "    #####:{curline:5}:{source_line}")
                             .map_err(TccError::Io)?;
                     } else if has_zero {
                         // Partial coverage: C format "%8llu*:%5u:%s"
-                        write!(fp, "{:8}*:{:5}:{}", count, curline, source_line)
+                        write!(fp, "{count:8}*:{curline:5}:{source_line}")
                             .map_err(TccError::Io)?;
                     } else {
                         // Fully covered: C format "%9llu:%5u:%s"
-                        write!(fp, "{:9}:{:5}:{}", count, curline, source_line)
+                        write!(fp, "{count:9}:{curline:5}:{source_line}")
                             .map_err(TccError::Io)?;
                     }
                     curline = curline.saturating_add(1);
@@ -438,7 +440,7 @@ fn write_coverage_report(
         // C: while(fgets(str,sizeof(str),src))
         //      fprintf(fp,"        -:%5u:%s",curline++,str);
         while read_source_line(&mut src, &mut source_line)? {
-            write!(fp, "        -:{:5}:{}", curline, source_line)
+            write!(fp, "        -:{curline:5}:{source_line}")
                 .map_err(TccError::Io)?;
             curline = curline.saturating_add(1);
         }
@@ -667,11 +669,11 @@ pub fn merge_coverage(files: &mut [TcovFile], existing_content: &str) -> u32 {
         line_idx += 1;
 
         // For each function, merge line counts.
-        for func in file.functions.iter_mut() {
+        for func in &mut file.functions {
             let mut next_zero = false;
             let mut curline: u32 = 0;
 
-            for line_rec in func.lines.iter_mut() {
+            for line_rec in &mut func.lines {
                 let fline = line_rec.fline;
 
                 // Advance through existing lines to find the matching line

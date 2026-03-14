@@ -1,4 +1,4 @@
-//! PE/COFF (Portable Executable) output backend for TinyCC.
+//! PE/COFF (Portable Executable) output backend for `TinyCC`.
 //!
 //! This module generates Windows DLL and EXE files from the compiler's
 //! internal section and symbol representation. Handles import tables,
@@ -9,7 +9,7 @@
 //! # Platform Availability
 //!
 //! This module is intentionally **NOT** gated with `#[cfg(target_os = "windows")]`.
-//! TinyCC supports cross-compilation — a Linux or macOS host can produce
+//! `TinyCC` supports cross-compilation — a Linux or macOS host can produce
 //! Windows PE executables using `tcc -m32 -o hello.exe hello.c`. The PE
 //! output backend must be available on all platforms to support this
 //! cross-compilation workflow, matching the original C behavior where
@@ -23,6 +23,26 @@
 //! - Base relocation table for ASLR support
 //! - Unwind information for structured exception handling (x86\_64)
 //! - PDB debug info stub generation
+
+// PE/COFF linker — Windows executable format handling requires extensive size casts
+// between usize/u64/u32/u16 for RVAs, section alignments, and import/export table
+// offsets. Struct field prefixes (e_*, ...) preserve PE format naming conventions.
+// Complex functions and variable names are faithfully ported from tccpe.c.
+#![allow(clippy::cast_possible_truncation)]
+#![allow(clippy::cast_possible_wrap)]
+#![allow(clippy::cast_sign_loss)]
+#![allow(clippy::field_reassign_with_default)]
+#![allow(clippy::items_after_statements)]
+#![allow(clippy::manual_let_else)]
+#![allow(clippy::manual_strip)]
+#![allow(clippy::ptr_arg)]
+#![allow(clippy::similar_names)]
+#![allow(clippy::struct_field_names)]
+#![allow(clippy::too_many_lines)]
+#![allow(clippy::trivially_copy_pass_by_ref)]
+#![allow(clippy::unnecessary_wraps)]
+#![allow(clippy::unreadable_literal)]
+#![allow(clippy::used_underscore_binding)]
 
 use std::io::Write;
 use std::path::Path;
@@ -47,7 +67,7 @@ const IMAGE_NT_SIGNATURE: u32 = 0x0000_4550;
 const IMAGE_NT_OPTIONAL_HDR32_MAGIC: u16 = 0x10b;
 const IMAGE_NT_OPTIONAL_HDR64_MAGIC: u16 = 0x20b;
 
-/// Alias for PE\0\0 signature used in pe_write and get_dllexports.
+/// Alias for PE\0\0 signature used in `pe_write` and `get_dllexports`.
 const PE_SIGNATURE: u32 = IMAGE_NT_SIGNATURE;
 /// PE32 optional header magic.
 const PE32_MAGIC: u16 = IMAGE_NT_OPTIONAL_HDR32_MAGIC;
@@ -144,7 +164,7 @@ fn is_target_arm(arch: &str) -> bool {
 //  PE Header Structures (tccpe.c lines 62–290)
 // ===========================================================================
 
-/// IMAGE_DOS_HEADER — MZ stub header.
+/// `IMAGE_DOS_HEADER` — MZ stub header.
 #[repr(C)]
 #[derive(Debug, Clone, Copy, AsBytes, Pod, Zeroable)]
 pub struct ImageDosHeader {
@@ -182,7 +202,7 @@ impl Default for ImageDosHeader {
     }
 }
 
-/// IMAGE_FILE_HEADER — COFF file header within PE.
+/// `IMAGE_FILE_HEADER` — COFF file header within PE.
 #[repr(C)]
 #[derive(Debug, Clone, Copy, Default, AsBytes, Pod, Zeroable)]
 pub struct ImageFileHeader {
@@ -195,7 +215,7 @@ pub struct ImageFileHeader {
     pub characteristics: u16,
 }
 
-/// IMAGE_DATA_DIRECTORY — a single data directory entry.
+/// `IMAGE_DATA_DIRECTORY` — a single data directory entry.
 #[repr(C)]
 #[derive(Debug, Clone, Copy, Default, AsBytes, Pod, Zeroable)]
 pub struct ImageDataDirectory {
@@ -203,7 +223,7 @@ pub struct ImageDataDirectory {
     pub size: u32,
 }
 
-/// IMAGE_OPTIONAL_HEADER32 — 32-bit PE optional header.
+/// `IMAGE_OPTIONAL_HEADER32` — 32-bit PE optional header.
 #[repr(C)]
 #[derive(Debug, Clone)]
 pub struct ImageOptionalHeader32 {
@@ -263,7 +283,7 @@ impl Default for ImageOptionalHeader32 {
     }
 }
 
-/// IMAGE_OPTIONAL_HEADER64 — 64-bit PE optional header.
+/// `IMAGE_OPTIONAL_HEADER64` — 64-bit PE optional header.
 #[repr(C)]
 #[derive(Debug, Clone)]
 pub struct ImageOptionalHeader64 {
@@ -322,7 +342,7 @@ impl Default for ImageOptionalHeader64 {
     }
 }
 
-/// IMAGE_SECTION_HEADER — PE section header.
+/// `IMAGE_SECTION_HEADER` — PE section header.
 #[repr(C)]
 #[derive(Debug, Clone, Copy, Default, AsBytes, Pod, Zeroable)]
 pub struct ImageSectionHeader {
@@ -338,7 +358,7 @@ pub struct ImageSectionHeader {
     pub characteristics: u32,
 }
 
-/// IMAGE_EXPORT_DIRECTORY — export table header.
+/// `IMAGE_EXPORT_DIRECTORY` — export table header.
 #[repr(C)]
 #[derive(Debug, Clone, Copy, Default, AsBytes, Pod, Zeroable)]
 pub struct ImageExportDirectory {
@@ -355,7 +375,7 @@ pub struct ImageExportDirectory {
     pub address_of_name_ordinals: u32,
 }
 
-/// IMAGE_IMPORT_DESCRIPTOR — import table entry.
+/// `IMAGE_IMPORT_DESCRIPTOR` — import table entry.
 #[repr(C)]
 #[derive(Debug, Clone, Copy, Default, AsBytes, Pod, Zeroable)]
 pub struct ImageImportDescriptor {
@@ -366,7 +386,7 @@ pub struct ImageImportDescriptor {
     pub first_thunk: u32,
 }
 
-/// IMAGE_BASE_RELOCATION — base relocation block header.
+/// `IMAGE_BASE_RELOCATION` — base relocation block header.
 #[repr(C)]
 #[derive(Debug, Clone, Copy, Default, AsBytes, Pod, Zeroable)]
 pub struct ImageBaseRelocation {
@@ -422,7 +442,9 @@ pub enum PeSectionClass {
 
 /// PE output type classification.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Default)]
 pub enum PeType {
+    #[default]
     Nul = 0,
     Dll = 1,
     Gui = 2,
@@ -430,9 +452,6 @@ pub enum PeType {
     Run = 4,
 }
 
-impl Default for PeType {
-    fn default() -> Self { PeType::Nul }
-}
 
 /// Per-section metadata for PE output.
 pub struct PeSectionInfo {
@@ -496,7 +515,7 @@ pub struct PeInfo {
 }
 
 impl PeInfo {
-    /// Create a default PeInfo with no filename or architecture set.
+    /// Create a default `PeInfo` with no filename or architecture set.
     fn new() -> Self {
         Self {
             reloc: None, thunk: None,
@@ -511,7 +530,7 @@ impl PeInfo {
         }
     }
 
-    /// Create a PeInfo with a specified filename and architecture.
+    /// Create a `PeInfo` with a specified filename and architecture.
     fn with_file(filename: &str, arch: &str) -> Self {
         Self {
             reloc: None, thunk: None,
@@ -537,7 +556,7 @@ impl PeInfo {
 
 /// Serialize a `ImageDosHeader` into bytes in little-endian order.
 /// Serialize `ImageDosHeader` to bytes using zerocopy `AsBytes`.
-/// C equivalent: writing IMAGE_DOS_HEADER to output file.
+/// C equivalent: writing `IMAGE_DOS_HEADER` to output file.
 fn serialize_dos_header(hdr: &ImageDosHeader) -> Vec<u8> {
     hdr.as_bytes().to_vec()
 }
@@ -880,15 +899,12 @@ fn pe_add_import(pe: &mut PeInfo, state: &TccState, imp_sym: i32) -> usize {
 
     // Find existing import info for this DLL or create new one
     let imp_idx = pe.imp_info.iter().position(|ii| ii.dll_index == dll_index);
-    let imp_idx = match imp_idx {
-        Some(i) => i,
-        None => {
-            pe.imp_info.push(PeImportInfo {
-                dll_index,
-                symbols: Vec::new(),
-            });
-            pe.imp_info.len() - 1
-        }
+    let imp_idx = if let Some(i) = imp_idx { i } else {
+        pe.imp_info.push(PeImportInfo {
+            dll_index,
+            symbols: Vec::new(),
+        });
+        pe.imp_info.len() - 1
     };
 
     // Check if this symbol is already tracked
@@ -941,7 +957,7 @@ fn pe_build_imports(pe: &mut PeInfo, state: &mut TccState) -> TccResult<()> {
         let dll_name = if dll_ref_index < state.loaded_dlls.len() {
             state.loaded_dlls[dll_ref_index].name.clone()
         } else {
-            format!("unknown_dll_{}", dll_ref_index)
+            format!("unknown_dll_{dll_ref_index}")
         };
 
         // IAT (Import Address Table) entries
@@ -1000,12 +1016,12 @@ fn pe_build_imports(pe: &mut PeInfo, state: &mut TccState) -> TccResult<()> {
             let ilt_off = ilt_start as usize + si * addr_size as usize;
             if addr_size == 8 {
                 if iat_off + 8 <= state.sections[thunk_idx].data.len() {
-                    let bytes = (hint_name_rva as u64).to_le_bytes();
+                    let bytes = u64::from(hint_name_rva).to_le_bytes();
                     state.sections[thunk_idx].data[iat_off..iat_off + 8]
                         .copy_from_slice(&bytes);
                 }
                 if ilt_off + 8 <= state.sections[thunk_idx].data.len() {
-                    let bytes = (hint_name_rva as u64).to_le_bytes();
+                    let bytes = u64::from(hint_name_rva).to_le_bytes();
                     state.sections[thunk_idx].data[ilt_off..ilt_off + 8]
                         .copy_from_slice(&bytes);
                 }
@@ -1124,9 +1140,7 @@ fn pe_build_exports(pe: &mut PeInfo, state: &mut TccState) -> TccResult<()> {
 
     // Get DLL base name for export directory
     let dllname = Path::new(&pe.filename)
-        .file_name()
-        .map(|n| n.to_string_lossy().to_string())
-        .unwrap_or_else(|| pe.filename.clone());
+        .file_name().map_or_else(|| pe.filename.clone(), |n| n.to_string_lossy().to_string());
 
     // Write DLL name string
     let name_str_rva = state.sections[thunk_idx].data_offset as u32 + rva_base;
@@ -1528,7 +1542,7 @@ fn pe_check_symbols(pe: &mut PeInfo, state: &mut TccState) -> TccResult<()> {
                 // Log warning for unresolved symbols
             }
             state.nb_errors += 1;
-            return Err(TccError::Link(format!("undefined symbol '{}' in PE output", name)));
+            return Err(TccError::Link(format!("undefined symbol '{name}' in PE output")));
         }
     }
 
@@ -1567,10 +1581,10 @@ fn pe_write(pe: &mut PeInfo, state: &mut TccState, writer: &mut dyn Write) -> Tc
     } else {
         IMAGE_FILE_EXECUTABLE_IMAGE
     };
-    let characteristics = if !is_64 {
-        characteristics | IMAGE_FILE_32BIT_MACHINE
-    } else {
+    let characteristics = if is_64 {
         characteristics
+    } else {
+        characteristics | IMAGE_FILE_32BIT_MACHINE
     };
 
     let opt_hdr_size: u16 = if is_64 { 240 } else { 224 };
@@ -1590,7 +1604,7 @@ fn pe_write(pe: &mut PeInfo, state: &mut TccState, writer: &mut dyn Write) -> Tc
     let pe_sig_size = 4u32;
     let file_hdr_size = 20u32;
     let sec_hdr_size = 40u32 * num_sec as u32;
-    let all_headers_size = dos_hdr_size + pe_sig_size + file_hdr_size + opt_hdr_size as u32 + sec_hdr_size;
+    let all_headers_size = dos_hdr_size + pe_sig_size + file_hdr_size + u32::from(opt_hdr_size) + sec_hdr_size;
     let aligned_headers = pe_file_align_val(pe, all_headers_size);
 
     pe.size_of_headers = aligned_headers;
@@ -1715,20 +1729,20 @@ fn pe_write(pe: &mut PeInfo, state: &mut TccState, writer: &mut dyn Write) -> Tc
 
     // Set data directories
     if pe.imp_size > 0 {
-        pe_set_datadir(&mut opt_hdr, is_64, IMAGE_DIRECTORY_ENTRY_IMPORT as usize, pe.imp_offs, pe.imp_size);
+        pe_set_datadir(&mut opt_hdr, is_64, IMAGE_DIRECTORY_ENTRY_IMPORT, pe.imp_offs, pe.imp_size);
     }
     if pe.exp_size > 0 {
-        pe_set_datadir(&mut opt_hdr, is_64, IMAGE_DIRECTORY_ENTRY_EXPORT as usize, pe.exp_offs, pe.exp_size);
+        pe_set_datadir(&mut opt_hdr, is_64, IMAGE_DIRECTORY_ENTRY_EXPORT, pe.exp_offs, pe.exp_size);
     }
     if pe.iat_size > 0 {
-        pe_set_datadir(&mut opt_hdr, is_64, IMAGE_DIRECTORY_ENTRY_IAT as usize, pe.iat_offs, pe.iat_size);
+        pe_set_datadir(&mut opt_hdr, is_64, IMAGE_DIRECTORY_ENTRY_IAT, pe.iat_offs, pe.iat_size);
     }
     // Reloc directory
     if let Some(reloc_i) = pe.reloc {
         let reloc_size = state.sections[reloc_i].data_offset as u32;
         if reloc_size > 0 {
             let reloc_addr = state.sections[reloc_i].sh_addr as u32;
-            pe_set_datadir(&mut opt_hdr, is_64, IMAGE_DIRECTORY_ENTRY_BASERELOC as usize, reloc_addr, reloc_size);
+            pe_set_datadir(&mut opt_hdr, is_64, IMAGE_DIRECTORY_ENTRY_BASERELOC, reloc_addr, reloc_size);
         }
     }
 
@@ -1819,24 +1833,21 @@ pub(crate) fn pe_putimport(
     ordinal: i32,
 ) -> TccResult<()> {
     // Ensure dynsym section exists
-    let dynsym_idx = match state.sections.iter().position(|s| s.name == ".dynsym") {
-        Some(i) => i,
-        None => {
-            let idx = elf_linker::new_section(
-                state, ".dynsym", elf_fmt::SHT_SYMTAB, elf_fmt::SHF_ALLOC,
-            );
-            // Create associated dynstr section
-            let str_idx = elf_linker::new_section(
-                state, ".dynstr", elf_fmt::SHT_STRTAB, elf_fmt::SHF_ALLOC,
-            );
-            state.sections[idx].link = Some(str_idx);
-            // Add initial null byte to string table
-            elf_linker::section_ptr_add(&mut state.sections[str_idx], 1);
-            // Add initial null symbol entry
-            let sym_size = elf_linker::ELF_SYM_SIZE;
-            elf_linker::section_ptr_add(&mut state.sections[idx], sym_size);
-            idx
-        }
+    let dynsym_idx = if let Some(i) = state.sections.iter().position(|s| s.name == ".dynsym") { i } else {
+        let idx = elf_linker::new_section(
+            state, ".dynsym", elf_fmt::SHT_SYMTAB, elf_fmt::SHF_ALLOC,
+        );
+        // Create associated dynstr section
+        let str_idx = elf_linker::new_section(
+            state, ".dynstr", elf_fmt::SHT_STRTAB, elf_fmt::SHF_ALLOC,
+        );
+        state.sections[idx].link = Some(str_idx);
+        // Add initial null byte to string table
+        elf_linker::section_ptr_add(&mut state.sections[str_idx], 1);
+        // Add initial null symbol entry
+        let sym_size = elf_linker::ELF_SYM_SIZE;
+        elf_linker::section_ptr_add(&mut state.sections[idx], sym_size);
+        idx
     };
 
     // Use set_elf_sym to add or update the symbol
@@ -1893,31 +1904,31 @@ fn read_cstr_from(data: &[u8], off: usize) -> String {
 fn get_dllexports(filename: &str) -> TccResult<Vec<String>> {
     let data = std::fs::read(filename).map_err(TccError::Io)?;
     if data.len() < 0x80 {
-        return Err(TccError::Link(format!("file too small to be a PE: {}", filename)));
+        return Err(TccError::Link(format!("file too small to be a PE: {filename}")));
     }
 
     // Check MZ signature
     let magic = read_u16_le(&data, 0);
     if magic != IMAGE_DOS_SIGNATURE {
-        return Err(TccError::Link(format!("not a PE file (no MZ signature): {}", filename)));
+        return Err(TccError::Link(format!("not a PE file (no MZ signature): {filename}")));
     }
 
     // Read e_lfanew
     let pe_offset = read_u32_le(&data, 0x3C) as usize;
     if pe_offset + 4 > data.len() {
-        return Err(TccError::Link(format!("invalid PE offset in: {}", filename)));
+        return Err(TccError::Link(format!("invalid PE offset in: {filename}")));
     }
 
     // Check PE signature
     let pe_sig = read_u32_le(&data, pe_offset);
     if pe_sig != PE_SIGNATURE {
-        return Err(TccError::Link(format!("invalid PE signature in: {}", filename)));
+        return Err(TccError::Link(format!("invalid PE signature in: {filename}")));
     }
 
     // Read optional header magic to determine 32/64 bit
     let opt_hdr_offset = pe_offset + 4 + 20; // After PE sig + file header
     if opt_hdr_offset + 2 > data.len() {
-        return Err(TccError::Link(format!("truncated PE header in: {}", filename)));
+        return Err(TccError::Link(format!("truncated PE header in: {filename}")));
     }
     let opt_magic = read_u16_le(&data, opt_hdr_offset);
     let is_64 = opt_magic == PE32PLUS_MAGIC;
@@ -1958,10 +1969,10 @@ fn get_dllexports(filename: &str) -> TccResult<Vec<String>> {
     };
 
     let export_file_off = rva_to_file(export_rva)
-        .ok_or_else(|| TccError::Link(format!("cannot resolve export directory RVA in: {}", filename)))?;
+        .ok_or_else(|| TccError::Link(format!("cannot resolve export directory RVA in: {filename}")))?;
 
     if export_file_off + 40 > data.len() {
-        return Err(TccError::Link(format!("truncated export directory in: {}", filename)));
+        return Err(TccError::Link(format!("truncated export directory in: {filename}")));
     }
 
     // Read export directory
@@ -1969,7 +1980,7 @@ fn get_dllexports(filename: &str) -> TccResult<Vec<String>> {
     let names_rva = read_u32_le(&data, export_file_off + 32) as usize;
 
     let names_off = rva_to_file(names_rva)
-        .ok_or_else(|| TccError::Link(format!("cannot resolve export names RVA in: {}", filename)))?;
+        .ok_or_else(|| TccError::Link(format!("cannot resolve export names RVA in: {filename}")))?;
 
     let mut exports = Vec::with_capacity(num_names);
     for i in 0..num_names {
@@ -2046,7 +2057,7 @@ fn get_token(s: &str) -> (&str, &str) {
     // Handle quoted strings
     if s.starts_with('"') {
         if let Some(end) = s[1..].find('"') {
-            return (&s[1..1 + end], trimfront(&s[2 + end..]));
+            return (&s[1..=end], trimfront(&s[2 + end..]));
         }
     }
     // Split on whitespace or common delimiters
@@ -2125,9 +2136,7 @@ pub(crate) fn pe_load_dll(state: &mut TccState, filename: &str) -> TccResult<()>
 
     // Extract DLL name from filename
     let dll_name = Path::new(filename)
-        .file_name()
-        .map(|n| n.to_string_lossy().to_string())
-        .unwrap_or_else(|| filename.to_string());
+        .file_name().map_or_else(|| filename.to_string(), |n| n.to_string_lossy().to_string());
 
     // Register the DLL
     let dll_ref = DllReference {
@@ -2171,7 +2180,7 @@ pub(crate) fn pe_load_file(state: &mut TccState, filename: &str) -> TccResult<()
                 }
             }
             // Otherwise treat as object file — not handled here
-            Err(TccError::Link(format!("unsupported PE object format: {}", filename)))
+            Err(TccError::Link(format!("unsupported PE object format: {filename}")))
         }
         _ => {
             // Try to load as DLL (check for MZ signature)
@@ -2179,7 +2188,7 @@ pub(crate) fn pe_load_file(state: &mut TccState, filename: &str) -> TccResult<()
             if data.len() >= 2 && read_u16_le(&data, 0) == IMAGE_DOS_SIGNATURE {
                 pe_load_dll(state, filename)
             } else {
-                Err(TccError::Link(format!("unrecognized PE file format: {}", filename)))
+                Err(TccError::Link(format!("unrecognized PE file format: {filename}")))
             }
         }
     }
@@ -2189,7 +2198,7 @@ pub(crate) fn pe_load_file(state: &mut TccState, filename: &str) -> TccResult<()
 //  Unwind Info (tccpe.c lines 1836-1896) — x86_64 only
 // ===========================================================================
 
-/// x86_64 UNWIND_INFO structure for structured exception handling.
+/// `x86_64` `UNWIND_INFO` structure for structured exception handling.
 /// C equivalent: struct at tccpe.c line 1836
 #[repr(C)]
 #[derive(Debug, Clone, Copy)]
@@ -2200,7 +2209,7 @@ struct UnwindInfo {
     frame_reg_offset: u8,
 }
 
-/// x86_64 RUNTIME_FUNCTION entry for .pdata section.
+/// `x86_64` `RUNTIME_FUNCTION` entry for .pdata section.
 /// C equivalent: struct at tccpe.c line 1843
 #[repr(C)]
 #[derive(Debug, Clone, Copy)]
@@ -2210,7 +2219,7 @@ struct RuntimeFunction {
     unwind_data: u32,
 }
 
-/// Add x86_64 unwind information for all functions.
+/// Add `x86_64` unwind information for all functions.
 /// Creates .pdata and .xdata sections for structured exception handling (SEH).
 /// C equivalent: `pe_add_uwwind_info()` at tccpe.c line 1848
 fn pe_add_unwind_info_inner(state: &mut TccState) -> TccResult<()> {
@@ -2308,7 +2317,7 @@ fn pe_add_runtime(state: &mut TccState, pe: &mut PeInfo) -> TccResult<()> {
         for lib in &default_libs {
             // In a real implementation, these would be loaded from the lib path
             // For now, we register them as needed DLLs
-            let dll_name = format!("{}.dll", lib);
+            let dll_name = format!("{lib}.dll");
             let already_loaded = state.loaded_dlls.iter().any(|d| {
                 d.name.eq_ignore_ascii_case(&dll_name)
             });
@@ -2327,7 +2336,7 @@ fn pe_add_runtime(state: &mut TccState, pe: &mut PeInfo) -> TccResult<()> {
         if pe.pe_type == PeType::Gui {
             let gui_libs = ["user32", "gdi32"];
             for lib in &gui_libs {
-                let dll_name = format!("{}.dll", lib);
+                let dll_name = format!("{lib}.dll");
                 let already_loaded = state.loaded_dlls.iter().any(|d| {
                     d.name.eq_ignore_ascii_case(&dll_name)
                 });
@@ -2383,11 +2392,11 @@ fn pe_setsubsy(name: &str) -> i32 {
 }
 
 /// Set PE subsystem based on state output type and options.
-/// C equivalent: `pe_set_subsystem()` at tccpe.c (combined with pe_setsubsy)
+/// C equivalent: `pe_set_subsystem()` at tccpe.c (combined with `pe_setsubsy`)
 ///
-/// Since TccState doesn't carry a pe_subsystem field, this function is a
+/// Since `TccState` doesn't carry a `pe_subsystem` field, this function is a
 /// no-op at the state level — the subsystem is set during `pe_set_options`
-/// via the PeInfo struct.  It exists to satisfy the public API contract.
+/// via the `PeInfo` struct.  It exists to satisfy the public API contract.
 pub(crate) fn pe_set_subsystem(_state: &mut TccState) -> TccResult<()> {
     // Subsystem configuration is handled in pe_set_options via PeInfo.
     // Default: console (3).
@@ -2463,7 +2472,12 @@ pub(crate) fn pe_output_file(state: &mut TccState, filename: &str) -> TccResult<
     // Step 4: Check and resolve all symbols
     pe_check_symbols(&mut pe, state)?;
 
-    if !filename.is_empty() {
+    if filename.is_empty() {
+        // In-memory mode: just build imports into the data section
+        let data_idx = state.data_section_idx;
+        pe.thunk = Some(data_idx);
+        pe_build_imports(&mut pe, state)?;
+    } else {
         // Step 5: Assign virtual addresses to all sections
         pe_assign_addresses(&mut pe, state)?;
 
@@ -2507,11 +2521,6 @@ pub(crate) fn pe_output_file(state: &mut TccState, filename: &str) -> TccResult<
         patcher.write_all(&checksum_val.to_le_bytes()).map_err(TccError::Io)?;
         patcher.flush().map_err(TccError::Io)?;
 
-    } else {
-        // In-memory mode: just build imports into the data section
-        let data_idx = state.data_section_idx;
-        pe.thunk = Some(data_idx);
-        pe_build_imports(&mut pe, state)?;
     }
 
     Ok(())

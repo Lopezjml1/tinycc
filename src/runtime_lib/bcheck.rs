@@ -1,3 +1,10 @@
+// Bounds-checking runtime — struct fields and patterns preserve the original
+// bcheck.c naming and interface for traceability.
+#![allow(clippy::manual_let_else)]
+#![allow(clippy::struct_excessive_bools)]
+#![allow(clippy::struct_field_names)]
+#![allow(clippy::unused_self)]
+
 // Copyright (c) 2024 tinycc-rs contributors
 // SPDX-License-Identifier: MIT OR LGPL-2.1-or-later
 
@@ -528,7 +535,7 @@ impl BoundsChecker {
     /// Insert a new tracked memory region.
     ///
     /// If a region with the same start address already exists, it is
-    /// replaced (matching the C splay_insert behavior which returns
+    /// replaced (matching the C `splay_insert` behavior which returns
     /// the existing node on duplicate).
     ///
     /// C equivalent: `splay_insert(addr, size, tree)` at `bcheck.c`
@@ -934,8 +941,7 @@ impl BoundsChecker {
         if (p1 <= p2 && p1e > p2) || (p2 <= p1 && p2e > p1) {
             eprintln!(
                 "BCHECK: overlapping regions \
-                 0x{:x}(0x{:x}), 0x{:x}(0x{:x}) in {}",
-                p1, n1, p2, n2, function,
+                 0x{p1:x}(0x{n1:x}), 0x{p2:x}(0x{n2:x}) in {function}",
             );
             return true;
         }

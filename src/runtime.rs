@@ -27,6 +27,13 @@
 //!
 //! C equivalent: `tccrun.c` (1,556 lines)
 
+// Runtime engine — JIT execution, W^X enforcement, and signal handling require
+// size casts for memory addresses, page sizes, and function pointer offsets.
+// Platform-specific syscall wrappers contain the only permitted unsafe blocks.
+#![allow(clippy::cast_possible_truncation)]
+#![allow(clippy::cast_possible_wrap)]
+#![allow(clippy::cast_sign_loss)]
+
 // Module-level lint configuration for runtime engine.
 //
 // This module performs low-level binary format parsing (ELF, DWARF, STABS),
@@ -575,7 +582,7 @@ fn install_signal_handler() {
         let mut sigact: libc::sigaction = std::mem::zeroed();
         libc::sigemptyset(&mut sigact.sa_mask);
         sigact.sa_flags = libc::SA_SIGINFO;
-        sigact.sa_sigaction = sig_error_handler as usize;
+        sigact.sa_sigaction = sig_error_handler as *const () as usize;
         libc::sigaction(libc::SIGFPE, &sigact, std::ptr::null_mut());
         libc::sigaction(libc::SIGILL, &sigact, std::ptr::null_mut());
         libc::sigaction(libc::SIGSEGV, &sigact, std::ptr::null_mut());
@@ -632,6 +639,10 @@ fn install_signal_handler() {
 /// Windows exception handler — reports runtime errors.
 ///
 /// C equivalent: `cpu_exception_handler()` at tccrun.c:1371-1398
+///
+// SAFETY: This function is only registered via `SetUnhandledExceptionFilter` which
+// guarantees valid `EXCEPTION_POINTERS`. The pointer dereference is valid because
+// the OS provides a well-formed exception record during structured exception handling.
 #[cfg(windows)]
 unsafe extern "system" fn cpu_exception_handler(
     ex_info: *mut winapi::um::winnt::EXCEPTION_POINTERS,
@@ -669,7 +680,7 @@ fn rt_mem(state: &mut TccState, size: usize) -> TccResult<usize> {
         let (base, ptr_diff) = selinux_mmap_pair(size)?;
         state.run_ptr = base;
         state.run_size = size * 2;
-        return Ok(ptr_diff);
+        Ok(ptr_diff)
     }
 
     #[cfg(not(all(unix, feature = "selinux")))]
@@ -1161,6 +1172,9 @@ fn rt_elfsym(rc: &RtContext, wanted_pc: usize) -> Option<(String, usize)> {
             && wanted_pc < value + size
         {
             // Read the symbol name from the ELF string table using st_name
+            // SAFETY: `rc.elf_str` base and `sym.st_name` offset are validated during
+            // JIT relocation; the combined address points into the relocated ELF string
+            // table which remains valid for the lifetime of the `RuntimeContext`.
             let name = unsafe { read_cstr_from_addr(RawAddr::new(rc.elf_str + sym.st_name as usize)) };
             return Some((name, value));
         }
@@ -1175,6 +1189,10 @@ fn rt_elfsym(rc: &RtContext, wanted_pc: usize) -> Option<(String, usize)> {
 ///
 /// # Safety
 /// The caller must ensure `addr` points to valid, NUL-terminated memory.
+// SAFETY: This unsafe function reads bytes from a raw address until NUL terminator.
+// All callers validate that `addr` points into JIT-relocated or ELF-loaded memory
+// regions that are guaranteed to contain NUL-terminated strings (symbol names,
+// debug strings). The memory remains valid for the `RuntimeContext` lifetime.
 unsafe fn read_cstr_from_addr(addr: RawAddr) -> String {
     let mut result = String::new();
     // SAFETY: caller guarantees addr points to a valid, null-terminated C string
@@ -1203,6 +1221,9 @@ unsafe fn read_cstr_from_addr(addr: RawAddr) -> String {
 ///
 /// # Safety
 /// `addr` must point to at least 12 valid, readable bytes.
+// SAFETY: This unsafe function reads 12 bytes from a raw address as a STABS entry.
+// All callers ensure `addr` points into JIT-relocated STABS section data that
+// has been validated to contain complete symbol entries during ELF loading.
 unsafe fn read_stab_sym_from_addr(addr: RawAddr) -> StabSym {
     // SAFETY: caller guarantees addr points to at least 12 valid, readable bytes
     // containing a STABS symbol entry in JIT-emitted ELF data.
@@ -1266,6 +1287,9 @@ fn rt_printline(rc: &RtContext, wanted_pc: usize, bi: &mut BtInfo) -> usize {
         let n_desc = stab.n_desc;
         let n_value = stab.n_value;
 
+        // SAFETY: `rc.stab_str` base address points to the relocated STABS string
+        // table. `n_strx` is a validated offset from a STABS symbol entry. The combined
+        // address points to a NUL-terminated string within JIT-relocated memory.
         let str_val = unsafe { read_cstr_from_addr(RawAddr::new(rc.stab_str + n_strx as usize)) };
         let mut pc = n_value as usize;
 
@@ -1392,6 +1416,10 @@ fn rt_printline_dwarf(rc: &RtContext, wanted_pc: usize, bi: &mut BtInfo) -> usiz
 
     // Read DWARF line program data from memory into a safe Vec
     let total_len = rc.dwarf_line_end - rc.dwarf_line;
+    // SAFETY: `rc.dwarf_line` and `rc.dwarf_line_end` are set during JIT relocation
+    // to point to the bounds of the `.debug_line` section in relocated memory.
+    // The range `[dwarf_line, dwarf_line_end)` is contiguous, readable, and valid
+    // for the lifetime of the JIT program. We immediately copy into an owned Vec.
     let line_data: Vec<u8> = unsafe {
         std::slice::from_raw_parts(rc.dwarf_line as *const u8, total_len).to_vec()
     };
@@ -1816,6 +1844,10 @@ fn read_dwarf5_dirs(
                     };
                     cursor += offset_size;
                     if line_str_base != 0 {
+                        // SAFETY: `line_str_base` points to the `.debug_line_str` section
+                        // in JIT-relocated memory. `str_offset` is read from validated
+                        // DWARF directory entry data. The combined address points to a
+                        // NUL-terminated directory path string.
                         let name = unsafe { read_cstr_from_addr(RawAddr::new(line_str_base + str_offset)) };
                         dirs.push(name);
                     }
@@ -1870,6 +1902,10 @@ fn read_dwarf5_files(
                 };
                 cursor += offset_size;
                 if line_str_base != 0 {
+                    // SAFETY: `line_str_base` points to the `.debug_line_str` section
+                    // in JIT-relocated memory. `str_offset` is read from validated
+                    // DWARF file name entry data. The combined address points to a
+                    // NUL-terminated file name string.
                     name = unsafe { read_cstr_from_addr(RawAddr::new(line_str_base + str_offset)) };
                 }
             } else if etype == DW_LNCT_directory_index {
@@ -1972,9 +2008,13 @@ fn rt_get_caller_pc(frame: &RtFrame, level: i32) -> Option<usize> {
             if remaining == 0 {
                 break;
             }
+            // SAFETY: Frame pointer is validated to be above 0x1000 (not NULL page).
+            // ARM APCS frame chain: [fp] points to the saved fp of the caller.
+            // This reads from the stack which is valid memory during signal handling.
             fp = unsafe { *(fp as *const usize) };
         }
-        // ARM: return address is at fp + 2 * sizeof(usize)
+        // SAFETY: Frame pointer validated above. ARM APCS: return address is at fp+8.
+        // The stack frame layout is [fp, sp, lr, pc] where lr is at offset +2.
         let ret_addr = unsafe { *((fp as *const usize).add(2)) };
         Some(ret_addr)
     }
@@ -1991,10 +2031,13 @@ fn rt_get_caller_pc(frame: &RtFrame, level: i32) -> Option<usize> {
             if remaining == 0 {
                 break;
             }
-            // RISC-V: saved fp is at fp - 2 * sizeof(usize)
+            // SAFETY: Frame pointer validated above (>= 0x1000). RISC-V ABI:
+            // saved fp is at fp - 2*sizeof(usize). Stack memory is valid during
+            // signal handling.
             fp = unsafe { *((fp as *const usize).sub(2)) };
         }
-        // Return address is at fp - sizeof(usize)
+        // SAFETY: Frame pointer validated above. RISC-V ABI: return address
+        // is at fp - sizeof(usize). Stack memory is valid during signal handling.
         let ret_addr = unsafe { *((fp as *const usize).sub(1)) };
         Some(ret_addr)
     }
@@ -2224,9 +2267,6 @@ pub fn run_free(state: &mut TccState) {
         unsafe {
             libc::munmap(ptr as *mut libc::c_void, size);
         }
-        state.run_ptr = 0;
-        state.run_size = 0;
-        return;
     }
 
     #[cfg(not(feature = "selinux"))]

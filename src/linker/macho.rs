@@ -17,6 +17,23 @@
 //! - GOT/PLT stub generation for indirect symbol access
 //! - macOS SDK path discovery
 
+// Mach-O linker — macOS executable format handling requires extensive size casts
+// between usize/u64/u32/u8 for load command offsets, section addresses, and symbol
+// indices. Complex functions are faithfully ported from tccmacho.c.
+#![allow(clippy::assigning_clones)]
+#![allow(clippy::cast_possible_truncation)]
+#![allow(clippy::cast_possible_wrap)]
+#![allow(clippy::cast_sign_loss)]
+#![allow(clippy::field_reassign_with_default)]
+#![allow(clippy::items_after_statements)]
+#![allow(clippy::manual_let_else)]
+#![allow(clippy::needless_range_loop)]
+#![allow(clippy::no_effect_underscore_binding)]
+#![allow(clippy::similar_names)]
+#![allow(clippy::too_many_lines)]
+#![allow(clippy::unnecessary_wraps)]
+#![allow(clippy::used_underscore_binding)]
+
 // NOTE: This module is available on all platforms to support cross-compilation.
 // Only `tcc_add_macos_sdkpath()` is gated with `#[cfg(target_os = "macos")]`
 // because it invokes `xcrun`, a macOS-only tool. All other functions operate
@@ -896,7 +913,7 @@ fn add_dylib(mo: &mut MachoState, name: &str) -> usize {
 /// C equivalent: `tcc_macho_add_destructor()` (tccmacho.c:556)
 ///
 /// Adds a `__mod_term_func` entry to call destructors via `atexit`.
-/// The implementation depends on the target architecture (x86_64 or ARM64).
+/// The implementation depends on the target architecture (`x86_64` or ARM64).
 pub(crate) fn tcc_macho_add_destructor(state: &mut TccState) -> TccResult<()> {
     // Find or create .fini_array section index
     let fini_idx = match find_section_index(state, ".fini_array") {
@@ -925,7 +942,7 @@ pub(crate) fn tcc_macho_add_destructor(state: &mut TccState) -> TccResult<()> {
 // ---------------------------------------------------------------------------
 
 /// Add a bind/rebase entry.
-/// C equivalent: `bind_rebase_add()` (tccmacho.c part of check_relocs)
+/// C equivalent: `bind_rebase_add()` (tccmacho.c part of `check_relocs`)
 fn bind_rebase_add(mo: &mut MachoState, section: i32, bind: bool, sym_index: i32, offset: u64) {
     mo.bind_rebase.push(BindRebase {
         section,
@@ -1318,7 +1335,7 @@ fn convert_symbols(state: &mut TccState, mo: &mut MachoState) -> TccResult<()> {
     // Store the built symbol list in mo for later use
     // We encode the NList64 entries into the appropriate section
     if let Some(symtab_sec_idx) = mo.symtab {
-        let sym_data: Vec<u8> = all_syms.iter().flat_map(|nl| nlist64_to_bytes(nl)).collect();
+        let sym_data: Vec<u8> = all_syms.iter().flat_map(nlist64_to_bytes).collect();
         state.sections[symtab_sec_idx].data = sym_data;
     }
 
@@ -1530,17 +1547,17 @@ fn bind_rebase(
         let addr = sec.sh_addr + entry.offset;
         let (seg, off) = set_segment_and_offset(mo, addr);
 
-        if seg != prev_seg {
-            rebase_buf.push(REBASE_OPCODE_SET_SEGMENT_AND_OFFSET_ULEB | (seg as u8 & 0x0f));
-            write_uleb128(&mut rebase_buf, off);
-            prev_seg = seg;
-            prev_off = off;
-        } else {
+        if seg == prev_seg {
             let delta = off - prev_off;
             if delta > 0 {
                 rebase_buf.push(REBASE_OPCODE_ADD_ADDR_ULEB);
                 write_uleb128(&mut rebase_buf, delta);
             }
+        } else {
+            rebase_buf.push(REBASE_OPCODE_SET_SEGMENT_AND_OFFSET_ULEB | (seg as u8 & 0x0f));
+            write_uleb128(&mut rebase_buf, off);
+            prev_seg = seg;
+            prev_off = off;
         }
         rebase_buf.push(REBASE_OPCODE_DO_REBASE_IMM_TIMES | 1);
         prev_off = off + PTR_SIZE as u64;
@@ -2135,7 +2152,7 @@ fn collect_sections(
     // Now compute file layout: assign vmaddr and file offsets
     // The layout goes: header, load commands, sections by segment, LINKEDIT
     let header_size = mem::size_of::<MachHeader64>() as u64;
-    let load_commands_size = mo.mh.sizeofcmds as u64;
+    let load_commands_size = u64::from(mo.mh.sizeofcmds);
     let header_and_cmds = header_size + load_commands_size;
 
     // The __TEXT segment starts at 0 (it includes the header)
@@ -2255,7 +2272,7 @@ fn macho_write(
     }
 
     // 3. Write section data for each segment
-    let mut cur_offset = mem::size_of::<MachHeader64>() as u64 + mo.mh.sizeofcmds as u64;
+    let mut cur_offset = mem::size_of::<MachHeader64>() as u64 + u64::from(mo.mh.sizeofcmds);
 
     for seg_i in 0..mo.seg2lc.len() {
         let lc_idx = mo.seg2lc[seg_i];
@@ -2282,7 +2299,7 @@ fn macho_write(
         let seg_cmd_base = mem::size_of::<SegmentCommand64>();
         for sect_j in 0..nsects {
             let sect_off = seg_cmd_base + sect_j * mem::size_of::<Section64>();
-            let sect_fileoff = get_le32(lc, sect_off + 48) as u64;
+            let sect_fileoff = u64::from(get_le32(lc, sect_off + 48));
             let sect_size = get_le64(lc, sect_off + 40);
 
             if sect_size == 0 {
@@ -2359,8 +2376,8 @@ fn bind_rebase_import(
     // dyld_chained_fixups_header
     let header_size = 32u32; // Size of the chained fixups header
     let starts_offset = header_size;
-    let imports_offset: u32;
-    let symbols_offset: u32;
+    
+    
 
     // Collect imports (bind entries)
     let mut imports: Vec<(String, i32)> = Vec::new(); // (name, lib_ordinal)
@@ -2391,7 +2408,7 @@ fn bind_rebase_import(
 
         let idx = imports.len() as u32;
         import_map.insert(entry.sym_index, idx);
-        imports.push((sym_name, BIND_SPECIAL_DYLIB_FLAT_LOOKUP as i32));
+        imports.push((sym_name, i32::from(BIND_SPECIAL_DYLIB_FLAT_LOOKUP)));
     }
 
     // Build the starts-in-image structure
@@ -2399,9 +2416,9 @@ fn bind_rebase_import(
     let starts_size = 4 + num_segments * 4; // seg_count + per-segment offsets
 
     // Calculate offsets
-    imports_offset = starts_offset + starts_size + 16; // Add per-segment starts data
+    let imports_offset: u32 = starts_offset + starts_size + 16; // Add per-segment starts data
     let import_entry_size = 4u32; // DYLD_CHAINED_IMPORT format: 4 bytes per entry
-    symbols_offset = imports_offset + (imports.len() as u32) * import_entry_size;
+    let symbols_offset: u32 = imports_offset + (imports.len() as u32) * import_entry_size;
 
     // Build symbol strings
     let mut symbols_data: Vec<u8> = Vec::new();
@@ -2961,9 +2978,7 @@ pub(crate) fn macho_load_dll(
     // Add DLL reference
     if soname.is_empty() {
         soname = Path::new(filename)
-            .file_name()
-            .map(|n| n.to_string_lossy().into_owned())
-            .unwrap_or_else(|| filename.to_string());
+            .file_name().map_or_else(|| filename.to_string(), |n| n.to_string_lossy().into_owned());
     }
     add_dll_ref(state, &soname)?;
 
@@ -3108,9 +3123,7 @@ fn find_dylib(state: &TccState, name: &str) -> Option<String> {
 
     // Search library paths
     let basename = Path::new(name)
-        .file_name()
-        .map(|n| n.to_string_lossy().into_owned())
-        .unwrap_or_else(|| name.to_string());
+        .file_name().map_or_else(|| name.to_string(), |n| n.to_string_lossy().into_owned());
 
     for lib_path in &state.library_paths {
         let full_path = format!("{lib_path}/{basename}");

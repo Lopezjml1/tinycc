@@ -1,13 +1,13 @@
 //! DWARF (Debug With Arbitrary Record Formats) debug format constants.
 //!
 //! This module provides DWARF constant definitions translated from the original
-//! TinyCC `dwarf.h` header (1,046 lines). These constants supplement the `gimli`
+//! `TinyCC` `dwarf.h` header (1,046 lines). These constants supplement the `gimli`
 //! crate's DWARF support with the complete set of constants used by TCC's debug
 //! info generation.
 //!
 //! The naming convention preserves the standard DWARF constant names from the
 //! specification (e.g., `DW_TAG_compile_unit`, `DW_AT_name`) for compatibility
-//! with the well-known DWARF standard and the original TinyCC C source.
+//! with the well-known DWARF standard and the original `TinyCC` C source.
 //!
 //! C equivalent: `dwarf.h`
 
@@ -385,7 +385,7 @@ pub(crate) const DW_FORM_ref_sup4: u16 = 0x1c;
 pub(crate) const DW_FORM_strp_sup: u16 = 0x1d;
 /// DWARF 5: 16-byte data.
 pub(crate) const DW_FORM_data16: u16 = 0x1e;
-/// DWARF 5: Offset in .debug_line_str section.
+/// DWARF 5: Offset in .`debug_line_str` section.
 pub(crate) const DW_FORM_line_strp: u16 = 0x1f;
 /// DWARF 4: Type signature reference.
 pub(crate) const DW_FORM_ref_sig8: u16 = 0x20;
@@ -419,7 +419,7 @@ pub(crate) const DW_FORM_GNU_addr_index: u16 = 0x1f01;
 pub(crate) const DW_FORM_GNU_str_index: u16 = 0x1f02;
 /// Offset in alternate .debuginfo.
 pub(crate) const DW_FORM_GNU_ref_alt: u16 = 0x1f20;
-/// Offset in alternate .debug_str.
+/// Offset in alternate .`debug_str`.
 pub(crate) const DW_FORM_GNU_strp_alt: u16 = 0x1f21;
 
 // ---------------------------------------------------------------------------
@@ -609,9 +609,9 @@ pub(crate) const DW_OP_form_tls_address: u8 = 0x9b;
 pub(crate) const DW_OP_call_frame_cfa: u8 = 0x9c;
 /// ULEB128 size and ULEB128 offset in bits.
 pub(crate) const DW_OP_bit_piece: u8 = 0x9d;
-/// DW_FORM_block follows opcode.
+/// `DW_FORM_block` follows opcode.
 pub(crate) const DW_OP_implicit_value: u8 = 0x9e;
-/// No operands, special like DW_OP_piece.
+/// No operands, special like `DW_OP_piece`.
 pub(crate) const DW_OP_stack_value: u8 = 0x9f;
 
 // DWARF 5 location operations

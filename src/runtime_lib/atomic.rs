@@ -2,7 +2,7 @@
 //!
 //! Provides `__atomic_*` operation implementations used by programs compiled with
 //! tinycc-rs. These map to hardware atomic instructions on each supported architecture
-//! (i386, x86_64, ARM, AArch64, RISC-V).
+//! (i386, `x86_64`, ARM, `AArch64`, RISC-V).
 //!
 //! # C/ASM Equivalent
 //!
@@ -38,6 +38,9 @@
 //! | ARM         | `ldrex/strex` loops, `mcr p15` (dmb) barriers         |
 //! | AArch64     | `ldaxr/stlxr`, `ldar/stlr`, `dmb ish`               |
 //! | RISC-V      | `lr/sc` (load-reserved/store-conditional), `fence`   |
+
+// Atomic operations — doc formatting preserved from original.
+#![allow(clippy::empty_line_after_doc_comments)]
 
 use std::sync::atomic::{compiler_fence, fence, Ordering};
 
@@ -102,9 +105,9 @@ pub mod load {
     /// C equivalent: `__atomic_load_1(ptr, memorder)` in `lib/atomic.S`
     ///
     /// On i386: `movzbl (%eax),%eax`
-    /// On x86_64: `movzbl (%rdi),%eax`
+    /// On `x86_64`: `movzbl (%rdi),%eax`
     /// On ARM: `ldrb` with optional `mcr p15` (dmb) barriers
-    /// On AArch64: `ldrb` / `ldarb` depending on ordering
+    /// On `AArch64`: `ldrb` / `ldarb` depending on ordering
     /// On RISC-V: `fence rw,rw; lbu a0,0(a0); fence rw,rw`
     pub fn atomic_load_1(ptr: &AtomicU8, order: Ordering) -> u8 {
         ptr.load(order)
@@ -115,9 +118,9 @@ pub mod load {
     /// C equivalent: `__atomic_load_2(ptr, memorder)` in `lib/atomic.S`
     ///
     /// On i386: `movzwl (%eax),%eax`
-    /// On x86_64: `movzwl (%rdi),%eax`
+    /// On `x86_64`: `movzwl (%rdi),%eax`
     /// On ARM: `ldrh` with optional dmb barriers
-    /// On AArch64: `ldrh` / `ldarh`
+    /// On `AArch64`: `ldrh` / `ldarh`
     /// On RISC-V: `fence rw,rw; lhu a0,0(a0); fence rw,rw`
     pub fn atomic_load_2(ptr: &AtomicU16, order: Ordering) -> u16 {
         ptr.load(order)
@@ -128,9 +131,9 @@ pub mod load {
     /// C equivalent: `__atomic_load_4(ptr, memorder)` in `lib/atomic.S`
     ///
     /// On i386: `mov (%eax),%eax`
-    /// On x86_64: `mov (%rdi),%eax`
+    /// On `x86_64`: `mov (%rdi),%eax`
     /// On ARM: `ldr` with optional dmb barriers
-    /// On AArch64: `ldr w0, [x0]` / `ldar w0, [x0]`
+    /// On `AArch64`: `ldr w0, [x0]` / `ldar w0, [x0]`
     /// On RISC-V: `fence rw,rw; lw a0,0(a0); fence r,rw; sext.w a0,a0`
     pub fn atomic_load_4(ptr: &AtomicU32, order: Ordering) -> u32 {
         ptr.load(order)
@@ -141,9 +144,9 @@ pub mod load {
     /// C equivalent: `__atomic_load_8(ptr, memorder)` in `lib/atomic.S`
     ///
     /// On i386: `fildll/fistpll` (FPU trick for atomic 64-bit load on 32-bit)
-    /// On x86_64: `mov (%rdi),%rax`
+    /// On `x86_64`: `mov (%rdi),%rax`
     /// On ARM: `ldrexd r0, [r0]`
-    /// On AArch64: `ldr x0, [x0]` / `ldar x0, [x0]`
+    /// On `AArch64`: `ldr x0, [x0]` / `ldar x0, [x0]`
     /// On RISC-V: `fence rw,rw; ld a0,0(a0); fence r,rw`
     pub fn atomic_load_8(ptr: &AtomicU64, order: Ordering) -> u64 {
         ptr.load(order)
@@ -161,7 +164,7 @@ pub mod load {
 /// These functions perform an atomic write to the given location with the
 /// specified memory ordering. On x86, `xchg` is used (implicit lock prefix)
 /// to guarantee atomicity and full fence semantics. On ARM, `strb`/`strh`/`str`
-/// with dmb barriers; on AArch64, `stlrb`/`stlrh`/`stlr` for release stores;
+/// with dmb barriers; on `AArch64`, `stlrb`/`stlrh`/`stlr` for release stores;
 /// on RISC-V, fence-bracketed plain stores.
 pub mod store {
     use std::sync::atomic::{AtomicU16, AtomicU32, AtomicU64, AtomicU8, Ordering};
@@ -172,7 +175,7 @@ pub mod store {
     ///
     /// On x86: `xchg %al,(%edx)` — uses xchg for implicit full fence
     /// On ARM: `strb r1, [r0]` with optional dmb barriers
-    /// On AArch64: `strb` / `stlrb` depending on ordering
+    /// On `AArch64`: `strb` / `stlrb` depending on ordering
     /// On RISC-V: `fence rw,rw; sb a1,0(a0); fence rw,rw`
     pub fn atomic_store_1(ptr: &AtomicU8, val: u8, order: Ordering) {
         ptr.store(val, order);
@@ -184,7 +187,7 @@ pub mod store {
     ///
     /// On x86: `xchg %ax,(%edx)` — uses xchg for implicit full fence
     /// On ARM: `strh r1, [r0]` with optional dmb barriers
-    /// On AArch64: `strh` / `stlrh`
+    /// On `AArch64`: `strh` / `stlrh`
     /// On RISC-V: `fence rw,rw; sh a1,0(a0); fence rw,rw`
     pub fn atomic_store_2(ptr: &AtomicU16, val: u16, order: Ordering) {
         ptr.store(val, order);
@@ -196,7 +199,7 @@ pub mod store {
     ///
     /// On x86: `xchg %eax,(%edx)` — uses xchg for implicit full fence
     /// On ARM: `str r1, [r0]` with optional dmb barriers
-    /// On AArch64: `str` / `stlr`
+    /// On `AArch64`: `str` / `stlr`
     /// On RISC-V: `fence rw,w; sw a1,0(a0); fence rw,rw`
     pub fn atomic_store_4(ptr: &AtomicU32, val: u32, order: Ordering) {
         ptr.store(val, order);
@@ -207,9 +210,9 @@ pub mod store {
     /// C equivalent: `__atomic_store_8(ptr, val, memorder)` in `lib/atomic.S`
     ///
     /// On i386: `fildll/fistpll` + `lock orl $0x0,(%esp)` — FPU trick with fence
-    /// On x86_64: `xchg %rsi,(%rdi)`
+    /// On `x86_64`: `xchg %rsi,(%rdi)`
     /// On ARM: `ldrexd/strexd` loop (exclusive load/store for 64-bit on 32-bit ARM)
-    /// On AArch64: `str` / `stlr`
+    /// On `AArch64`: `str` / `stlr`
     /// On RISC-V: `fence rw,w; sd a1,0(a0); fence rw,rw`
     pub fn atomic_store_8(ptr: &AtomicU64, val: u64, order: Ordering) {
         ptr.store(val, order);
@@ -230,7 +233,7 @@ pub mod store {
 ///
 /// On x86: `lock cmpxchg` (1/2/4 bytes) or `lock cmpxchg8b` (8 bytes on i386)
 /// On ARM: `ldrex/strex` loop with optional dmb barriers
-/// On AArch64: `ldxr/stxr` (relaxed) or `ldaxr/stlxr` (acquire-release) loops
+/// On `AArch64`: `ldxr/stxr` (relaxed) or `ldaxr/stlxr` (acquire-release) loops
 /// On RISC-V: `lr.w.aqrl/sc.w.rl` (4 bytes) or `lr.d.aqrl/sc.d.rl` (8 bytes);
 ///            sub-word (1/2 bytes) use word-width lr/sc with bit masking
 pub mod compare_exchange {
@@ -245,7 +248,7 @@ pub mod compare_exchange {
     ///
     /// On x86: `lock cmpxchg %bl,(%edx)` — hardware CAS, `sete` for result
     /// On ARM: `ldrexb/strexb` loop with conditional `strbne ip, [r1]` on failure
-    /// On AArch64: `ldxrb/stxrb` or `ldaxrb/stlxrb` loop with `cset w0, eq`
+    /// On `AArch64`: `ldxrb/stxrb` or `ldaxrb/stlxrb` loop with `cset w0, eq`
     /// On RISC-V: word-aligned `lr.w.aqrl/sc.w.rl` with byte masking and shift
     pub fn atomic_cmpxchg_1(
         ptr: &AtomicU8,
@@ -271,7 +274,7 @@ pub mod compare_exchange {
     ///
     /// On x86: `lock cmpxchg %bx,(%edx)` — hardware CAS
     /// On ARM: `ldrexh/strexh` loop
-    /// On AArch64: `ldxrh/stxrh` or `ldaxrh/stlxrh` loop
+    /// On `AArch64`: `ldxrh/stxrh` or `ldaxrh/stlxrh` loop
     /// On RISC-V: word-aligned `lr.w.aqrl/sc.w.rl` with halfword masking
     pub fn atomic_cmpxchg_2(
         ptr: &AtomicU16,
@@ -297,7 +300,7 @@ pub mod compare_exchange {
     ///
     /// On x86: `lock cmpxchg %ebx,(%edx)` — hardware CAS
     /// On ARM: `ldrex/strex` loop
-    /// On AArch64: `ldxr/stxr` or `ldaxr/stlxr` loop
+    /// On `AArch64`: `ldxr/stxr` or `ldaxr/stlxr` loop
     /// On RISC-V: `lr.w.aqrl/sc.w.rl` loop
     pub fn atomic_cmpxchg_4(
         ptr: &AtomicU32,
@@ -322,9 +325,9 @@ pub mod compare_exchange {
     /// Returns `true` if the exchange succeeded. On failure, `*expected` is updated.
     ///
     /// On i386: `lock cmpxchg8b (%edi)` — 8-byte CAS using EDX:EAX / ECX:EBX
-    /// On x86_64: `lock cmpxchg %rdx,(%rdi)` — direct 64-bit CAS
+    /// On `x86_64`: `lock cmpxchg %rdx,(%rdi)` — direct 64-bit CAS
     /// On ARM: `ldrexd/strexd` loop (double-register exclusive)
-    /// On AArch64: `ldxr/stxr` or `ldaxr/stlxr` loop (native 64-bit)
+    /// On `AArch64`: `ldxr/stxr` or `ldaxr/stlxr` loop (native 64-bit)
     /// On RISC-V: `lr.d.aqrl/sc.d.rl` loop (native 64-bit)
     pub fn atomic_cmpxchg_8(
         ptr: &AtomicU64,
@@ -360,7 +363,7 @@ pub mod compare_exchange {
 ///
 /// On x86: `mov $0x1,%eax; xchg %al,(%edx)` — implicit lock prefix on xchg
 /// On ARM: `ldrexb/strexb` loop with `mov r2, #1`
-/// On AArch64: `ldxrb/stxrb` or `ldaxrb/stlxrb` loop with `mov w2, #1`
+/// On `AArch64`: `ldxrb/stxrb` or `ldaxrb/stlxrb` loop with `mov w2, #1`
 /// On RISC-V: `amoor.w.aqrl` with byte masking (atomic OR with 1-bit at offset)
 pub mod test_and_set {
     use std::sync::atomic::{AtomicU8, Ordering};
@@ -388,10 +391,10 @@ pub mod test_and_set {
 /// threads/cores before memory operations after the fence.
 ///
 /// Hardware implementation:
-/// - x86/x86_64: `lock orl $0x0,(%esp)` or `lock orq $0x0,(%rsp)` — a locked
+/// - `x86/x86_64`: `lock orl $0x0,(%esp)` or `lock orq $0x0,(%rsp)` — a locked
 ///   operation on the stack serves as a full fence (cheaper than `mfence`)
 /// - ARM: `mcr p15, #0, r0, c7, c10, #5` — data memory barrier (CP15 DMB)
-/// - AArch64: `dmb ish` — data memory barrier, inner-shareable domain
+/// - `AArch64`: `dmb ish` — data memory barrier, inner-shareable domain
 /// - RISC-V: `fence rw,rw` — full fence on all read/write operations
 ///
 /// Note: `atomic_signal_fence` is the compiler-only variant (no hardware barrier).
@@ -439,7 +442,7 @@ pub mod flag {
     ///
     /// On x86: `mov $0x1,%eax; xchg %al,(%edx)` — byte swap with 1
     /// On ARM: `ldrexb/strexb` loop with `mcr p15` (dmb) barriers
-    /// On AArch64: `ldaxrb/stlxrb` loop — acquire/release exclusive byte swap
+    /// On `AArch64`: `ldaxrb/stlxrb` loop — acquire/release exclusive byte swap
     /// On RISC-V: `amoor.w.aqrl` with byte masking — atomic OR at byte offset
     ///
     /// Returns `true` if the flag was previously set, `false` if it was clear.
@@ -454,7 +457,7 @@ pub mod flag {
     ///
     /// On x86: `xor %eax,%eax; xchg %al,(%edx)` — byte swap with 0
     /// On ARM: `movs r3, #0; mcr p15 (dmb); strb r3, [r0]; mcr p15 (dmb)`
-    /// On AArch64: `stlrb wzr, [x0]` — release store of zero
+    /// On `AArch64`: `stlrb wzr, [x0]` — release store of zero
     /// On RISC-V: `fence rw,rw; sb zero,0(a0); fence rw,rw`
     pub fn clear(flag: &AtomicBool, order: Ordering) {
         flag.store(false, order);
@@ -565,7 +568,7 @@ pub mod target_code {
             0xc3, // ret
         ];
 
-        /// `atomic_flag_test_and_set` — same as test_and_set_1
+        /// `atomic_flag_test_and_set` — same as `test_and_set_1`
         pub const FLAG_TEST_AND_SET: &[u8] = &[
             0x8b, 0x54, 0x24, 0x04, // mov 0x4(%esp),%edx
             0xb8, 0x01, 0x00, 0x00, 0x00, // mov $0x1,%eax
@@ -582,9 +585,9 @@ pub mod target_code {
         ];
     }
 
-    /// x86_64 (System V ABI) atomic operation machine code.
+    /// `x86_64` (System V ABI) atomic operation machine code.
     ///
-    /// These are native x86_64 instruction sequences using the System V calling
+    /// These are native `x86_64` instruction sequences using the System V calling
     /// convention (arguments in rdi, rsi, rdx, rcx, r8, r9).
     ///
     /// Key instructions:
@@ -660,7 +663,7 @@ pub mod target_code {
             0xc3, // ret
         ];
 
-        /// `atomic_flag_test_and_set` — same as test_and_set
+        /// `atomic_flag_test_and_set` — same as `test_and_set`
         pub const FLAG_TEST_AND_SET: &[u8] = &[
             0xb8, 0x01, 0x00, 0x00, 0x00, // mov $0x1,%eax
             0x86, 0x07, // xchg %al,(%rdi)
@@ -675,7 +678,7 @@ pub mod target_code {
         ];
     }
 
-    /// x86_64 (Windows ABI) atomic operation machine code.
+    /// `x86_64` (Windows ABI) atomic operation machine code.
     ///
     /// Uses the Windows x64 calling convention (arguments in rcx, rdx, r8, r9).
     /// Functionally identical to System V but with different register assignments.
@@ -747,7 +750,7 @@ pub mod target_code {
             0xc3, // ret
         ];
 
-        /// `atomic_flag_test_and_set` — same as test_and_set
+        /// `atomic_flag_test_and_set` — same as `test_and_set`
         pub const FLAG_TEST_AND_SET: &[u8] = &[
             0xb8, 0x01, 0x00, 0x00, 0x00, // mov $0x1,%eax
             0x86, 0x01, // xchg %al,(%rcx)
@@ -920,9 +923,9 @@ pub mod target_code {
         ];
     }
 
-    /// AArch64 atomic operation machine code.
+    /// `AArch64` atomic operation machine code.
     ///
-    /// These are pre-assembled AArch64 instructions from the `#ifdef __TINYC__`
+    /// These are pre-assembled `AArch64` instructions from the `#ifdef __TINYC__`
     /// sections of `lib/atomic.S`. The machine code uses:
     /// - `ldaxr/stlxr` for acquire-release exclusive loops
     /// - `ldxr/stxr` for relaxed exclusive loops
@@ -932,7 +935,7 @@ pub mod target_code {
     /// - `cset` for condition code to register transfer
     #[cfg(feature = "arm64")]
     pub mod aarch64 {
-        /// `__atomic_load_1` — AArch64 machine code words (7 × 4 bytes)
+        /// `__atomic_load_1` — `AArch64` machine code words (7 × 4 bytes)
         pub const ATOMIC_LOAD_1: &[u32] = &[
             0x3500_0081, // cbnz w1, .Lordered
             0x3940_0000, // ldrb w0, [x0]
@@ -943,25 +946,25 @@ pub mod target_code {
             0xd65f_03c0, // ret
         ];
 
-        /// `__atomic_load_2` — AArch64 machine code words
+        /// `__atomic_load_2` — `AArch64` machine code words
         pub const ATOMIC_LOAD_2: &[u32] = &[
             0x3500_0081, 0x7940_0000, 0x1200_3c00, 0xd65f_03c0,
             0x48df_fc00, 0x1200_3c00, 0xd65f_03c0,
         ];
 
-        /// `__atomic_load_4` — AArch64 machine code words
+        /// `__atomic_load_4` — `AArch64` machine code words
         pub const ATOMIC_LOAD_4: &[u32] = &[
             0x3500_0061, 0xb940_0000, 0xd65f_03c0,
             0x88df_fc00, 0xd65f_03c0,
         ];
 
-        /// `__atomic_load_8` — AArch64 machine code words
+        /// `__atomic_load_8` — `AArch64` machine code words
         pub const ATOMIC_LOAD_8: &[u32] = &[
             0x3500_0061, 0xf940_0000, 0xd65f_03c0,
             0xc8df_fc00, 0xd65f_03c0,
         ];
 
-        /// `__atomic_store_1` — AArch64 machine code words (6 × 4 bytes)
+        /// `__atomic_store_1` — `AArch64` machine code words (6 × 4 bytes)
         pub const ATOMIC_STORE_1: &[u32] = &[
             0x1200_1c21, // and w1, w1, #0xff
             0x3500_0062, // cbnz w2, .Lordered
@@ -971,25 +974,25 @@ pub mod target_code {
             0xd65f_03c0, // ret
         ];
 
-        /// `__atomic_store_2` — AArch64 machine code words
+        /// `__atomic_store_2` — `AArch64` machine code words
         pub const ATOMIC_STORE_2: &[u32] = &[
             0x1200_3c21, 0x3500_0062, 0x7900_0001, 0xd65f_03c0,
             0x489f_fc01, 0xd65f_03c0,
         ];
 
-        /// `__atomic_store_4` — AArch64 machine code words
+        /// `__atomic_store_4` — `AArch64` machine code words
         pub const ATOMIC_STORE_4: &[u32] = &[
             0x3500_0062, 0xb900_0001, 0xd65f_03c0,
             0x889f_fc01, 0xd65f_03c0,
         ];
 
-        /// `__atomic_store_8` — AArch64 machine code words
+        /// `__atomic_store_8` — `AArch64` machine code words
         pub const ATOMIC_STORE_8: &[u32] = &[
             0x3500_0062, 0xf900_0001, 0xd65f_03c0,
             0xc89f_fc01, 0xd65f_03c0,
         ];
 
-        /// `__atomic_compare_exchange_1` — AArch64 machine code (21 × 4 bytes)
+        /// `__atomic_compare_exchange_1` — `AArch64` machine code (21 × 4 bytes)
         pub const ATOMIC_CMPXCHG_1: &[u32] = &[
             0x1200_1c42, 0x3500_0143, 0x3940_0023, 0x085f_7c04,
             0x6b23_009f, 0x5400_0061, 0x0805_7c02, 0x35ff_ff85,
@@ -999,7 +1002,7 @@ pub mod target_code {
             0xd65f_03c0,
         ];
 
-        /// `__atomic_compare_exchange_2` — AArch64 machine code
+        /// `__atomic_compare_exchange_2` — `AArch64` machine code
         pub const ATOMIC_CMPXCHG_2: &[u32] = &[
             0x1200_3c42, 0x3500_0143, 0x7940_0023, 0x485f_7c04,
             0x6b23_209f, 0x5400_0061, 0x4805_7c02, 0x35ff_ff85,
@@ -1009,7 +1012,7 @@ pub mod target_code {
             0xd65f_03c0,
         ];
 
-        /// `__atomic_compare_exchange_4` — AArch64 machine code (20 × 4 bytes)
+        /// `__atomic_compare_exchange_4` — `AArch64` machine code (20 × 4 bytes)
         pub const ATOMIC_CMPXCHG_4: &[u32] = &[
             0x3500_0143, 0xb940_0023, 0x885f_7c04, 0x6b03_009f,
             0x5400_0061, 0x8805_7c02, 0x35ff_ff85, 0x1a9f_17e0,
@@ -1018,7 +1021,7 @@ pub mod target_code {
             0x1a9f_17e0, 0x54ff_ff00, 0xb900_0024, 0xd65f_03c0,
         ];
 
-        /// `__atomic_compare_exchange_8` — AArch64 machine code (20 × 4 bytes)
+        /// `__atomic_compare_exchange_8` — `AArch64` machine code (20 × 4 bytes)
         pub const ATOMIC_CMPXCHG_8: &[u32] = &[
             0x3500_0143, 0xf940_0023, 0xc85f_7c04, 0xeb03_009f,
             0x5400_0061, 0xc805_7c02, 0x35ff_ff85, 0x1a9f_17e0,
@@ -1027,7 +1030,7 @@ pub mod target_code {
             0x1a9f_17e0, 0x54ff_ff00, 0xf900_0024, 0xd65f_03c0,
         ];
 
-        /// `__atomic_test_and_set_1` — AArch64 machine code (12 × 4 bytes)
+        /// `__atomic_test_and_set_1` — `AArch64` machine code (12 × 4 bytes)
         /// All size variants use the same byte-width swap
         pub const ATOMIC_TEST_AND_SET: &[u32] = &[
             0x5280_0022, 0x3500_00c1, 0x085f_7c01, 0x0803_7c02,
@@ -1046,7 +1049,7 @@ pub mod target_code {
             0xd65f_03c0, // ret
         ];
 
-        /// `atomic_flag_test_and_set` — AArch64 machine code (6 × 4 bytes)
+        /// `atomic_flag_test_and_set` — `AArch64` machine code (6 × 4 bytes)
         pub const FLAG_TEST_AND_SET: &[u32] = &[
             0xaa00_03e1, // mov x1, x0
             0x5280_0022, // mov w2, #1
@@ -1056,7 +1059,7 @@ pub mod target_code {
             0xd65f_03c0, // ret
         ];
 
-        /// `atomic_flag_clear` — AArch64 machine code (2 × 4 bytes)
+        /// `atomic_flag_clear` — `AArch64` machine code (2 × 4 bytes)
         pub const FLAG_CLEAR: &[u32] = &[
             0x089f_fc1f, // stlrb wzr, [x0]
             0xd65f_03c0, // ret
@@ -1172,7 +1175,7 @@ pub mod target_code {
             0x82, 0x80, // c.ret
         ];
 
-        /// `atomic_flag_test_and_set` — same as test_and_set (byte-width)
+        /// `atomic_flag_test_and_set` — same as `test_and_set` (byte-width)
         pub const FLAG_TEST_AND_SET: &[u8] = &[
             0x93, 0x77, 0x35, 0x00, // andi a5,a0,3
             0x9b, 0x97, 0x37, 0x00, // slliw a5,a5,3

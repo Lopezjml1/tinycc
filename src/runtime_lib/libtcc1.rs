@@ -23,6 +23,9 @@
 //! mantissa fields using bitwise operations. The constants below
 //! correspond exactly to the `#define` macros in `libtcc1.c`.
 
+// 64-bit arithmetic helpers — float-to-int conversions inherently lose precision.
+#![allow(clippy::cast_precision_loss)]
+
 use std::sync::atomic;
 
 // ============================================================================

@@ -15,6 +15,12 @@
 //!
 //! C equivalent: `tcc.h` (2,016 lines — monolithic internal header)
 
+// Shared type definitions — struct fields preserve the original tcc.h naming
+// conventions for traceability. Debug impls may omit large/binary fields.
+#![allow(clippy::missing_fields_in_debug)]
+#![allow(clippy::struct_excessive_bools)]
+#![allow(clippy::struct_field_names)]
+
 use std::fs::File;
 use std::io::BufReader;
 use std::path::PathBuf;
@@ -394,7 +400,7 @@ pub struct DllReference {
 ///
 /// C equivalent: `BufferedFile` in tcc.h:639-655.
 ///
-/// AAP §0.4.4: "BufferedFile (8192-byte I/O) → `BufReader<File>`"
+/// AAP §0.4.4: "`BufferedFile` (8192-byte I/O) → `BufReader<File>`"
 ///
 /// The fixed 1024-byte `filename` array becomes `PathBuf`, the manual
 /// 8192-byte I/O buffer becomes `BufReader<File>`, and the raw `fd` integer
@@ -505,7 +511,7 @@ pub struct AttributeDef {
 /// Tracks whether a header file is guarded by `#ifndef MACRO` and can
 /// be skipped on subsequent inclusions.
 ///
-/// AAP §0.4.4: "CachedInclude hash table → `HashMap<PathBuf, CachedInclude>`"
+/// AAP §0.4.4: "`CachedInclude` hash table → `HashMap<PathBuf, CachedInclude>`"
 #[derive(Debug, Clone)]
 pub struct CachedInclude {
     /// Token of the `#ifndef` guard macro (0 if none).

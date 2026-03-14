@@ -1102,7 +1102,7 @@ pub(crate) fn unordtf2(a: QuadFloat, b: QuadFloat) -> i32 {
 /// `lib/lib-arm64.c` lines 34–38.
 ///
 /// The actual cache-flush system call (`ic ivau` / `dsb ish` / `isb` on
-/// AArch64) requires `unsafe` and platform-specific code which lives in
+/// `AArch64`) requires `unsafe` and platform-specific code which lives in
 /// `src/runtime.rs` per the project's safety policy (AAP §0.8.1).
 /// This function provides the safe interface; the platform implementation
 /// is delegated to the runtime module at link time.

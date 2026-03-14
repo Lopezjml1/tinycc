@@ -43,12 +43,12 @@ pub(crate) struct AllocaCode {
     /// Relocations required within `code`.
     ///
     /// Each entry is `(byte_offset, symbol_name)`:
-    /// - For x86/x86_64: `byte_offset` points to the 4-byte displacement
+    /// - For `x86/x86_64`: `byte_offset` points to the 4-byte displacement
     ///   immediately after the `0xE8` (CALL) opcode.
     /// - For ARM (32-bit): `byte_offset` points to the 4-byte BL instruction
     ///   whose 24-bit offset field must be patched.
-    /// - For AArch64: `byte_offset` points to the 4-byte BL instruction
-    ///   whose 26-bit offset field must be patched (R_AARCH64_CALL26).
+    /// - For `AArch64`: `byte_offset` points to the 4-byte BL instruction
+    ///   whose 26-bit offset field must be patched (`R_AARCH64_CALL26`).
     /// - For RISC-V: `byte_offset` points to the 4-byte JAL instruction
     ///   whose 20-bit offset field must be patched.
     pub(crate) relocations: &'static [AllocaRelocation],
@@ -134,7 +134,7 @@ pub(crate) mod i386 {
     /// After stack adjustment, calls `__bound_new_region(ptr, size)` to
     /// register the allocated region with the bounds checker.
     ///
-    /// The `call __bound_new_region` at offset 0x16 needs a R_386_PC32 relocation.
+    /// The `call __bound_new_region` at offset 0x16 needs a `R_386_PC32` relocation.
     /// Bytes 0x17..0x1B contain a placeholder 4-byte displacement (all zeros).
     pub(crate) const ALLOCA_BT_CODE: &[u8] = &[
         0x5A,                   // pop    %edx          (save return address)
@@ -218,9 +218,9 @@ pub(crate) mod i386 {
 // x86_64 machine code (from alloca.S lines 40-68, alloca-bt.S lines 53-93)
 // ---------------------------------------------------------------------------
 
-/// Alloca machine code for x86_64.
+/// Alloca machine code for `x86_64`.
 ///
-/// The x86_64 variant uses the System V AMD64 ABI where the size argument
+/// The `x86_64` variant uses the System V AMD64 ABI where the size argument
 /// is passed in `%rdi` (non-Windows) or `%rcx` (Windows).
 /// Alignment is 16 bytes (matching the ABI stack alignment requirement).
 #[cfg(feature = "x86_64")]
@@ -229,7 +229,7 @@ pub(crate) mod x86_64 {
 
     // -- Standard alloca (alloca.S lines 42-68, non-Windows) ------------------
 
-    /// Standard alloca for x86_64, non-Windows (System V ABI).
+    /// Standard alloca for `x86_64`, non-Windows (System V ABI).
     ///
     /// Verified against `as -64` + `objdump -d` output.
     pub(crate) const ALLOCA_CODE: &[u8] = &[
@@ -245,7 +245,7 @@ pub(crate) mod x86_64 {
         0xC3,                          // ret
     ];
 
-    /// Standard alloca for x86_64, Windows (with guard-page probing).
+    /// Standard alloca for `x86_64`, Windows (with guard-page probing).
     ///
     /// Uses `%rcx` for the size argument per the Windows x64 calling convention.
     pub(crate) const ALLOCA_WIN_CODE: &[u8] = &[
@@ -271,12 +271,12 @@ pub(crate) mod x86_64 {
 
     // -- Bounds-checking alloca (alloca-bt.S lines 55-92, non-Windows) --------
 
-    /// Bounds-checking alloca for x86_64, non-Windows.
+    /// Bounds-checking alloca for `x86_64`, non-Windows.
     ///
     /// After stack adjustment, calls `__bound_new_region(ptr, size)` using
     /// System V ABI (ptr in `%rdi`, size in `%rsi`).
     ///
-    /// The `call __bound_new_region` at offset 0x1E needs a R_X86_64_PC32 relocation.
+    /// The `call __bound_new_region` at offset 0x1E needs a `R_X86_64_PC32` relocation.
     /// Bytes 0x1F..0x23 contain a placeholder 4-byte displacement (all zeros).
     pub(crate) const ALLOCA_BT_CODE: &[u8] = &[
         0x5A,                         // pop    %rdx          (save return address)
@@ -299,12 +299,12 @@ pub(crate) mod x86_64 {
         0xC3,                          // ret
     ];
 
-    /// Relocation for x86_64 bounds-checking alloca: call displacement at offset 0x1F.
+    /// Relocation for `x86_64` bounds-checking alloca: call displacement at offset 0x1F.
     pub(crate) const ALLOCA_BT_RELOCS: &[AllocaRelocation] = &[
         AllocaRelocation { offset: 0x1F, symbol: "__bound_new_region" },
     ];
 
-    /// Bounds-checking alloca for x86_64, Windows.
+    /// Bounds-checking alloca for `x86_64`, Windows.
     ///
     /// The Windows variant increments the size by 1 (to separate regions),
     /// jumps to `alloca` for the actual allocation, then a secondary entry
@@ -329,7 +329,7 @@ pub(crate) mod x86_64 {
         0xC3,                          // ret
     ];
 
-    /// Relocations for x86_64 bounds-checking alloca (Windows).
+    /// Relocations for `x86_64` bounds-checking alloca (Windows).
     /// Two relocations: `jmp alloca` and `call __bound_new_region`.
     pub(crate) const ALLOCA_BT_WIN_RELOCS: &[AllocaRelocation] = &[
         AllocaRelocation { offset: 0x04, symbol: "alloca" },
@@ -342,7 +342,7 @@ pub(crate) mod x86_64 {
     /// return path can call it.
     pub(crate) const ALLOCA_BT_WIN_NR_OFFSET: usize = 0x08;
 
-    /// Get x86_64 alloca code template.
+    /// Get `x86_64` alloca code template.
     pub(crate) fn get_code(bounds_check: bool, windows: bool) -> AllocaCode {
         match (bounds_check, windows) {
             (false, false) => AllocaCode { code: ALLOCA_CODE, relocations: &[] },
@@ -396,7 +396,7 @@ pub(crate) mod arm {
     /// mov pc, lr                  @ return
     /// ```
     ///
-    /// The `bl __bound_new_region` at offset 20 needs a R_ARM_CALL relocation.
+    /// The `bl __bound_new_region` at offset 20 needs a `R_ARM_CALL` relocation.
     pub(crate) const ALLOCA_BT_CODE: &[u8] = &[
         0x00, 0x10, 0xA0, 0xE1, // mov r1, r0           (0xE1A01000)
         0x01, 0x00, 0x80, 0xE2, // add r0, r0, #1       (0xE2800001)
@@ -431,18 +431,18 @@ pub(crate) mod arm {
 // AArch64 machine code (from alloca.S lines 81-135, alloca-bt.S lines 112-177)
 // ---------------------------------------------------------------------------
 
-/// Alloca machine code for AArch64 (ARM 64-bit).
+/// Alloca machine code for `AArch64` (ARM 64-bit).
 ///
 /// Instruction encodings taken directly from the `.int` values in alloca.S
 /// and alloca-bt.S (the `__TINYC__` path), which provide pre-encoded
 /// instruction words.
 ///
-/// AArch64 alloca aligns to 16 bytes (matching the ABI requirement).
+/// `AArch64` alloca aligns to 16 bytes (matching the ABI requirement).
 #[cfg(feature = "arm64")]
 pub(crate) mod arm64 {
     use super::{AllocaCode, AllocaRelocation};
 
-    /// Standard alloca for AArch64, non-Windows (alloca.S __TINYC__ path).
+    /// Standard alloca for `AArch64`, non-Windows (alloca.S __TINYC__ path).
     ///
     /// ```asm
     /// add  x0, x0, #15       // round up to 16-byte boundary
@@ -459,7 +459,7 @@ pub(crate) mod arm64 {
         0xC0, 0x03, 0x5F, 0xD6, // ret                    (0xD65F03C0)
     ];
 
-    /// Standard alloca for AArch64, Windows (with guard-page probing).
+    /// Standard alloca for `AArch64`, Windows (with guard-page probing).
     ///
     /// Uses a loop to probe each 4 KiB page before allocating.
     pub(crate) const ALLOCA_WIN_CODE: &[u8] = &[
@@ -483,12 +483,12 @@ pub(crate) mod arm64 {
         0xC0, 0x03, 0x5F, 0xD6, // ret                    (0xD65F03C0)
     ];
 
-    /// Bounds-checking alloca for AArch64, non-Windows.
+    /// Bounds-checking alloca for `AArch64`, non-Windows.
     ///
     /// After stack adjustment, saves frame pointer and link register,
     /// calls `__bound_new_region(ptr, size)`, then restores and returns.
     ///
-    /// The `bl __bound_new_region` at offset 24 needs a R_AARCH64_CALL26 relocation.
+    /// The `bl __bound_new_region` at offset 24 needs a `R_AARCH64_CALL26` relocation.
     pub(crate) const ALLOCA_BT_CODE: &[u8] = &[
         0xE1, 0x03, 0x00, 0xAA, // mov  x1, x0            (0xAA0003E1)
         0x00, 0x40, 0x00, 0x91, // add  x0, x0, #16       (0x91004000)
@@ -502,12 +502,12 @@ pub(crate) mod arm64 {
         0xC0, 0x03, 0x5F, 0xD6, // ret                    (0xD65F03C0)
     ];
 
-    /// Relocation for AArch64 bounds-checking alloca: BL at offset 24.
+    /// Relocation for `AArch64` bounds-checking alloca: BL at offset 24.
     pub(crate) const ALLOCA_BT_RELOCS: &[AllocaRelocation] = &[
         AllocaRelocation { offset: 24, symbol: "__bound_new_region" },
     ];
 
-    /// Bounds-checking alloca for AArch64, Windows (with guard-page probing).
+    /// Bounds-checking alloca for `AArch64`, Windows (with guard-page probing).
     pub(crate) const ALLOCA_BT_WIN_CODE: &[u8] = &[
         0xE1, 0x03, 0x00, 0xAA, // mov  x1, x0            (0xAA0003E1)
         0x00, 0x40, 0x00, 0x91, // add  x0, x0, #16       (0x91004000)
@@ -535,12 +535,12 @@ pub(crate) mod arm64 {
         0xC0, 0x03, 0x5F, 0xD6, // ret
     ];
 
-    /// Relocation for AArch64 bounds-checking alloca (Windows): BL at offset 68.
+    /// Relocation for `AArch64` bounds-checking alloca (Windows): BL at offset 68.
     pub(crate) const ALLOCA_BT_WIN_RELOCS: &[AllocaRelocation] = &[
         AllocaRelocation { offset: 68, symbol: "__bound_new_region" },
     ];
 
-    /// Get AArch64 alloca code template.
+    /// Get `AArch64` alloca code template.
     pub(crate) fn get_code(bounds_check: bool, windows: bool) -> AllocaCode {
         match (bounds_check, windows) {
             (false, false) => AllocaCode { code: ALLOCA_CODE, relocations: &[] },
@@ -599,7 +599,7 @@ pub(crate) mod riscv64 {
     /// ret                    # return
     /// ```
     ///
-    /// The `jal __bound_new_region` at offset 32 needs a R_RISCV_JAL relocation.
+    /// The `jal __bound_new_region` at offset 32 needs a `R_RISCV_JAL` relocation.
     pub(crate) const ALLOCA_BT_CODE: &[u8] = &[
         0xB3, 0x05, 0x05, 0x00, // mv   a1, a0           (0x000505B3)
         0x33, 0x01, 0xA1, 0x40, // sub  sp, sp, a0       (0x40A10133)
@@ -650,7 +650,7 @@ pub(crate) const ALLOCA_ALT_SYMBOL: &str = "__alloca";
 /// Bounds-checking alloca symbol name.
 pub(crate) const BOUND_ALLOCA_SYMBOL: &str = "__bound_alloca";
 
-/// Windows x86_64 bounds-checking alloca secondary entry point.
+/// Windows `x86_64` bounds-checking alloca secondary entry point.
 pub(crate) const BOUND_ALLOCA_NR_SYMBOL: &str = "__bound_alloca_nr";
 
 /// Get the alloca code bytes for a target architecture.
@@ -687,40 +687,32 @@ pub(crate) fn get_alloca_code(bounds_check: bool) -> AllocaCode {
 /// This is the full-control variant allowing explicit specification of
 /// the Windows flag (useful for cross-compilation where the host OS
 /// differs from the target OS).
-pub(crate) fn get_alloca_code_for_target(bounds_check: bool, windows: bool) -> AllocaCode {
+pub(crate) fn get_alloca_code_for_target(
+    #[allow(unused_variables)] bounds_check: bool,
+    #[allow(unused_variables)] windows: bool,
+) -> AllocaCode {
     // Priority: x86_64 > i386 > arm64 > arm > riscv64
     // This matches TCC's default target selection order.
+    // cfg_if pattern avoids unreachable_code warnings from sequential cfg blocks.
 
     #[cfg(feature = "x86_64")]
-    {
-        return x86_64::get_code(bounds_check, windows);
-    }
+    { x86_64::get_code(bounds_check, windows) }
 
-    #[cfg(feature = "i386")]
-    {
-        return i386::get_code(bounds_check, windows);
-    }
+    #[cfg(all(feature = "i386", not(feature = "x86_64")))]
+    { i386::get_code(bounds_check, windows) }
 
-    #[cfg(feature = "arm64")]
-    {
-        return arm64::get_code(bounds_check, windows);
-    }
+    #[cfg(all(feature = "arm64", not(feature = "x86_64"), not(feature = "i386")))]
+    { arm64::get_code(bounds_check, windows) }
 
-    #[cfg(feature = "arm")]
-    {
-        return arm::get_code(bounds_check, windows);
-    }
+    #[cfg(all(feature = "arm", not(feature = "x86_64"), not(feature = "i386"), not(feature = "arm64")))]
+    { arm::get_code(bounds_check, windows) }
 
-    #[cfg(feature = "riscv64")]
-    {
-        return riscv64::get_code(bounds_check, windows);
-    }
+    #[cfg(all(feature = "riscv64", not(feature = "x86_64"), not(feature = "i386"), not(feature = "arm64"), not(feature = "arm")))]
+    { riscv64::get_code(bounds_check, windows) }
 
     // Fallback: no architecture feature enabled — return empty code.
-    // The compiler will report an error if alloca is needed but no backend
-    // is configured.
-    #[allow(unreachable_code)]
-    AllocaCode { code: &[], relocations: &[] }
+    #[cfg(not(any(feature = "x86_64", feature = "i386", feature = "arm64", feature = "arm", feature = "riscv64")))]
+    { AllocaCode { code: &[], relocations: &[] } }
 }
 
 /// Pure Rust alloca-equivalent for stack frame management.
@@ -743,9 +735,9 @@ pub(crate) fn get_alloca_code_for_target(bounds_check: bool, windows: bool) -> A
 ///
 /// This replaces the inline alignment logic in each architecture's alloca:
 /// - i386: `add $3,%eax; and $-4,%eax` (4-byte alignment)
-/// - x86_64: `add $15,%rax; and $-16,%rax` (16-byte alignment)
+/// - `x86_64`: `add $15,%rax; and $-16,%rax` (16-byte alignment)
 /// - ARM: `bic sp, sp, #7` (8-byte alignment)
-/// - AArch64: `and x0, x0, #-16` (16-byte alignment)
+/// - `AArch64`: `and x0, x0, #-16` (16-byte alignment)
 /// - RISC-V: `andi sp, sp, -16` (16-byte alignment)
 ///
 /// # Examples
@@ -770,30 +762,31 @@ pub(crate) fn compute_alloca_adjustment(requested_size: usize, alignment: usize)
 ///
 /// Returns the stack alignment requirement that the alloca code enforces:
 /// - i386: 4 bytes
-/// - x86_64: 16 bytes
+/// - `x86_64`: 16 bytes
 /// - ARM: 8 bytes
-/// - AArch64: 16 bytes
+/// - `AArch64`: 16 bytes
 /// - RISC-V 64: 16 bytes
 ///
 /// Falls back to 16 if no architecture feature is enabled.
 pub(crate) fn default_alloca_alignment() -> usize {
+    // cfg_if pattern avoids unreachable_code warnings from sequential cfg blocks.
     #[cfg(feature = "x86_64")]
-    { return 16; }
+    { 16 }
 
-    #[cfg(feature = "i386")]
-    { return 4; }
+    #[cfg(all(feature = "i386", not(feature = "x86_64")))]
+    { 4 }
 
-    #[cfg(feature = "arm64")]
-    { return 16; }
+    #[cfg(all(feature = "arm64", not(feature = "x86_64"), not(feature = "i386")))]
+    { 16 }
 
-    #[cfg(feature = "arm")]
-    { return 8; }
+    #[cfg(all(feature = "arm", not(feature = "x86_64"), not(feature = "i386"), not(feature = "arm64")))]
+    { 8 }
 
-    #[cfg(feature = "riscv64")]
-    { return 16; }
+    #[cfg(all(feature = "riscv64", not(feature = "x86_64"), not(feature = "i386"), not(feature = "arm64"), not(feature = "arm")))]
+    { 16 }
 
-    #[allow(unreachable_code)]
-    16
+    #[cfg(not(any(feature = "x86_64", feature = "i386", feature = "arm64", feature = "arm", feature = "riscv64")))]
+    { 16 }
 }
 
 // ---------------------------------------------------------------------------

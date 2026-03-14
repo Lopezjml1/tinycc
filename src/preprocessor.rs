@@ -1,3 +1,11 @@
+// Preprocessor — tokenizer and macro engine. Size casts for token positions,
+// variable naming, and control flow patterns follow the original tccpp.c.
+#![allow(clippy::cast_sign_loss)]
+#![allow(clippy::items_after_statements)]
+#![allow(clippy::manual_let_else)]
+#![allow(clippy::no_effect_underscore_binding)]
+#![allow(clippy::unnecessary_wraps)]
+
 // Copyright (c) 2024 tinycc-rs contributors
 // SPDX-License-Identifier: MIT OR LGPL-2.1-or-later
 //
@@ -136,7 +144,7 @@ pub enum LineMacroOutputFormat {
     None,
     /// Standard `#line <line> "<file>"` format.
     Std,
-    /// P10 (OpenPOWER) format with additional flags.
+    /// P10 (`OpenPOWER`) format with additional flags.
     P10,
 }
 
@@ -227,7 +235,7 @@ pub(crate) struct PreprocessorState {
     pub(crate) pp_counter: i32,
 
     /// Macro expansion stack — Vec<MacroEntry> replaces C linked list.
-    /// CVE-2019-9754: Vec::pop() returns None on empty stack, preventing underflow.
+    /// CVE-2019-9754: `Vec::pop()` returns None on empty stack, preventing underflow.
     pub(crate) macro_stack: Vec<MacroEntry>,
 
     /// `#line` output format for `-E` mode.
@@ -244,7 +252,7 @@ pub(crate) struct PreprocessorState {
     /// Pushed macro definitions for `#pragma push_macro` / `#pragma pop_macro`.
     pub(crate) pushed_macros: HashMap<String, Vec<Option<MacroDefinition>>>,
 
-    /// Saved state for the unget_tok mechanism (pushed-back token).
+    /// Saved state for the `unget_tok` mechanism (pushed-back token).
     pub(crate) unget_token: Option<(Token, CValue)>,
 
     /// Symbol table for preprocessor-visible symbols (e.g., enum constants in #if).
@@ -790,7 +798,7 @@ pub fn begin_macro(
 
 /// End current macro expansion, popping from the macro stack.
 ///
-/// CVE-2019-9754: Vec::pop() returns None on empty stack, preventing
+/// CVE-2019-9754: `Vec::pop()` returns None on empty stack, preventing
 /// the underflow that caused the original OOB write vulnerability.
 ///
 /// C equivalent: `end_macro()` in tccpp.c:1067.
@@ -957,7 +965,7 @@ pub fn parse_define(
             *pos += 2;
         } else if c == b'#' {
             // Stringize operator
-            body.tokens.push(Token::Raw(b'#' as i32));
+            body.tokens.push(Token::Raw(i32::from(b'#')));
             *pos += 1;
         } else if is_space(c) {
             skip_whitespace(input, pos);
@@ -1224,7 +1232,7 @@ fn handle_ifdef(
         return Err(TccError::parse("#ifdef stack overflow"));
     }
 
-    tcc_state.ifdef_stack.push(if condition { 1 } else { 0 });
+    tcc_state.ifdef_stack.push(i32::from(condition));
     Ok(())
 }
 
@@ -1242,7 +1250,7 @@ fn handle_if(
         return Err(TccError::parse("#if stack overflow"));
     }
 
-    tcc_state.ifdef_stack.push(if value != 0 { 1 } else { 0 });
+    tcc_state.ifdef_stack.push(i32::from(value != 0));
     Ok(())
 }
 
@@ -1269,7 +1277,7 @@ fn handle_elif(
         skip_whitespace(input, pos);
         let value = pp_expr_eval(pp, tcc_state, input, pos)?;
         if let Some(last) = tcc_state.ifdef_stack.last_mut() {
-            *last = if value != 0 { 1 } else { 0 };
+            *last = i32::from(value != 0);
         }
     }
     // current == 2 means already taken, skip.
@@ -1975,12 +1983,9 @@ fn next_nomacro_impl(
     tcc_state: &mut TccState,
 ) -> TccResult<Token> {
     // Get current source file.
-    let sf = match tcc_state.include_stack.last_mut() {
-        Some(sf) => sf,
-        None => {
-            pp.tok = Token::Eof;
-            return Ok(Token::Eof);
-        }
+    let sf = if let Some(sf) = tcc_state.include_stack.last_mut() { sf } else {
+        pp.tok = Token::Eof;
+        return Ok(Token::Eof);
     };
 
     // Read a line from the buffered reader if needed.
@@ -2002,7 +2007,7 @@ fn next_nomacro_impl(
     // If PARSE_FLAG_LINEFEED is set and line is empty, return linefeed token.
     if pos >= input.len() || input[pos] == b'\n' {
         if (pp.parse_flags & PARSE_FLAG_LINEFEED) != 0 {
-            pp.tok = Token::Raw(b'\n' as i32);
+            pp.tok = Token::Raw(i32::from(b'\n'));
             return Ok(pp.tok);
         }
         // Otherwise recurse to get next real token.
@@ -2022,7 +2027,7 @@ fn next_nomacro_impl(
         if directive == "endif" {
             pp.tok_flags |= TOK_FLAG_ENDIF;
         }
-        pp.tok = Token::Raw(b'\n' as i32);
+        pp.tok = Token::Raw(i32::from(b'\n'));
         return Ok(pp.tok);
     }
 
@@ -2063,7 +2068,7 @@ fn lex_token(
 ) -> TccResult<Token> {
     skip_whitespace(input, pos);
     if *pos >= input.len() || input[*pos] == b'\n' {
-        return Ok(Token::Raw(b'\n' as i32));
+        return Ok(Token::Raw(i32::from(b'\n')));
     }
 
     let c = input[*pos];

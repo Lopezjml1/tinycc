@@ -1,4 +1,4 @@
-//! ELF (Executable and Linkable Format) output backend for TinyCC.
+//! ELF (Executable and Linkable Format) output backend for `TinyCC`.
 //!
 //! This module is the primary linker for all Unix-like targets. It manages:
 //! - ELF section creation, growth, and serialization
@@ -12,13 +12,30 @@
 //!
 //! C equivalent: `tccelf.c` (4,116 lines)
 
+// ELF linker — cross-platform binary format manipulation requires extensive size
+// casts between usize/u64/u32/u16 for section offsets, symbol indices, and header
+// fields. Struct patterns and variable naming follow the original C implementation
+// for traceability. Complex functions are faithfully ported from tccelf.c.
+#![allow(clippy::cast_possible_truncation)]
+#![allow(clippy::cast_possible_wrap)]
+#![allow(clippy::cast_sign_loss)]
+#![allow(clippy::field_reassign_with_default)]
+#![allow(clippy::manual_let_else)]
+#![allow(clippy::match_same_arms)]
+#![allow(clippy::needless_range_loop)]
+#![allow(clippy::no_effect_underscore_binding)]
+#![allow(clippy::too_many_arguments)]
+#![allow(clippy::too_many_lines)]
+#![allow(clippy::unnecessary_wraps)]
+#![allow(clippy::used_underscore_binding)]
+
 use crate::context::TccState;
 use crate::error::{TccError, TccResult};
 use crate::types::{
     Section, SymAttrExt, DllReference,
     TCC_OUTPUT_EXE, TCC_OUTPUT_OBJ, TCC_OUTPUT_DLL,
 };
-use crate::formats::elf::*;
+use crate::formats::elf::{ELFCLASS64, SHF_ALLOC, SHF_WRITE, Elf64Sym, Elf64Rela, SHT_GNU_versym, SHT_HASH, SHT_GNU_HASH, SHT_REL, SHT_RELA, SHT_DYNSYM, SHT_SYMTAB, SHT_DYNAMIC, SHT_NOTE, SHT_STRTAB, SHT_NOBITS, elf_st_bind, STB_LOCAL, SHT_PROGBITS, SHF_EXECINSTR, SHN_UNDEF, elf_st_info, STB_GLOBAL, elf_st_type, STB_WEAK, SHN_ABS, STT_NOTYPE, elf64_r_sym, elf64_r_type, elf64_r_info, SHN_LORESERVE, R_X86_64_64, R_X86_64_32, R_X86_64_32S, R_X86_64_PC32, R_X86_64_PLT32, R_X86_64_GOTPCRELX, R_X86_64_REX_GOTPCRELX, SHN_COMMON, STT_OBJECT, R_X86_64_JUMP_SLOT, R_X86_64_GOT32, R_X86_64_GOTPCREL, R_X86_64_GLOB_DAT, STT_FUNC, DT_NEEDED, DT_HASH, DT_GNU_HASH, DT_STRTAB, DT_SYMTAB, DT_RELA, DT_INIT, DT_FINI, DT_SONAME, DT_RPATH, DF_SYMBOLIC, DT_FLAGS, DT_NULL, Elf64Ehdr, Elf64Shdr, Elf64Phdr, PF_R, PF_W, PF_X, PT_LOAD, PT_PHDR, PT_INTERP, PT_DYNAMIC, SHT_NULL, ET_DYN, ET_EXEC, EI_MAG0, ELFMAG0, EI_MAG1, ELFMAG1, EI_MAG2, ELFMAG2, EI_MAG3, ELFMAG3, EI_CLASS, EI_DATA, ELFDATA2LSB, EI_VERSION, EV_CURRENT, EM_X86_64, ET_REL};
 
 use std::fs::File;
 use std::io::{self, BufReader, BufWriter, Read, Write};
@@ -42,7 +59,7 @@ const PTR_SIZE: usize = 8;
 #[cfg(target_pointer_width = "32")]
 const PTR_SIZE: usize = 4;
 
-/// Size of an ELF symbol table entry (Elf64Sym = 24, Elf32Sym = 16).
+/// Size of an ELF symbol table entry (`Elf64Sym` = 24, `Elf32Sym` = 16).
 #[cfg(target_pointer_width = "64")]
 pub(crate) const ELF_SYM_SIZE: usize = 24;
 #[cfg(target_pointer_width = "32")]
@@ -120,6 +137,7 @@ impl SymVersion {
 
 /// Dynamic linking information accumulated during ELF output.
 /// C equivalent: `struct dyn_inf` at tccelf.c ~line 2800
+#[derive(Default)]
 pub struct DynInf {
     pub interp: Option<usize>,
     pub note: Option<usize>,
@@ -128,13 +146,8 @@ pub struct DynInf {
     pub roinf: Option<ReadOnlyInf>,
 }
 
-impl Default for DynInf {
-    fn default() -> Self {
-        Self { interp: None, note: None, gnu_hash: None, dynamic: None, roinf: None }
-    }
-}
 
-/// Read-only section relocation info for PT_GNU_RELRO support.
+/// Read-only section relocation info for `PT_GNU_RELRO` support.
 pub struct ReadOnlyInf {
     pub sh_offset: u64,
     pub sh_size: u64,
@@ -150,7 +163,7 @@ pub fn shf_relro() -> u64 {
     #[cfg(target_os = "openbsd")]
     { SHF_ALLOC as u64 }
     #[cfg(not(target_os = "openbsd"))]
-    { (SHF_ALLOC | SHF_WRITE) as u64 }
+    { u64::from(SHF_ALLOC | SHF_WRITE) }
 }
 
 /// Return section flags for read-only data sections.
@@ -159,7 +172,7 @@ pub fn shf_rdata() -> u64 {
     #[cfg(target_os = "macos")]
     { (SHF_ALLOC | SHF_WRITE) as u64 }
     #[cfg(not(target_os = "macos"))]
-    { SHF_ALLOC as u64 }
+    { u64::from(SHF_ALLOC) }
 }
 
 // ---------------------------------------------------------------------------
@@ -191,7 +204,7 @@ fn put_le_i64(buf: &mut [u8], v: i64) {
     buf[..8].copy_from_slice(&v.to_le_bytes());
 }
 
-/// Write an Elf64Sym into a 24-byte buffer.
+/// Write an `Elf64Sym` into a 24-byte buffer.
 fn write_elf64_sym(buf: &mut [u8], sym: &Elf64Sym) {
     put_le32(&mut buf[0..4], sym.st_name);
     buf[4] = sym.st_info;
@@ -201,7 +214,7 @@ fn write_elf64_sym(buf: &mut [u8], sym: &Elf64Sym) {
     put_le64(&mut buf[16..24], sym.st_size);
 }
 
-/// Read an Elf64Sym from a 24-byte buffer.
+/// Read an `Elf64Sym` from a 24-byte buffer.
 fn read_elf64_sym(buf: &[u8]) -> Elf64Sym {
     Elf64Sym {
         st_name: get_le32(&buf[0..4]),
@@ -213,14 +226,14 @@ fn read_elf64_sym(buf: &[u8]) -> Elf64Sym {
     }
 }
 
-/// Write an Elf64Rela into a 24-byte buffer.
+/// Write an `Elf64Rela` into a 24-byte buffer.
 fn write_elf64_rela(buf: &mut [u8], r: &Elf64Rela) {
     put_le64(&mut buf[0..8], r.r_offset);
     put_le64(&mut buf[8..16], r.r_info);
     put_le_i64(&mut buf[16..24], r.r_addend);
 }
 
-/// Read an Elf64Rela from a 24-byte buffer.
+/// Read an `Elf64Rela` from a 24-byte buffer.
 fn read_elf64_rela(buf: &[u8]) -> Elf64Rela {
     Elf64Rela {
         r_offset: get_le64(&buf[0..8]),
@@ -256,7 +269,7 @@ pub fn new_section(state: &mut TccState, name: &str, sh_type: u32, sh_flags: u32
     let mut sec = Section::default();
     sec.name = name.to_string();
     sec.sh_type = sh_type;
-    sec.sh_flags = sh_flags as u64;
+    sec.sh_flags = u64::from(sh_flags);
     // Set alignment based on section type (tccelf.c lines 235–248)
     sec.sh_addralign = if sh_type == SHT_GNU_versym {
         2
@@ -529,7 +542,7 @@ fn find_section_index(state: &TccState, name: &str) -> Option<usize> {
 /// Find a section by name, returning an error if not found.
 fn require_section_index(state: &TccState, name: &str) -> TccResult<usize> {
     find_section_index(state, name)
-        .ok_or_else(|| TccError::Link(format!("section '{}' not found", name)))
+        .ok_or_else(|| TccError::Link(format!("section '{name}' not found")))
 }
 
 // ---------------------------------------------------------------------------
@@ -545,10 +558,10 @@ pub fn put_elf_sym(state: &mut TccState, sec_idx: usize,
                    shndx: u16, name: &str) -> i32 {
     // Add name to the string table linked from the symbol table
     let strtab_idx = state.sections[sec_idx].link.unwrap_or(0);
-    let name_offset = if !name.is_empty() {
-        put_elf_str(&mut state.sections[strtab_idx], name)
-    } else {
+    let name_offset = if name.is_empty() {
         0
+    } else {
+        put_elf_str(&mut state.sections[strtab_idx], name)
     };
     // Allocate space for the new symbol entry (align=1, matching C's section_ptr_add)
     let sym_offset = section_ptr_add(&mut state.sections[sec_idx], ELF_SYM_SIZE);
@@ -673,7 +686,7 @@ pub fn get_sym_addr(state: &TccState, name: &str, err: bool) -> TccResult<u64> {
         let sym = read_sym_entry(&state.sections[symtab_idx].data, idx as usize);
         if sym.st_shndx == SHN_UNDEF {
             if err {
-                return Err(TccError::Link(format!("undefined symbol '{}'", name)));
+                return Err(TccError::Link(format!("undefined symbol '{name}'")));
             }
             return Ok(0);
         }
@@ -689,7 +702,7 @@ pub fn get_sym_addr(state: &TccState, name: &str, err: bool) -> TccResult<u64> {
         return Ok(sym.st_value);
     }
     if err {
-        Err(TccError::Link(format!("undefined symbol '{}'", name)))
+        Err(TccError::Link(format!("undefined symbol '{name}'")))
     } else {
         Ok(0)
     }
@@ -844,7 +857,7 @@ pub fn sort_syms(state: &mut TccState, sec_idx: usize) {
 /// Add a Rela-type relocation entry to a relocation section.
 ///
 /// C equivalent: `put_elf_reloca()` at tccelf.c ~line 850
-/// Note: sym_sec reference is not needed for relocation entry creation;
+/// Note: `sym_sec` reference is not needed for relocation entry creation;
 /// the original C code only used it for section linking which is handled
 /// separately in our Rust port.
 pub fn put_elf_reloca(rel_sec: &mut Section, _sym_sec: &Section,
@@ -858,7 +871,7 @@ fn put_elf_reloca_direct(rel_sec: &mut Section,
                          sym_idx: i32, addend: i64) {
     let rela = Elf64Rela {
         r_offset: offset,
-        r_info: elf64_r_info(sym_idx as u64, rel_type as u64),
+        r_info: elf64_r_info(sym_idx as u64, u64::from(rel_type)),
         r_addend: addend,
     };
     let pos = section_ptr_add(rel_sec, ELF_RELA_SIZE);
@@ -1051,7 +1064,7 @@ pub fn relocate_sections(state: &mut TccState) -> TccResult<()> {
                 .and_then(|v| if (v as usize) < num_sections { Some(v as usize) } else { None })
             {
                 // Skip non-allocated sections
-                if state.sections[target_idx].sh_flags & (SHF_ALLOC as u64) == 0 {
+                if state.sections[target_idx].sh_flags & u64::from(SHF_ALLOC) == 0 {
                     continue;
                 }
                 relocate_section(state, target_idx, s)?;
@@ -1134,7 +1147,7 @@ pub fn resolve_common_syms(state: &mut TccState) -> TccResult<()> {
 // GOT/PLT Functions (tccelf.c lines 1200–1600)
 // ---------------------------------------------------------------------------
 
-/// Create the .got section and _GLOBAL_OFFSET_TABLE_ symbol.
+/// Create the .got section and _`GLOBAL_OFFSET_TABLE`_ symbol.
 /// Returns the GOT symbol index.
 ///
 /// C equivalent: `build_got()` at tccelf.c ~line 1200
@@ -1155,10 +1168,10 @@ pub fn build_got(state: &mut TccState) -> i32 {
     let _relplt = new_section(state, ".rela.plt", SHT_RELA, SHF_ALLOC);
     // Add _GLOBAL_OFFSET_TABLE_ symbol
     let symtab_idx = find_section_index(state, ".symtab").unwrap_or(0);
-    let got_sym = put_elf_sym(state, symtab_idx, 0, 0,
+    
+    put_elf_sym(state, symtab_idx, 0, 0,
                               elf_st_info(STB_GLOBAL, STT_OBJECT), 0,
-                              got_idx as u16, "_GLOBAL_OFFSET_TABLE_");
-    got_sym
+                              got_idx as u16, "_GLOBAL_OFFSET_TABLE_")
 }
 
 /// Add a GOT entry for a symbol, creating PLT entry if needed.
@@ -1311,29 +1324,23 @@ pub fn add_init_array_defines(state: &mut TccState, section_name: &str) {
     }
 }
 
-/// Add a function pointer to an init_array or fini_array section.
+/// Add a function pointer to an `init_array` or `fini_array` section.
 ///
 /// C equivalent: `add_array()` at tccelf.c ~line 1640
 pub fn add_array(state: &mut TccState, section_name: &str, sym: i32) -> TccResult<()> {
-    let sec_idx = match find_section_index(state, section_name) {
-        Some(i) => i,
-        None => {
-            let idx = new_section(state, section_name, SHT_PROGBITS,
-                                  SHF_ALLOC | SHF_WRITE);
-            state.sections[idx].sh_entsize = PTR_SIZE as u64;
-            idx
-        }
+    let sec_idx = if let Some(i) = find_section_index(state, section_name) { i } else {
+        let idx = new_section(state, section_name, SHT_PROGBITS,
+                              SHF_ALLOC | SHF_WRITE);
+        state.sections[idx].sh_entsize = PTR_SIZE as u64;
+        idx
     };
     let offset = section_add(&mut state.sections[sec_idx], PTR_SIZE, PTR_SIZE);
     // Add relocation for the function pointer
-    let rel_sec_idx = match state.sections[sec_idx].reloc {
-        Some(r) => r,
-        None => {
-            let rel_name = format!(".rela{}", section_name);
-            let r = new_section(state, &rel_name, SHT_RELA, SHF_ALLOC);
-            state.sections[sec_idx].reloc = Some(r);
-            r
-        }
+    let rel_sec_idx = if let Some(r) = state.sections[sec_idx].reloc { r } else {
+        let rel_name = format!(".rela{section_name}");
+        let r = new_section(state, &rel_name, SHT_RELA, SHF_ALLOC);
+        state.sections[sec_idx].reloc = Some(r);
+        r
     };
     put_elf_reloca_direct(&mut state.sections[rel_sec_idx],
                           offset as u64, R_X86_64_64, sym, 0);
@@ -1529,29 +1536,29 @@ pub fn fill_dynamic(state: &mut TccState, dyn_sec_idx: usize,
     for name in &dll_names {
         let name_offset = put_elf_str(&mut state.sections[dynstr_idx], name);
         add_dynamic_entry(&mut state.sections[dyn_sec_idx],
-                          DT_NEEDED as i64, name_offset as u64);
+                          i64::from(DT_NEEDED), u64::from(name_offset));
     }
     // DT_HASH
     if let Some(hash_idx) = find_section_index(state, ".hash") {
         let addr = state.sections[hash_idx].sh_addr;
-        add_dynamic_entry(&mut state.sections[dyn_sec_idx], DT_HASH as i64, addr);
+        add_dynamic_entry(&mut state.sections[dyn_sec_idx], i64::from(DT_HASH), addr);
     }
     // DT_GNU_HASH
     if let Some(gnu_hash_idx) = find_section_index(state, ".gnu.hash") {
         let addr = state.sections[gnu_hash_idx].sh_addr;
-        add_dynamic_entry(&mut state.sections[dyn_sec_idx], DT_GNU_HASH as i64, addr);
+        add_dynamic_entry(&mut state.sections[dyn_sec_idx], i64::from(DT_GNU_HASH), addr);
     }
     // DT_STRTAB
     {
         let addr = state.sections[dynstr_idx].sh_addr;
         let size = state.sections[dynstr_idx].data_offset as u64;
-        add_dynamic_entry(&mut state.sections[dyn_sec_idx], DT_STRTAB as i64, addr);
+        add_dynamic_entry(&mut state.sections[dyn_sec_idx], i64::from(DT_STRTAB), addr);
         add_dynamic_entry(&mut state.sections[dyn_sec_idx], 5 /* DT_STRSZ */, size);
     }
     // DT_SYMTAB
     if let Some(dynsym_idx) = find_section_index(state, ".dynsym") {
         let addr = state.sections[dynsym_idx].sh_addr;
-        add_dynamic_entry(&mut state.sections[dyn_sec_idx], DT_SYMTAB as i64, addr);
+        add_dynamic_entry(&mut state.sections[dyn_sec_idx], i64::from(DT_SYMTAB), addr);
         add_dynamic_entry(&mut state.sections[dyn_sec_idx],
                           11 /* DT_SYMENT */, ELF_SYM_SIZE as u64);
     }
@@ -1559,7 +1566,7 @@ pub fn fill_dynamic(state: &mut TccState, dyn_sec_idx: usize,
     if let Some(rela_idx) = find_section_index(state, ".rela.dyn") {
         let addr = state.sections[rela_idx].sh_addr;
         let size = state.sections[rela_idx].data_offset as u64;
-        add_dynamic_entry(&mut state.sections[dyn_sec_idx], DT_RELA as i64, addr);
+        add_dynamic_entry(&mut state.sections[dyn_sec_idx], i64::from(DT_RELA), addr);
         add_dynamic_entry(&mut state.sections[dyn_sec_idx], 8 /* DT_RELASZ */, size);
         add_dynamic_entry(&mut state.sections[dyn_sec_idx],
                           9 /* DT_RELAENT */, ELF_RELA_SIZE as u64);
@@ -1567,33 +1574,33 @@ pub fn fill_dynamic(state: &mut TccState, dyn_sec_idx: usize,
     // DT_INIT / DT_FINI
     if let Some(init_idx) = find_section_index(state, ".init") {
         let addr = state.sections[init_idx].sh_addr;
-        add_dynamic_entry(&mut state.sections[dyn_sec_idx], DT_INIT as i64, addr);
+        add_dynamic_entry(&mut state.sections[dyn_sec_idx], i64::from(DT_INIT), addr);
     }
     if let Some(fini_idx) = find_section_index(state, ".fini") {
         let addr = state.sections[fini_idx].sh_addr;
-        add_dynamic_entry(&mut state.sections[dyn_sec_idx], DT_FINI as i64, addr);
+        add_dynamic_entry(&mut state.sections[dyn_sec_idx], i64::from(DT_FINI), addr);
     }
     // DT_SONAME — clone to avoid borrow conflict
     if let Some(soname) = state.soname.clone() {
         let name_offset = put_elf_str(&mut state.sections[dynstr_idx], &soname);
         add_dynamic_entry(&mut state.sections[dyn_sec_idx],
-                          DT_SONAME as i64, name_offset as u64);
+                          i64::from(DT_SONAME), u64::from(name_offset));
     }
     // DT_RPATH — clone to avoid borrow conflict
     if let Some(rpath) = state.rpath.clone() {
         let name_offset = put_elf_str(&mut state.sections[dynstr_idx], &rpath);
         add_dynamic_entry(&mut state.sections[dyn_sec_idx],
-                          DT_RPATH as i64, name_offset as u64);
+                          i64::from(DT_RPATH), u64::from(name_offset));
     }
     // DT_FLAGS
     let mut flags: u32 = 0;
     if state.symbolic { flags |= DF_SYMBOLIC; }
     if flags != 0 {
         add_dynamic_entry(&mut state.sections[dyn_sec_idx],
-                          DT_FLAGS as i64, flags as u64);
+                          i64::from(DT_FLAGS), u64::from(flags));
     }
     // DT_NULL — terminate the dynamic table
-    add_dynamic_entry(&mut state.sections[dyn_sec_idx], DT_NULL as i64, 0);
+    add_dynamic_entry(&mut state.sections[dyn_sec_idx], i64::from(DT_NULL), 0);
     Ok(())
 }
 
@@ -1606,8 +1613,8 @@ pub fn sort_sections(state: &mut TccState) -> Vec<usize> {
     indices.sort_by(|&a, &b| {
         let sa = &state.sections[a];
         let sb = &state.sections[b];
-        let a_alloc = sa.sh_flags & (SHF_ALLOC as u64) != 0;
-        let b_alloc = sb.sh_flags & (SHF_ALLOC as u64) != 0;
+        let a_alloc = sa.sh_flags & u64::from(SHF_ALLOC) != 0;
+        let b_alloc = sb.sh_flags & u64::from(SHF_ALLOC) != 0;
         if a_alloc != b_alloc {
             return if b_alloc { std::cmp::Ordering::Greater }
                    else { std::cmp::Ordering::Less };
@@ -1622,7 +1629,7 @@ pub fn sort_sections(state: &mut TccState) -> Vec<usize> {
 
 /// Assign a sort order to a section for output layout.
 /// Compute a sort key for section ordering in the output ELF file.
-/// Follows the two-level classification scheme from tccelf.c sort_sections():
+/// Follows the two-level classification scheme from tccelf.c `sort_sections()`:
 ///   j = high-order: 0x100 (ALLOC RO), 0x200 (ALLOC WR), 0x700 (non-ALLOC), 0x900 (unnamed)
 ///   k = sub-order:  0x00 (.interp), 0x10 (symtab), 0x11 (strtab), 0x12 (hash),
 ///                   0x20 (rel), 0x30 (exec), 0x41-0x47 (RELRO), 0x50 (data),
@@ -1631,8 +1638,8 @@ fn section_sort_order(sec: &Section) -> u32 {
     // High-order classification by flags
     let j: u32 = if sec.name.is_empty() {
         0x900
-    } else if sec.sh_flags & (SHF_ALLOC as u64) != 0 {
-        if sec.sh_flags & (SHF_WRITE as u64) != 0 { 0x200 } else { 0x100 }
+    } else if sec.sh_flags & u64::from(SHF_ALLOC) != 0 {
+        if sec.sh_flags & u64::from(SHF_WRITE) != 0 { 0x200 } else { 0x100 }
     } else {
         0x700
     };
@@ -1646,7 +1653,7 @@ fn section_sort_order(sec: &Section) -> u32 {
         0x12
     } else if sec.sh_type == SHT_RELA || sec.sh_type == SHT_REL {
         0x20
-    } else if sec.sh_flags & (SHF_EXECINSTR as u64) != 0 {
+    } else if sec.sh_flags & u64::from(SHF_EXECINSTR) != 0 {
         0x30
     } else if sec.sh_type == SHT_DYNAMIC {
         0x46
@@ -1781,7 +1788,7 @@ pub fn elf_output_file(state: &mut TccState, filename: &str) -> TccResult<()> {
 
     // Step 5: Assign section name offsets in .shstrtab
     for i in 1..state.sections.len() {
-        if state.sections[i].sh_flags & (SHF_PRIVATE as u64) != 0 { continue; }
+        if state.sections[i].sh_flags & u64::from(SHF_PRIVATE) != 0 { continue; }
         let name = state.sections[i].name.clone();
         let name_off = put_elf_str(&mut state.sections[shstrtab_idx], &name);
         state.sections[i].sh_name = name_off;
@@ -1819,8 +1826,8 @@ pub fn elf_output_file(state: &mut TccState, filename: &str) -> TccResult<()> {
         let sh_addralign = state.sections[idx].sh_addralign;
         let data_offset = state.sections[idx].data_offset;
 
-        if sh_flags & (SHF_ALLOC as u64) == 0 { continue; }
-        if sh_flags & (SHF_PRIVATE as u64) != 0 { continue; }
+        if sh_flags & u64::from(SHF_ALLOC) == 0 { continue; }
+        if sh_flags & u64::from(SHF_PRIVATE) != 0 { continue; }
 
         let sec_align = if sh_addralign > 1 { sh_addralign } else { 1 };
         current_addr = (current_addr + sec_align - 1) & !(sec_align - 1);
@@ -1828,8 +1835,8 @@ pub fn elf_output_file(state: &mut TccState, filename: &str) -> TccResult<()> {
 
         // Determine segment flags
         let mut seg_flags: u32 = PF_R;
-        if sh_flags & (SHF_WRITE as u64) != 0 { seg_flags |= PF_W; }
-        if sh_flags & (SHF_EXECINSTR as u64) != 0 { seg_flags |= PF_X; }
+        if sh_flags & u64::from(SHF_WRITE) != 0 { seg_flags |= PF_W; }
+        if sh_flags & u64::from(SHF_EXECINSTR) != 0 { seg_flags |= PF_X; }
 
         // Start new PT_LOAD segment on flag change or page boundary
         if seg_flags != last_flags || cur_phdr.is_none() {
@@ -1927,8 +1934,8 @@ pub fn elf_output_file(state: &mut TccState, filename: &str) -> TccResult<()> {
 
     // Step 10: Non-allocated sections layout
     for &idx in &sorted {
-        if state.sections[idx].sh_flags & (SHF_ALLOC as u64) != 0 { continue; }
-        if state.sections[idx].sh_flags & (SHF_PRIVATE as u64) != 0 { continue; }
+        if state.sections[idx].sh_flags & u64::from(SHF_ALLOC) != 0 { continue; }
+        if state.sections[idx].sh_flags & u64::from(SHF_PRIVATE) != 0 { continue; }
         if state.sections[idx].sh_type == SHT_NULL { continue; }
         let align = if state.sections[idx].sh_addralign > 1 {
             state.sections[idx].sh_addralign
@@ -1973,7 +1980,7 @@ pub fn elf_output_file(state: &mut TccState, filename: &str) -> TccResult<()> {
     let _current_pos = ELF_EHDR_SIZE + phdrs.len() * ELF_PHDR_SIZE;
     // Section data
     for &idx in &sorted {
-        if state.sections[idx].sh_flags & (SHF_PRIVATE as u64) != 0 { continue; }
+        if state.sections[idx].sh_flags & u64::from(SHF_PRIVATE) != 0 { continue; }
         if state.sections[idx].sh_type == SHT_NULL { continue; }
         if state.sections[idx].sh_type == SHT_NOBITS { continue; }
         // Seek/pad to section offset
@@ -1989,7 +1996,7 @@ pub fn elf_output_file(state: &mut TccState, filename: &str) -> TccResult<()> {
     // Section headers
     write_null_shdr(&mut w)?;
     for &idx in &sorted {
-        if state.sections[idx].sh_flags & (SHF_PRIVATE as u64) != 0 { continue; }
+        if state.sections[idx].sh_flags & u64::from(SHF_PRIVATE) != 0 { continue; }
         let shdr = section_to_shdr(&state.sections[idx]);
         write_elf_shdr(&mut w, &shdr).map_err(TccError::Io)?;
     }
@@ -2002,18 +2009,18 @@ fn build_elf_ehdr(e_type: u16, machine: u16, entry: u64,
                   phoff: u64, shoff: u64, phnum: u16,
                   shnum: u16, shstrndx: u16) -> Elf64Ehdr {
     let mut ident = [0u8; 16];
-    ident[EI_MAG0 as usize] = ELFMAG0;
-    ident[EI_MAG1 as usize] = ELFMAG1;
-    ident[EI_MAG2 as usize] = ELFMAG2;
-    ident[EI_MAG3 as usize] = ELFMAG3;
-    ident[EI_CLASS as usize] = ELF_CLASS;
-    ident[EI_DATA as usize] = ELFDATA2LSB;
-    ident[EI_VERSION as usize] = EV_CURRENT as u8;
+    ident[EI_MAG0] = ELFMAG0;
+    ident[EI_MAG1] = ELFMAG1;
+    ident[EI_MAG2] = ELFMAG2;
+    ident[EI_MAG3] = ELFMAG3;
+    ident[EI_CLASS] = ELF_CLASS;
+    ident[EI_DATA] = ELFDATA2LSB;
+    ident[EI_VERSION] = EV_CURRENT as u8;
     Elf64Ehdr {
         e_ident: ident,
         e_type,
         e_machine: machine,
-        e_version: EV_CURRENT as u32,
+        e_version: EV_CURRENT,
         e_entry: entry,
         e_phoff: phoff,
         e_shoff: shoff,
@@ -2027,7 +2034,7 @@ fn build_elf_ehdr(e_type: u16, machine: u16, entry: u64,
     }
 }
 
-/// Convert a Section to an Elf64Shdr for output.
+/// Convert a Section to an `Elf64Shdr` for output.
 fn section_to_shdr(sec: &Section) -> Elf64Shdr {
     Elf64Shdr {
         sh_name: sec.sh_name,
@@ -2073,7 +2080,7 @@ fn get_elf_machine() -> u16 {
 
 /// Find the output index of a section within the sorted list (1-based for shstrndx).
 fn find_output_section_index(sorted: &[usize], sec_idx: usize) -> usize {
-    sorted.iter().position(|&i| i == sec_idx).map(|p| p + 1).unwrap_or(0)
+    sorted.iter().position(|&i| i == sec_idx).map_or(0, |p| p + 1)
 }
 
 /// Write an ELF object file (.o) — relocatable output.
@@ -2085,7 +2092,7 @@ fn write_elf_object(state: &mut TccState, filename: &str,
     // Compute file layout: header, then section data, then section headers
     let mut file_offset: u64 = ELF_EHDR_SIZE as u64;
     for &idx in sorted {
-        if state.sections[idx].sh_flags & (SHF_PRIVATE as u64) != 0 { continue; }
+        if state.sections[idx].sh_flags & u64::from(SHF_PRIVATE) != 0 { continue; }
         if state.sections[idx].sh_type == SHT_NULL { continue; }
         let align = if state.sections[idx].sh_addralign > 1 {
             state.sections[idx].sh_addralign
@@ -2101,7 +2108,7 @@ fn write_elf_object(state: &mut TccState, filename: &str,
     let shdr_offset = file_offset;
 
     let nb_output = sorted.iter()
-        .filter(|&&i| state.sections[i].sh_flags & (SHF_PRIVATE as u64) == 0)
+        .filter(|&&i| state.sections[i].sh_flags & u64::from(SHF_PRIVATE) == 0)
         .count();
     let machine = get_elf_machine();
     let ehdr = build_elf_ehdr(
@@ -2115,7 +2122,7 @@ fn write_elf_object(state: &mut TccState, filename: &str,
     write_elf_ehdr(&mut w, &ehdr).map_err(TccError::Io)?;
     // Write section data
     for &idx in sorted {
-        if state.sections[idx].sh_flags & (SHF_PRIVATE as u64) != 0 { continue; }
+        if state.sections[idx].sh_flags & u64::from(SHF_PRIVATE) != 0 { continue; }
         if state.sections[idx].sh_type == SHT_NULL { continue; }
         if state.sections[idx].sh_type == SHT_NOBITS { continue; }
         let data_len = state.sections[idx].data_offset;
@@ -2128,7 +2135,7 @@ fn write_elf_object(state: &mut TccState, filename: &str,
     // Section headers
     write_null_shdr(&mut w)?;
     for &idx in sorted {
-        if state.sections[idx].sh_flags & (SHF_PRIVATE as u64) != 0 { continue; }
+        if state.sections[idx].sh_flags & u64::from(SHF_PRIVATE) != 0 { continue; }
         let shdr = section_to_shdr(&state.sections[idx]);
         write_elf_shdr(&mut w, &shdr).map_err(TccError::Io)?;
     }
@@ -2143,7 +2150,7 @@ pub fn elf_output_obj(state: &mut TccState, filename: &str) -> TccResult<()> {
     let shstrtab_idx = new_section(state, ".shstrtab", SHT_STRTAB, 0);
     // Assign section names
     for i in 1..state.sections.len() {
-        if state.sections[i].sh_flags & (SHF_PRIVATE as u64) != 0 { continue; }
+        if state.sections[i].sh_flags & u64::from(SHF_PRIVATE) != 0 { continue; }
         let name = state.sections[i].name.clone();
         let off = put_elf_str(&mut state.sections[shstrtab_idx], &name);
         state.sections[i].sh_name = off;
@@ -2228,27 +2235,27 @@ pub fn tcc_load_object_file(state: &mut TccState, reader: &mut dyn Read,
     let mut data = Vec::new();
     reader.read_to_end(&mut data).map_err(TccError::Io)?;
     if data.len() < ELF_EHDR_SIZE {
-        return Err(TccError::Link(format!("{}: invalid ELF object (too small)", filename)));
+        return Err(TccError::Link(format!("{filename}: invalid ELF object (too small)")));
     }
     // Parse ELF header
     let mut ident = [0u8; 16];
     ident.copy_from_slice(&data[0..16]);
-    if ident[EI_MAG0 as usize] != ELFMAG0 || ident[EI_MAG1 as usize] != ELFMAG1
-       || ident[EI_MAG2 as usize] != ELFMAG2 || ident[EI_MAG3 as usize] != ELFMAG3
+    if ident[EI_MAG0] != ELFMAG0 || ident[EI_MAG1] != ELFMAG1
+       || ident[EI_MAG2] != ELFMAG2 || ident[EI_MAG3] != ELFMAG3
     {
-        return Err(TccError::Link(format!("{}: not an ELF file", filename)));
+        return Err(TccError::Link(format!("{filename}: not an ELF file")));
     }
     let e_type = get_le16(&data[16..18]);
     if e_type != ET_REL {
         return Err(TccError::Link(
-            format!("{}: not a relocatable object (type {})", filename, e_type)));
+            format!("{filename}: not a relocatable object (type {e_type})")));
     }
     let e_shoff = get_le64(&data[40..48]) as usize;
     let e_shnum = get_le16(&data[60..62]) as usize;
     let e_shstrndx = get_le16(&data[62..64]) as usize;
     // Parse section headers
     if e_shoff + e_shnum * ELF_SHDR_SIZE > data.len() {
-        return Err(TccError::Link(format!("{}: section headers out of bounds", filename)));
+        return Err(TccError::Link(format!("{filename}: section headers out of bounds")));
     }
     // Read section headers into a temporary vec
     let mut shdrs: Vec<Elf64Shdr> = Vec::with_capacity(e_shnum);
@@ -2288,7 +2295,11 @@ pub fn tcc_load_object_file(state: &mut TccState, reader: &mut dyn Read,
                                        sh.sh_flags as u32),
                 };
                 // Copy section data
-                if sh.sh_type != SHT_NOBITS {
+                if sh.sh_type == SHT_NOBITS {
+                    let size = sh.sh_size as usize;
+                    section_add(&mut state.sections[target_idx], size,
+                                sh.sh_addralign as usize);
+                } else {
                     let start = sh.sh_offset as usize;
                     let size = sh.sh_size as usize;
                     if start + size <= data.len() {
@@ -2296,10 +2307,6 @@ pub fn tcc_load_object_file(state: &mut TccState, reader: &mut dyn Read,
                         state.sections[target_idx].data[offset..offset + size]
                             .copy_from_slice(&data[start..start + size]);
                     }
-                } else {
-                    let size = sh.sh_size as usize;
-                    section_add(&mut state.sections[target_idx], size,
-                                sh.sh_addralign as usize);
                 }
                 sec_map[i] = Some(target_idx);
             }
@@ -2359,26 +2366,23 @@ pub fn tcc_load_object_file(state: &mut TccState, reader: &mut dyn Read,
                 None => continue,
             };
             // Ensure relocation section exists for target
-            let rel_sec_idx = match state.sections[target_sec].reloc {
-                Some(r) => r,
-                None => {
-                    let rel_name = if sh.sh_type == SHT_RELA {
-                        format!(".rela{}", state.sections[target_sec].name)
-                    } else {
-                        format!(".rel{}", state.sections[target_sec].name)
-                    };
-                    let r = new_section(state, &rel_name, sh.sh_type, SHF_ALLOC);
-                    state.sections[target_sec].reloc = Some(r);
-                    let symtab = find_section_index(state, ".symtab").unwrap_or(0);
-                    state.sections[r].link = Some(symtab);
-                    state.sections[r].sh_info = target_sec as u32;
-                    state.sections[r].sh_entsize = if sh.sh_type == SHT_RELA {
-                        ELF_RELA_SIZE as u64
-                    } else {
-                        ELF_REL_SIZE as u64
-                    };
-                    r
-                }
+            let rel_sec_idx = if let Some(r) = state.sections[target_sec].reloc { r } else {
+                let rel_name = if sh.sh_type == SHT_RELA {
+                    format!(".rela{}", state.sections[target_sec].name)
+                } else {
+                    format!(".rel{}", state.sections[target_sec].name)
+                };
+                let r = new_section(state, &rel_name, sh.sh_type, SHF_ALLOC);
+                state.sections[target_sec].reloc = Some(r);
+                let symtab = find_section_index(state, ".symtab").unwrap_or(0);
+                state.sections[r].link = Some(symtab);
+                state.sections[r].sh_info = target_sec as u32;
+                state.sections[r].sh_entsize = if sh.sh_type == SHT_RELA {
+                    ELF_RELA_SIZE as u64
+                } else {
+                    ELF_REL_SIZE as u64
+                };
+                r
             };
             // Copy relocations with remapped symbol indices
             let rel_off = sh.sh_offset as usize;
@@ -2428,7 +2432,7 @@ pub fn tcc_load_archive(state: &mut TccState, filename: &str) -> TccResult<()> {
     let mut magic = [0u8; 8];
     reader.read_exact(&mut magic).map_err(TccError::Io)?;
     if &magic != b"!<arch>\n" {
-        return Err(TccError::Link(format!("{}: not a valid archive", filename)));
+        return Err(TccError::Link(format!("{filename}: not a valid archive")));
     }
     // Parse archive members
     loop {
@@ -2466,7 +2470,7 @@ pub fn tcc_load_archive(state: &mut TccState, filename: &str) -> TccResult<()> {
         // Try to load as object file
         let mut cursor = io::Cursor::new(&member_data);
         let _ = tcc_load_object_file(state, &mut cursor,
-                                     &format!("{}({})", filename, member_name_clean));
+                                     &format!("{filename}({member_name_clean})"));
     }
     Ok(())
 }
@@ -2479,18 +2483,18 @@ pub fn tcc_load_dll(state: &mut TccState, filename: &str) -> TccResult<()> {
     let mut data = Vec::new();
     BufReader::new(file).read_to_end(&mut data).map_err(TccError::Io)?;
     if data.len() < ELF_EHDR_SIZE {
-        return Err(TccError::Link(format!("{}: invalid shared library", filename)));
+        return Err(TccError::Link(format!("{filename}: invalid shared library")));
     }
     // Validate ELF header
     if data[0] != ELFMAG0 || data[1] != ELFMAG1
        || data[2] != ELFMAG2 || data[3] != ELFMAG3
     {
-        return Err(TccError::Link(format!("{}: not an ELF file", filename)));
+        return Err(TccError::Link(format!("{filename}: not an ELF file")));
     }
     let e_type = get_le16(&data[16..18]);
     if e_type != ET_DYN {
         return Err(TccError::Link(
-            format!("{}: not a shared library (type {})", filename, e_type)));
+            format!("{filename}: not a shared library (type {e_type})")));
     }
     let e_shoff = get_le64(&data[40..48]) as usize;
     let e_shnum = get_le16(&data[60..62]) as usize;
@@ -2537,9 +2541,7 @@ pub fn tcc_load_dll(state: &mut TccState, filename: &str) -> TccResult<()> {
     }
     // Record the DLL reference
     let lib_name = PathBuf::from(filename)
-        .file_name()
-        .map(|n| n.to_string_lossy().into_owned())
-        .unwrap_or_else(|| filename.to_string());
+        .file_name().map_or_else(|| filename.to_string(), |n| n.to_string_lossy().into_owned());
     state.loaded_dlls.push(DllReference {
         name: lib_name,
         level: 0,
@@ -2656,8 +2658,8 @@ pub fn tcc_load_ldscript(state: &mut TccState, reader: &mut dyn Read) -> TccResu
 /// Search library paths for a shared/static library and load it.
 fn find_and_load_library(state: &mut TccState, name: &str) -> TccResult<()> {
     // Try libNAME.so first, then libNAME.a
-    let so_name = format!("lib{}.so", name);
-    let a_name = format!("lib{}.a", name);
+    let so_name = format!("lib{name}.so");
+    let a_name = format!("lib{name}.a");
     for dir in &state.library_paths {
         let so_path = PathBuf::from(dir).join(&so_name);
         if so_path.exists() {
@@ -2704,7 +2706,7 @@ fn load_file_by_type(state: &mut TccState, filename: &str) -> TccResult<()> {
             let mut r2 = BufReader::new(file2);
             tcc_load_ldscript(state, &mut r2)
         }
-        _ => Err(TccError::Link(format!("{}: unsupported file type", filename))),
+        _ => Err(TccError::Link(format!("{filename}: unsupported file type"))),
     }
 }
 

@@ -35,18 +35,18 @@
 //! | Operation    | C Macro (OP / RET)           | Returns | Rust Mapping              |
 //! |-------------|------------------------------|---------|---------------------------|
 //! | exchange    | `value` / `cmp`              | OLD     | `swap()`                  |
-//! | add_fetch   | `cmp + value` / `xchg`       | NEW     | `fetch_add()` + wrapping  |
-//! | sub_fetch   | `cmp - value` / `xchg`       | NEW     | `fetch_sub()` + wrapping  |
-//! | and_fetch   | `cmp & value` / `xchg`       | NEW     | `fetch_and()` + bitwise   |
-//! | or_fetch    | `cmp \| value` / `xchg`      | NEW     | `fetch_or()` + bitwise    |
-//! | xor_fetch   | `cmp ^ value` / `xchg`       | NEW     | `fetch_xor()` + bitwise   |
-//! | nand_fetch  | `~(cmp & value)` / `xchg`    | NEW     | `fetch_nand()` + bitwise  |
-//! | fetch_add   | `cmp + value` / `cmp`        | OLD     | `fetch_add()`             |
-//! | fetch_sub   | `cmp - value` / `cmp`        | OLD     | `fetch_sub()`             |
-//! | fetch_and   | `cmp & value` / `cmp`        | OLD     | `fetch_and()`             |
-//! | fetch_or    | `cmp \| value` / `cmp`       | OLD     | `fetch_or()`              |
-//! | fetch_xor   | `cmp ^ value` / `cmp`        | OLD     | `fetch_xor()`             |
-//! | fetch_nand  | `~(cmp & value)` / `cmp`     | OLD     | `fetch_nand()`            |
+//! | `add_fetch`   | `cmp + value` / `xchg`       | NEW     | `fetch_add()` + wrapping  |
+//! | `sub_fetch`   | `cmp - value` / `xchg`       | NEW     | `fetch_sub()` + wrapping  |
+//! | `and_fetch`   | `cmp & value` / `xchg`       | NEW     | `fetch_and()` + bitwise   |
+//! | `or_fetch`    | `cmp \| value` / `xchg`      | NEW     | `fetch_or()` + bitwise    |
+//! | `xor_fetch`   | `cmp ^ value` / `xchg`       | NEW     | `fetch_xor()` + bitwise   |
+//! | `nand_fetch`  | `~(cmp & value)` / `xchg`    | NEW     | `fetch_nand()` + bitwise  |
+//! | `fetch_add`   | `cmp + value` / `cmp`        | OLD     | `fetch_add()`             |
+//! | `fetch_sub`   | `cmp - value` / `cmp`        | OLD     | `fetch_sub()`             |
+//! | `fetch_and`   | `cmp & value` / `cmp`        | OLD     | `fetch_and()`             |
+//! | `fetch_or`    | `cmp \| value` / `cmp`       | OLD     | `fetch_or()`              |
+//! | `fetch_xor`   | `cmp ^ value` / `cmp`        | OLD     | `fetch_xor()`             |
+//! | `fetch_nand`  | `~(cmp & value)` / `cmp`     | OLD     | `fetch_nand()`            |
 //!
 //! # Safety
 //!

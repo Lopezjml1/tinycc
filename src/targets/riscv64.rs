@@ -1,3 +1,18 @@
+// RISC-V 64 backend — instruction encoding requires size casts for immediate
+// fields and register indices. Match arms for opcode dispatch, variable naming,
+// and function complexity follow the original riscv64-gen.c/riscv64-asm.c.
+#![allow(clippy::collapsible_match)]
+#![allow(clippy::doc_lazy_continuation)]
+#![allow(clippy::enum_variant_names)]
+#![allow(clippy::if_same_then_else)]
+#![allow(clippy::match_same_arms)]
+#![allow(clippy::match_wildcard_for_single_variants)]
+#![allow(clippy::too_many_arguments)]
+#![allow(clippy::too_many_lines)]
+#![allow(clippy::unnecessary_wraps)]
+#![allow(clippy::unreadable_literal)]
+#![allow(clippy::unused_self)]
+
 // Copyright (c) 2024 tinycc-rs contributors
 // SPDX-License-Identifier: MIT OR LGPL-2.1-or-later
 
@@ -81,7 +96,7 @@ pub(crate) const R_DATA_PTR: u32 = R_RISCV_64;
 /// C equivalent: `R_JMP_SLOT` in `riscv64-link.c:6`.
 pub(crate) const R_JMP_SLOT: u32 = R_RISCV_JUMP_SLOT;
 
-/// Global data relocation alias (same as R_DATA_PTR for RISC-V).
+/// Global data relocation alias (same as `R_DATA_PTR` for RISC-V).
 /// C equivalent: `R_GLOB_DAT` in `riscv64-link.c:7`.
 pub(crate) const R_GLOB_DAT: u32 = R_RISCV_64;
 
@@ -254,9 +269,9 @@ pub(crate) fn treg_f(x: u8) -> u8 {
 /// a0-a7 → x10-x17, ra(17) → x1, sp(18) → x2.
 /// C equivalent: `ireg()` in `riscv64-gen.c:87-95`.
 pub(crate) fn ireg(r: i32) -> i32 {
-    if r == TREG_RA as i32 {
+    if r == i32::from(TREG_RA) {
         1 // x1 = ra
-    } else if r == TREG_SP as i32 {
+    } else if r == i32::from(TREG_SP) {
         2 // x2 = sp
     } else {
         r + 10 // a0-a7 → x10-x17
@@ -266,7 +281,7 @@ pub(crate) fn ireg(r: i32) -> i32 {
 /// Check if register index is an integer register.
 /// C equivalent: `is_ireg()` in `riscv64-gen.c:97-100`.
 pub(crate) fn is_ireg(r: i32) -> bool {
-    (r >= 0 && r < 8) || r == TREG_RA as i32 || r == TREG_SP as i32
+    (0..8).contains(&r) || r == i32::from(TREG_RA) || r == i32::from(TREG_SP)
 }
 
 /// Map allocator float register to ABI register number.
@@ -279,7 +294,7 @@ pub(crate) fn freg(r: i32) -> i32 {
 /// Check if register index is a float register.
 /// C equivalent: `is_freg()` in `riscv64-gen.c:108-110`.
 pub(crate) fn is_freg(r: i32) -> bool {
-    r >= 8 && r < 16
+    (8..16).contains(&r)
 }
 
 // ===========================================================================
@@ -316,8 +331,8 @@ pub(crate) fn sign11(x: i32) -> i32 {
 //  (riscv64-link.c:176-209)
 // ===========================================================================
 
-/// Tracks a PCREL_HI20 relocation for paired LO12 lookup.
-/// When processing PCREL_LO12_I or PCREL_LO12_S relocations, the linker
+/// Tracks a `PCREL_HI20` relocation for paired LO12 lookup.
+/// When processing `PCREL_LO12_I` or `PCREL_LO12_S` relocations, the linker
 /// must find the corresponding HI20 entry to extract the full address.
 ///
 /// C equivalent: `struct pcrel_hi` and `riscv64_record_pcrel_hi()` /
@@ -427,7 +442,7 @@ pub(crate) enum Riscv64AsmToken {
 pub(crate) struct Riscv64Backend {
     /// Register class table.
     reg_classes: [u32; NB_REGS],
-    /// Tracked PCREL_HI20 entries for paired LO12 relocation resolution.
+    /// Tracked `PCREL_HI20` entries for paired LO12 relocation resolution.
     pcrel_hi_entries: Vec<PcrelHiEntry>,
     /// Bounds checking offset (only active with bounds-checking feature).
     func_bound_offset: i64,
@@ -482,7 +497,7 @@ impl Riscv64Backend {
     /// Emit I-type instruction with 12-bit signed immediate check.
     /// C equivalent: `EI()` in `riscv64-gen.c:133-139`.
     fn ei(state: &mut TccState, opcode: u32, func3: u32, rd: u32, rs1: u32, imm: i32) -> TccResult<()> {
-        if imm > 0x7ff || imm < -0x800 {
+        if !(-0x800..=0x7ff).contains(&imm) {
             return Err(TccError::link("I-type immediate out of range"));
         }
         Self::eiu(state, opcode, func3, rd, rs1, (imm as u32) & 0xfff)
@@ -587,7 +602,7 @@ impl Riscv64Backend {
     /// C equivalent: `load_large_constant()` in `riscv64-gen.c:195-232`.
     fn load_large_constant(state: &mut TccState, rd: u32, val: i64) -> TccResult<()> {
         let lo = val as i32;
-        let hi = ((val as i64) >> 32) as i32;
+        let hi = (val >> 32) as i32;
         // For 32-bit range values
         if hi == 0 && lo >= 0 || hi == -1 && lo < 0 {
             // Fits in 32-bit signed: LUI + ADDI
@@ -606,11 +621,11 @@ impl Riscv64Backend {
             }
         } else {
             // Full 64-bit constant: recursive upper 32 bits
-            Self::load_large_constant(state, rd, (val >> 32) as i64)?;
+            Self::load_large_constant(state, rd, val >> 32)?;
             // slli rd, rd, 12
             Self::eiu(state, 0x13, 1, rd, rd, 12)?;
             // addi rd, rd, hi_12(lo_32)
-            let tmp = (((lo as i64) + (1i64 << 19)) >> 20) as i32;
+            let tmp = ((i64::from(lo) + (1i64 << 19)) >> 20) as i32;
             Self::ei(state, 0x13, 0, rd, rd, tmp & 0xfff)?;
             // slli rd, rd, 12
             Self::eiu(state, 0x13, 1, rd, rd, 12)?;
@@ -622,7 +637,7 @@ impl Riscv64Backend {
             Self::eiu(state, 0x13, 1, rd, rd, 8)?;
             // addi rd, rd, lo_8
             let lo8 = lo20 & 0xff;
-            Self::ei(state, 0x13, 0, rd, rd, ((lo8 << 24) >> 24) as i32)?;
+            Self::ei(state, 0x13, 0, rd, rd, (lo8 << 24) >> 24)?;
         }
         Ok(())
     }
@@ -676,12 +691,12 @@ impl Riscv64Backend {
     //  (riscv64-link.c:176-209)
     // ---------------------------------------------------------------
 
-    /// Record a PCREL_HI20 relocation for later LO12 lookup.
+    /// Record a `PCREL_HI20` relocation for later LO12 lookup.
     fn record_pcrel_hi(&mut self, sym: u64, addr: u64, val: u64) {
         self.pcrel_hi_entries.push(PcrelHiEntry { sym, addr, val });
     }
 
-    /// Lookup a previously recorded PCREL_HI20 entry by address.
+    /// Lookup a previously recorded `PCREL_HI20` entry by address.
     /// Returns the resolved value, or error if not found.
     fn lookup_pcrel_hi(&self, addr: u64) -> TccResult<u64> {
         for entry in &self.pcrel_hi_entries {
@@ -773,29 +788,29 @@ impl CodegenBackend for Riscv64Backend {
                     _ => 0,
                 };
                 // If offset fits in 12 bits
-                if fc >= -2048 && fc < 2048 {
+                if (-2048..2048).contains(&fc) {
                     Riscv64Backend::ei(state, opcode, func3, rr, 8, fc)?; // s0 = x8 = fp
                 } else {
                     // Load offset into t0 (x5), then add to fp, then load
-                    Riscv64Backend::load_large_constant(state, 5, fc as i64)?;
+                    Riscv64Backend::load_large_constant(state, 5, i64::from(fc))?;
                     Riscv64Backend::er(state, 0x33, 0, 5, 5, 8, 0)?; // add t0, t0, s0
                     Riscv64Backend::ei(state, opcode, func3, rr, 5, 0)?;
                 }
             } else if v == VT_CONST {
                 // Global/constant: use AUIPC + load
                 // Simplified: emit load from register that holds the address
-                let base = ireg((fr & VT_VALMASK) as i32);
-                if base >= 0 && base < 32 {
+                let base = ireg(i32::from(fr & VT_VALMASK));
+                if (0..32).contains(&base) {
                     Riscv64Backend::ei(state, opcode, func3, rr, base as u32, 0)?;
                 } else {
                     Riscv64Backend::ei(state, opcode, func3, rr, 0, 0)?;
                 }
             } else {
                 // Register indirect: load from reg
-                let base = if is_ireg(v as i32) {
-                    ireg(v as i32) as u32
+                let base = if is_ireg(i32::from(v)) {
+                    ireg(i32::from(v)) as u32
                 } else {
-                    v as u32
+                    u32::from(v)
                 };
                 let fc = match &sv.value {
                     SValueData::Constant(cv) => match cv {
@@ -804,10 +819,10 @@ impl CodegenBackend for Riscv64Backend {
                     },
                     _ => 0,
                 };
-                if fc >= -2048 && fc < 2048 {
+                if (-2048..2048).contains(&fc) {
                     Riscv64Backend::ei(state, opcode, func3, rr, base, fc)?;
                 } else {
-                    Riscv64Backend::load_large_constant(state, 5, fc as i64)?;
+                    Riscv64Backend::load_large_constant(state, 5, i64::from(fc))?;
                     Riscv64Backend::er(state, 0x33, 0, 5, 5, base, 0)?;
                     Riscv64Backend::ei(state, opcode, func3, rr, 5, 0)?;
                 }
@@ -831,7 +846,7 @@ impl CodegenBackend for Riscv64Backend {
                     // fmv.d.x rd, t0
                     Riscv64Backend::er(state, 0x53, 0, rr, 5, 0, 0x79)?;
                 }
-            } else if fc >= -2048 && fc < 2048 {
+            } else if (-2048..2048).contains(&fc) {
                 // Small constant: addi rd, zero, imm
                 Riscv64Backend::ei(state, 0x13, 0, rr, 0, fc as i32)?;
             } else {
@@ -846,17 +861,17 @@ impl CodegenBackend for Riscv64Backend {
                 },
                 _ => 0,
             };
-            if fc >= -2048 && fc < 2048 {
+            if (-2048..2048).contains(&fc) {
                 // addi rd, s0, offset
                 Riscv64Backend::ei(state, 0x13, 0, rr, 8, fc)?;
             } else {
-                Riscv64Backend::load_large_constant(state, rr, fc as i64)?;
+                Riscv64Backend::load_large_constant(state, rr, i64::from(fc))?;
                 Riscv64Backend::er(state, 0x33, 0, rr, rr, 8, 0)?; // add rd, rd, s0
             }
         } else if v == VT_CMP {
             // Comparison result materialization
             let cmp_op = match &sv.sym_info {
-                SValueSymInfo::Cmp { cmp_op, .. } => *cmp_op as i32,
+                SValueSymInfo::Cmp { cmp_op, .. } => i32::from(*cmp_op),
                 _ => TOK_NE,
             };
             let cmp_r = match &sv.sym_info {
@@ -878,7 +893,7 @@ impl CodegenBackend for Riscv64Backend {
                 _ => (2u32, false, false),
             };
 
-            let rs1 = ireg(cmp_r as i32) as u32;
+            let rs1 = ireg(i32::from(cmp_r)) as u32;
             let rs2 = rr;
             if swap {
                 Riscv64Backend::er(state, 0x33, func3, rr, rs2, rs1, 0)?;
@@ -897,15 +912,15 @@ impl CodegenBackend for Riscv64Backend {
             };
             // li rd, 0 or 1 depending on inversion
             let invert = v == VT_JMP;
-            Riscv64Backend::ei(state, 0x13, 0, rr, 0, if invert { 0 } else { 1 })?;
+            Riscv64Backend::ei(state, 0x13, 0, rr, 0, i32::from(!invert))?;
             let ind1 = state.ind as i32;
             self.gjmp(state, jtrue)?;
-            Riscv64Backend::ei(state, 0x13, 0, rr, 0, if invert { 1 } else { 0 })?;
+            Riscv64Backend::ei(state, 0x13, 0, rr, 0, i32::from(invert))?;
             let ind2 = state.ind as i32;
             self.gsym(state, jfalse)?;
         } else {
             // Register-to-register move
-            let src_r = v as i32;
+            let src_r = i32::from(v);
             let src_abi = if is_freg(src_r) { freg(src_r) } else { ireg(src_r) };
             if is_freg(r) && is_freg(src_r) {
                 // fsgnj.d rd, rs, rs (fmv.d rd, rs)
@@ -958,24 +973,24 @@ impl CodegenBackend for Riscv64Backend {
         };
 
         if v == VT_LOCAL {
-            if fc >= -2048 && fc < 2048 {
+            if (-2048..2048).contains(&fc) {
                 Riscv64Backend::es(state, opcode, func3, 8, rr, fc)?; // s0=x8=fp
             } else {
-                Riscv64Backend::load_large_constant(state, 5, fc as i64)?;
+                Riscv64Backend::load_large_constant(state, 5, i64::from(fc))?;
                 Riscv64Backend::er(state, 0x33, 0, 5, 5, 8, 0)?; // add t0, t0, s0
                 Riscv64Backend::es(state, opcode, func3, 5, rr, 0)?;
             }
         } else {
             // Store to register base + offset
-            let base = if is_ireg(v as i32) {
-                ireg(v as i32) as u32
+            let base = if is_ireg(i32::from(v)) {
+                ireg(i32::from(v)) as u32
             } else {
-                v as u32
+                u32::from(v)
             };
-            if fc >= -2048 && fc < 2048 {
+            if (-2048..2048).contains(&fc) {
                 Riscv64Backend::es(state, opcode, func3, base, rr, fc)?;
             } else {
-                Riscv64Backend::load_large_constant(state, 5, fc as i64)?;
+                Riscv64Backend::load_large_constant(state, 5, i64::from(fc))?;
                 Riscv64Backend::er(state, 0x33, 0, 5, 5, base, 0)?;
                 Riscv64Backend::es(state, opcode, func3, 5, rr, 0)?;
             }
@@ -1097,7 +1112,7 @@ impl CodegenBackend for Riscv64Backend {
         let ind = state.ind as i32;
         let offset = a - ind;
         // If within JAL range (±1MiB), use JAL; otherwise AUIPC+JALR
-        if offset >= -(1 << 20) && offset < (1 << 20) {
+        if (-(1 << 20)..(1 << 20)).contains(&offset) {
             let imm = offset as u32;
             // JAL zero, offset
             let jal = 0x6f
@@ -1127,7 +1142,7 @@ impl CodegenBackend for Riscv64Backend {
         let ind = state.ind as i32;
         // Map comparison token to branch opcode
         let (opcode_bits, swap) = match op {
-            x if x == TOK_EQ => (0x63 | (0 << 12), false), // beq
+            x if x == TOK_EQ => (0x63, false), // beq
             x if x == TOK_NE => (0x63 | (1 << 12), false), // bne
             x if x == TOK_LT => (0x63 | (4 << 12), false), // blt
             x if x == TOK_GE => (0x63 | (5 << 12), false), // bge
@@ -1210,7 +1225,7 @@ impl CodegenBackend for Riscv64Backend {
         let func5 = if is_long { 0x60 } else { 0x60 };
         let rs2 = if is_long {
             if is_unsigned { 3u32 } else { 2u32 }
-        } else if is_unsigned { 1u32 } else { 0u32 };
+        } else { u32::from(is_unsigned) };
         // Assuming source is double (fmt=1)
         Riscv64Backend::er(state, 0x53, 1, 10, 10, rs2, func5 >> 2)?;
         Ok(())
@@ -1221,7 +1236,7 @@ impl CodegenBackend for Riscv64Backend {
     fn gen_cvt_itof(&mut self, state: &mut TccState, t: i32) -> TccResult<()> {
         let is_double = (t & VT_BTYPE) == VT_DOUBLE || (t & VT_BTYPE) == VT_LDOUBLE;
         // fcvt.{s|d}.{w|l}[u] rd, rs1
-        let fmt = if is_double { 1u32 } else { 0u32 };
+        let fmt = u32::from(is_double);
         Riscv64Backend::er(state, 0x53, 0, 10, 10, 0, (0x68 | fmt) >> 2)?;
         Ok(())
     }
@@ -1260,10 +1275,10 @@ impl CodegenBackend for Riscv64Backend {
         let sp = 2u32; // x2
         let s0 = 8u32; // x8 = fp
         // sd sp, addr(s0)
-        if addr >= -2048 && addr < 2048 {
+        if (-2048..2048).contains(&addr) {
             Riscv64Backend::es(state, 0x23, 3, s0, sp, addr)?;
         } else {
-            Riscv64Backend::load_large_constant(state, 5, addr as i64)?;
+            Riscv64Backend::load_large_constant(state, 5, i64::from(addr))?;
             Riscv64Backend::er(state, 0x33, 0, 5, 5, s0, 0)?;
             Riscv64Backend::es(state, 0x23, 3, 5, sp, 0)?;
         }
@@ -1276,10 +1291,10 @@ impl CodegenBackend for Riscv64Backend {
         let sp = 2u32;
         let s0 = 8u32;
         // ld sp, addr(s0)
-        if addr >= -2048 && addr < 2048 {
+        if (-2048..2048).contains(&addr) {
             Riscv64Backend::ei(state, 0x03, 3, sp, s0, addr)?;
         } else {
-            Riscv64Backend::load_large_constant(state, 5, addr as i64)?;
+            Riscv64Backend::load_large_constant(state, 5, i64::from(addr))?;
             Riscv64Backend::er(state, 0x33, 0, 5, 5, s0, 0)?;
             Riscv64Backend::ei(state, 0x03, 3, sp, 5, 0)?;
         }
@@ -1296,7 +1311,7 @@ impl CodegenBackend for Riscv64Backend {
 
         // Align stack: andi sp, sp, -align
         if align > 0 {
-            let mask = -(align as i32);
+            let mask = -align;
             Riscv64Backend::ei(state, 0x13, 7, sp, sp, mask)?; // andi sp, sp, -align
         }
 
@@ -1558,11 +1573,11 @@ impl LinkerBackend for Riscv64Backend {
                     let base = existing & 0xe003;
                     let enc = base
                         | ((((imm >> 5) & 1) as u16) << 2)
-                        | (((((imm >> 1) & 7) as u16)) << 3)
+                        | ((((imm >> 1) & 7) as u16) << 3)
                         | ((((imm >> 7) & 1) as u16) << 6)
                         | ((((imm >> 6) & 1) as u16) << 7)
                         | ((((imm >> 10) & 1) as u16) << 8)
-                        | (((((imm >> 8) & 3) as u16)) << 9)
+                        | ((((imm >> 8) & 3) as u16) << 9)
                         | ((((imm >> 4) & 1) as u16) << 11)
                         | ((((imm >> 11) & 1) as u16) << 12);
                     let bytes = enc.to_le_bytes();
@@ -1572,9 +1587,8 @@ impl LinkerBackend for Riscv64Backend {
                 Ok(())
             }
             R_RISCV_COPY | R_RISCV_NONE => Ok(()),
-            _ => Err(TccError::link(&format!(
-                "unsupported RISC-V relocation type: {}",
-                rt
+            _ => Err(TccError::link(format!(
+                "unsupported RISC-V relocation type: {rt}"
             ))),
         }
     }
@@ -1676,9 +1690,8 @@ impl Riscv64Backend {
         // the token to the appropriate instruction encoding function.
         // This is a large switch statement in the C source covering all
         // RISC-V instructions.
-        Err(TccError::link(&format!(
-            "riscv64 asm_opcode: token {} not yet handled in assembler",
-            token
+        Err(TccError::link(format!(
+            "riscv64 asm_opcode: token {token} not yet handled in assembler"
         )))
     }
 }
@@ -1690,11 +1703,11 @@ impl Riscv64Backend {
 /// Operand type for assembler instruction encoding.
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct AsmOperand {
-    /// Operand type: OP_REG, OP_IM12S, or OP_IM32.
+    /// Operand type: `OP_REG`, `OP_IM12S`, or `OP_IM32`.
     op_type: u32,
-    /// Register number (if OP_REG).
+    /// Register number (if `OP_REG`).
     reg: u8,
-    /// Immediate value (if OP_IM12S or OP_IM32).
+    /// Immediate value (if `OP_IM12S` or `OP_IM32`).
     imm: i64,
 }
 
@@ -1713,7 +1726,7 @@ fn reg_is_float(reg: u8) -> bool {
 
 /// Extract the register number (0-31) from a register index.
 fn reg_value(reg: u8) -> u32 {
-    (reg & (REG_FLOAT_MASK - 1)) as u32
+    u32::from(reg & (REG_FLOAT_MASK - 1))
 }
 
 /// Encode destination register for standard 32-bit instructions.
