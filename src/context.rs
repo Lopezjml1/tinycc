@@ -286,6 +286,11 @@ pub(crate) struct TccState {
     /// C field: `unsigned char test_coverage` (tcc.h:795).
     pub(crate) test_coverage: bool,
 
+    /// Debug state — holds all persistent state for STABS/DWARF generation
+    /// and code coverage instrumentation.
+    /// C field: part of `struct _tccdbg *dState` (tcc.h:919).
+    pub(crate) debug_state: Option<Box<crate::debug::DebugState>>,
+
     // -----------------------------------------------------------------------
     // Extension flags
     // -----------------------------------------------------------------------
@@ -617,6 +622,7 @@ impl Default for TccState {
             do_backtrace: false,
             do_bounds_check: false,
             test_coverage: false,
+            debug_state: None,
 
             // Extension flags
             gnu_ext: true,  // libtcc.c:963
