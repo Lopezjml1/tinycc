@@ -702,7 +702,7 @@ pub fn tcc_close(tcc_state: &mut TccState) -> TccResult<()> {
 /// C equivalent: `search_cached_include()` in tccpp.c.
 pub fn search_cached_include(
     tcc_state: &TccState,
-    _pp: &PreprocessorState,
+    pp: &PreprocessorState,
     filename: &Path,
 ) -> bool {
     if let Some(ci) = tcc_state.cached_includes.get(filename) {
@@ -712,10 +712,25 @@ pub fn search_cached_include(
         }
         // If the file has an #ifndef guard and the guard macro is still defined,
         // then the file contents would be entirely skipped anyway.
+        //
+        // C equivalent: In the original tccpp.c search_cached_include(), the
+        // guard token ID is resolved to a define via the token table, then
+        // checked for existence. If the define exists, the include is skipped.
         if ci.ifndef_macro != 0 {
-            // The guard macro is defined — skip the file.
-            // (Full implementation would check pp.defines for the guard macro.)
-            return true;
+            // Resolve the guard macro token ID to its string name via table_ident.
+            // Token IDs >= 256 index into table_ident at (id - 256).
+            let guard_name = if ci.ifndef_macro >= 256 {
+                let idx = (ci.ifndef_macro - 256) as usize;
+                pp.table_ident.get(idx).map(|ts| ts.str_val.as_str())
+            } else {
+                None
+            };
+            // Only skip if the guard macro is actually defined in the current state.
+            if let Some(name) = guard_name {
+                if pp.defines.contains_key(name) {
+                    return true;
+                }
+            }
         }
     }
     false
@@ -1911,19 +1926,27 @@ pub fn next_token(
         return Ok(tok);
     }
 
-    // If currently expanding a macro, read from the macro stack.
-    if let Some(ptr) = pp.macro_ptr {
-        if let Some(entry) = pp.macro_stack.last() {
-            if ptr < entry.tokens.len() {
-                let tok = entry.tokens[ptr];
-                pp.macro_ptr = Some(ptr + 1);
-                pp.tok = tok;
-                return Ok(tok);
+    // Iterative macro expansion loop — replaces recursive call pattern.
+    // When a macro expansion is exhausted, we pop the stack and retry
+    // without recursion, preventing stack overflow for deeply nested macros.
+    // Maximum iteration bound prevents infinite loops from malformed state.
+    const MAX_MACRO_DEPTH: usize = 1024;
+    for _ in 0..MAX_MACRO_DEPTH {
+        if let Some(ptr) = pp.macro_ptr {
+            if let Some(entry) = pp.macro_stack.last() {
+                if ptr < entry.tokens.len() {
+                    let tok = entry.tokens[ptr];
+                    pp.macro_ptr = Some(ptr + 1);
+                    pp.tok = tok;
+                    return Ok(tok);
+                }
             }
+            // Macro exhausted — pop and continue iteration (no recursion).
+            end_macro(pp)?;
+            continue;
         }
-        // Macro exhausted — pop and continue.
-        end_macro(pp)?;
-        return next_token(pp, tcc_state);
+        // No active macro expansion — fall through to file reading.
+        break;
     }
 
     // Read from the source file stack.

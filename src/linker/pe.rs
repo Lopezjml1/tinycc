@@ -6,6 +6,15 @@
 //!
 //! C equivalent: `tccpe.c` (2,114 lines)
 //!
+//! # Platform Availability
+//!
+//! This module is intentionally **NOT** gated with `#[cfg(target_os = "windows")]`.
+//! TinyCC supports cross-compilation — a Linux or macOS host can produce
+//! Windows PE executables using `tcc -m32 -o hello.exe hello.c`. The PE
+//! output backend must be available on all platforms to support this
+//! cross-compilation workflow, matching the original C behavior where
+//! `tccpe.c` is compiled unconditionally on all hosts.
+//!
 //! Supports:
 //! - PE32 (32-bit) and PE32+ (64-bit) output formats
 //! - DLL, GUI EXE, console EXE, and in-memory execution modes

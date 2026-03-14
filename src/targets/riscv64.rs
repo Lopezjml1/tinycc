@@ -17,6 +17,13 @@
 //! - **CVE-2019-9754**: Macro stacks use `Vec` with `.pop()` returning `None`.
 //! - **CVE-2006-0635**: All signed/unsigned comparisons use explicit `TryInto`.
 
+// RISC-V instruction encoding requires extensive bit manipulation: extracting
+// immediate fields from 32-bit instruction words, encoding register numbers
+// (5-bit fields) into specific bit positions, and composing branch/jump offsets
+// from signed displacements. These operations inherently involve u32↔i32↔u8
+// casts with known-safe ranges defined by the RISC-V ISA specification.
+// Using per-expression #[allow] would require annotations on ~200+ lines of
+// instruction encoding logic, reducing readability without improving safety.
 #![allow(clippy::cast_possible_truncation)]
 #![allow(clippy::cast_sign_loss)]
 #![allow(clippy::cast_possible_wrap)]

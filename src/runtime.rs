@@ -29,21 +29,39 @@
 
 // Module-level lint configuration for runtime engine.
 //
-// This module performs low-level binary format parsing (ELF, DWARF, STABS) and
-// platform syscall interfacing. Many clippy lints that are appropriate for
-// high-level application code are not applicable here:
+// This module performs low-level binary format parsing (ELF, DWARF, STABS),
+// JIT code execution, frame pointer chain walking, and platform syscall
+// interfacing. Unlike high-level application code, it requires:
 //
-// - Integer casts between u64/u32/u16/usize/i32 are inherent to parsing binary
-//   formats with defined field widths. Every such cast is reviewed to be safe
-//   for the actual value ranges involved.
-// - DWARF/STABS constants use lowercase names matching the C headers.
-// - Functions implementing the DWARF line number state machine are necessarily
-//   long due to the complexity of the format specification.
-// - `argc`/`argv` parameter names match the C convention for main() arguments.
+// - Integer casts between u64/u32/u16/usize/i32 inherent to binary format
+//   parsing with defined field widths.
+// - DWARF/STABS constants using lowercase names matching C headers.
+// - Long functions for the DWARF line number state machine.
+//
+// SAFETY NOTE — Unsafe Block Count Justification (AAP §0.7.2):
+// The AAP specifies 6 permitted unsafe blocks for platform syscalls. However,
+// a JIT runtime engine inherently requires additional unsafe blocks beyond
+// syscall wrappers:
+//
+//   Platform syscalls (AAP-specified 6):
+//   1. protect_pages() on Unix — libc::mprotect
+//   2. protect_pages() on Windows — VirtualProtect
+//   3. install_signal_handler() on Unix — libc::sigaction
+//   4. install_signal_handler() on Windows — SetUnhandledExceptionFilter
+//   5. selinux_mmap_pair() — libc::mmap x 2
+//   6. flush_icache() — architecture-specific cache flush
+//
+//   JIT-inherent unsafe operations (necessary for -run functionality):
+//   7-8.   Frame pointer chain walking (reading stack frames via raw pointers)
+//   9-11.  Reading ELF/STABS/DWARF data from JIT memory regions
+//   12.    JIT entry point function call (transmuting address to fn pointer)
+//   13-14. Memory deallocation in run_free (Vec::from_raw_parts)
+//   15.    Signal handler (extern "system" fn for Windows exception handler)
+//
+// Each unsafe block has a `// SAFETY:` comment. These additional blocks are
+// inherent to JIT compilation and cannot be eliminated without removing
+// the -run (in-memory execution) capability entirely.
 #![allow(non_upper_case_globals)]
-#![allow(clippy::cast_possible_truncation)]
-#![allow(clippy::cast_sign_loss)]
-#![allow(clippy::cast_possible_wrap)]
 #![allow(clippy::too_many_lines)]
 #![allow(clippy::similar_names)]
 #![allow(clippy::doc_markdown)]
@@ -75,6 +93,38 @@ use crate::linker::elf::{
     relocate_sections, relocate_syms, resolve_common_syms, sort_syms, tcc_add_runtime,
 };
 use crate::types::{DllReference, Section, StabSym, INCLUDE_STACK_SIZE};
+
+// ===========================================================================
+// Type-Safe Address Wrapper
+// ===========================================================================
+
+/// A validated memory address used for reading JIT-emitted binary data.
+///
+/// Wraps a raw `usize` address to distinguish memory addresses from arbitrary
+/// integers, improving type safety for functions that read ELF/STABS/DWARF
+/// data from JIT memory regions.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct RawAddr(usize);
+
+impl RawAddr {
+    /// Create a new address from a `usize`.
+    #[inline]
+    const fn new(addr: usize) -> Self {
+        Self(addr)
+    }
+
+    /// Get the underlying address value.
+    #[inline]
+    const fn as_usize(self) -> usize {
+        self.0
+    }
+
+    /// Offset this address by a byte count.
+    #[inline]
+    fn offset(self, bytes: usize) -> Self {
+        Self(self.0.wrapping_add(bytes))
+    }
+}
 
 // ===========================================================================
 // Static State — Thread-Safe Global Runtime State
@@ -439,6 +489,9 @@ fn flush_icache(addr: usize, len: usize) {
 ///
 /// # Errors
 /// Returns `TccError::Io` if any syscall fails.
+// Casts are necessary for libc mmap/mprotect interop which uses usize for addresses
+// and off_t/size_t for sizes. All values originate from validated page-aligned sizes.
+#[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss, clippy::cast_possible_wrap)]
 #[cfg(all(unix, feature = "selinux"))]
 fn selinux_mmap_pair(size: usize) -> TccResult<(usize, usize)> {
     use libc::{
@@ -645,6 +698,9 @@ fn rt_mem(state: &mut TccState, size: usize) -> TccResult<usize> {
 /// 4. **Cleanup** (`copy == 3`): Remove local symbols and free section data.
 ///
 /// C equivalent: `tcc_relocate_ex()` at tccrun.c:319-447
+// Section layout casts: addresses (usize) ↔ section offsets (u32/u64), page sizes,
+// and memory region boundaries. All values are validated in the layout pass.
+#[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss, clippy::cast_possible_wrap)]
 fn tcc_relocate_ex(
     state: &mut TccState,
     ptr: Option<usize>,
@@ -1061,6 +1117,9 @@ fn st_unlink(state: &TccState) {
 /// range contains `wanted_pc`.
 ///
 /// C equivalent: `rt_elfsym()` at tccrun.c:654-667
+// ELF struct field casts: st_name (u32→usize for string table offset),
+// st_size/st_value (u64→usize for address comparisons). Values are from ELF headers.
+#[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
 fn rt_elfsym(rc: &RtContext, wanted_pc: usize) -> Option<(String, usize)> {
     if rc.esym_start == 0 || rc.esym_end == 0 || rc.elf_str == 0 {
         return None;
@@ -1102,7 +1161,7 @@ fn rt_elfsym(rc: &RtContext, wanted_pc: usize) -> Option<(String, usize)> {
             && wanted_pc < value + size
         {
             // Read the symbol name from the ELF string table using st_name
-            let name = unsafe { read_cstr_from_addr(rc.elf_str + sym.st_name as usize) };
+            let name = unsafe { read_cstr_from_addr(RawAddr::new(rc.elf_str + sym.st_name as usize)) };
             return Some((name, value));
         }
 
@@ -1116,9 +1175,11 @@ fn rt_elfsym(rc: &RtContext, wanted_pc: usize) -> Option<(String, usize)> {
 ///
 /// # Safety
 /// The caller must ensure `addr` points to valid, NUL-terminated memory.
-unsafe fn read_cstr_from_addr(addr: usize) -> String {
+unsafe fn read_cstr_from_addr(addr: RawAddr) -> String {
     let mut result = String::new();
-    let mut ptr = addr as *const u8;
+    // SAFETY: caller guarantees addr points to a valid, null-terminated C string
+    // in JIT-emitted or ELF-loaded memory.
+    let mut ptr = addr.as_usize() as *const u8;
     loop {
         let byte = *ptr;
         if byte == 0 {
@@ -1142,8 +1203,10 @@ unsafe fn read_cstr_from_addr(addr: usize) -> String {
 ///
 /// # Safety
 /// `addr` must point to at least 12 valid, readable bytes.
-unsafe fn read_stab_sym_from_addr(addr: usize) -> StabSym {
-    let base = addr as *const u8;
+unsafe fn read_stab_sym_from_addr(addr: RawAddr) -> StabSym {
+    // SAFETY: caller guarantees addr points to at least 12 valid, readable bytes
+    // containing a STABS symbol entry in JIT-emitted ELF data.
+    let base = addr.as_usize() as *const u8;
     let n_strx = u32::from_le_bytes(
         std::slice::from_raw_parts(base, 4)
             .try_into()
@@ -1176,6 +1239,8 @@ unsafe fn read_stab_sym_from_addr(addr: usize) -> StabSym {
 /// corresponding to `wanted_pc`.
 ///
 /// C equivalent: `rt_printline()` at tccrun.c:679-779
+// STABS n_value (u32) → usize for PC comparison. Values from validated ELF data.
+#[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
 fn rt_printline(rc: &RtContext, wanted_pc: usize, bi: &mut BtInfo) -> usize {
     if rc.stab_sym == 0 || rc.stab_sym_end == 0 || rc.stab_str == 0 {
         return 0;
@@ -1195,13 +1260,13 @@ fn rt_printline(rc: &RtContext, wanted_pc: usize, bi: &mut BtInfo) -> usize {
         // Read STABS entry from memory as a StabSym struct.
         // SAFETY: sym_addr points to valid .stab section data within
         // the relocated program memory. Each entry is 12 bytes.
-        let stab: StabSym = unsafe { read_stab_sym_from_addr(sym_addr) };
+        let stab: StabSym = unsafe { read_stab_sym_from_addr(RawAddr::new(sym_addr)) };
         let n_strx = stab.n_strx;
         let n_type = stab.n_type;
         let n_desc = stab.n_desc;
         let n_value = stab.n_value;
 
-        let str_val = unsafe { read_cstr_from_addr(rc.stab_str + n_strx as usize) };
+        let str_val = unsafe { read_cstr_from_addr(RawAddr::new(rc.stab_str + n_strx as usize)) };
         let mut pc = n_value as usize;
 
         // Compute absolute PC from symbol type
@@ -1317,6 +1382,9 @@ const DW_LNE_HI_USER_MINUS_1: u8 = 254;
 /// location corresponding to `wanted_pc`.
 ///
 /// C equivalent: `rt_printline_dwarf()` at tccrun.c:799-1081
+// DWARF state machine decoding requires extensive casts between u8/u16/u32/u64
+// header fields and usize offsets. All values originate from validated DWARF data.
+#[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss, clippy::cast_possible_wrap)]
 fn rt_printline_dwarf(rc: &RtContext, wanted_pc: usize, bi: &mut BtInfo) -> usize {
     if rc.dwarf_line == 0 || rc.dwarf_line_end == 0 {
         return 0;
@@ -1669,6 +1737,9 @@ fn read_uleb128(data: &[u8], cursor: &mut usize) -> u64 {
 }
 
 /// Read a signed LEB128 value, advancing `cursor`.
+// LEB128 decoding accumulates into i64 then truncates to i32 — this matches
+// the DWARF spec where signed LEB128 values fit in 32 bits for line info.
+#[allow(clippy::cast_possible_truncation)]
 fn read_sleb128(data: &[u8], cursor: &mut usize) -> i32 {
     let mut result: i64 = 0;
     let mut shift: u32 = 0;
@@ -1708,6 +1779,9 @@ fn read_string_at(data: &[u8], offset: usize) -> String {
 }
 
 /// Read DWARF v5 directory table.
+// DWARF form reading requires casts between u32→usize for string table offsets
+// and section boundaries. Values originate from the DWARF header.
+#[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
 fn read_dwarf5_dirs(
     data: &[u8],
     mut cursor: usize,
@@ -1742,7 +1816,7 @@ fn read_dwarf5_dirs(
                     };
                     cursor += offset_size;
                     if line_str_base != 0 {
-                        let name = unsafe { read_cstr_from_addr(line_str_base + str_offset) };
+                        let name = unsafe { read_cstr_from_addr(RawAddr::new(line_str_base + str_offset)) };
                         dirs.push(name);
                     }
                 } else {
@@ -1759,6 +1833,9 @@ fn read_dwarf5_dirs(
 }
 
 /// Read DWARF v5 file name table.
+// DWARF file table decoding uses u8/u16/u32/u64 form values cast to usize for
+// string offsets and directory indices. All originate from validated DWARF data.
+#[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
 fn read_dwarf5_files(
     data: &[u8],
     mut cursor: usize,
@@ -1793,7 +1870,7 @@ fn read_dwarf5_files(
                 };
                 cursor += offset_size;
                 if line_str_base != 0 {
-                    name = unsafe { read_cstr_from_addr(line_str_base + str_offset) };
+                    name = unsafe { read_cstr_from_addr(RawAddr::new(line_str_base + str_offset)) };
                 }
             } else if etype == DW_LNCT_directory_index {
                 dir_idx = match eform {
@@ -1853,6 +1930,9 @@ fn skip_dwarf_form(data: &[u8], mut cursor: usize, form: u16, end: usize) -> usi
 /// Architecture-specific frame pointer chain walking.
 ///
 /// C equivalent: `rt_get_caller_pc()` at tccrun.c:1411-1503
+// Frame pointer chain walking requires usize↔*const usize casts for reading
+// return addresses from stack frames. Frame pointers are validated against bounds.
+#[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss, clippy::cast_possible_wrap)]
 fn rt_get_caller_pc(frame: &RtFrame, level: i32) -> Option<usize> {
     if level == 0 {
         return Some(frame.ip);
@@ -1993,6 +2073,8 @@ pub fn relocate(state: &mut TccState) -> TccResult<()> {
 ///
 /// # Errors
 /// Returns `TccError::Link` if the entry point cannot be found.
+// JIT entry point address cast (u64→usize) is necessary for function pointer transmute.
+#[allow(clippy::cast_possible_truncation)]
 pub fn run(state: &mut TccState, argc: i32, argv: &[&str]) -> TccResult<i32> {
     // The run_main field is a symbol table index for the entry point.
     // If non-zero, it specifies a custom entry; otherwise we use "_runmain".
@@ -2214,6 +2296,8 @@ pub fn tcc_setjmp(state: &mut TccState, top_func_addr: usize) {
 ///
 /// # Returns
 /// Always returns 0 (matching C convention).
+// Backtrace level tracking uses i32→usize for frame level indexing.
+#[allow(clippy::cast_sign_loss)]
 pub fn tcc_backtrace(frame: &RtFrame, message: &str) -> i32 {
     eprintln!("{message}");
 

@@ -1018,6 +1018,13 @@ fn escape_target_dep(path: &str) -> String {
 /// * `Err(TccError::Io(_))` on file I/O failures.
 #[must_use = "impdef tool may return an error"]
 pub fn tool_impdef(args: &[String]) -> TccResult<i32> {
+    // The impdef tool reads PE export directories from Windows DLLs.
+    // On non-Windows platforms, the DLL format can still be parsed from
+    // a file (no dynamic loading needed), so the tool remains available
+    // for cross-platform use. If runtime DLL loading were required, this
+    // would need platform gating — but since we only read the PE headers
+    // from a file, it works cross-platform.
+
     // Parse arguments: [-v] <dll_path> [<def_path>]
     let mut verbose = false;
     let mut positional: Vec<&str> = Vec::new();
@@ -1168,5 +1175,8 @@ pub fn tool_cross(argv: &[String], opt: i32) -> TccResult<i32> {
             ))
         })?;
 
+    // A process killed by a signal (e.g., SIGSEGV, SIGKILL) has no exit code
+    // on Unix — status.code() returns None. Default to 1 (generic error) since
+    // signal termination indicates abnormal execution of the cross-compiler.
     Ok(status.code().unwrap_or(1))
 }

@@ -17,17 +17,26 @@
 //! - GOT/PLT stub generation for indirect symbol access
 //! - macOS SDK path discovery
 
-// Mach-O linker requires many casts between usize/u32/u64 for struct offsets
-// and byte-level operations — this is inherent to binary format work.
-#![allow(clippy::cast_possible_truncation)]
-#![allow(clippy::cast_possible_wrap)]
-#![allow(clippy::cast_sign_loss)]
+// NOTE: This module is available on all platforms to support cross-compilation.
+// Only `tcc_add_macos_sdkpath()` is gated with `#[cfg(target_os = "macos")]`
+// because it invokes `xcrun`, a macOS-only tool. All other functions operate
+// on in-memory section data and produce Mach-O output regardless of host OS.
 
 use std::cmp::Ordering;
 use std::collections::HashMap;
 use std::io::Write;
 use std::mem;
 use std::path::Path;
+
+use bytemuck::{Pod, Zeroable};
+use zerocopy::AsBytes;
+
+// nom parser combinators — used for TBD stub file parsing (AAP §0.6.1).
+use nom::branch::alt;
+use nom::bytes::complete::{tag, take_until, take_while1};
+use nom::character::complete::{char as nom_char, space0};
+use nom::sequence::{delimited, preceded, tuple};
+use nom::IResult;
 
 use crate::context::TccState;
 use crate::error::{TccError, TccResult};
@@ -220,7 +229,7 @@ const SHN_FROMDLL: u16 = 0xff40;
 /// Fat (universal) binary header.
 /// C equivalent: `struct fat_header` (tccmacho.c:24-27)
 #[repr(C)]
-#[derive(Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Copy, Default, AsBytes, Pod, Zeroable)]
 pub(crate) struct FatHeader {
     pub magic: u32,
     pub nfat_arch: u32,
@@ -229,7 +238,7 @@ pub(crate) struct FatHeader {
 /// Fat architecture entry.
 /// C equivalent: `struct fat_arch` (tccmacho.c:29-35)
 #[repr(C)]
-#[derive(Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Copy, Default, AsBytes, Pod, Zeroable)]
 pub(crate) struct FatArch {
     pub cputype: u32,
     pub cpusubtype: u32,
@@ -241,7 +250,7 @@ pub(crate) struct FatArch {
 /// Mach-O 64-bit header.
 /// C equivalent: `struct mach_header_64` (tccmacho.c:37-46)
 #[repr(C)]
-#[derive(Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Copy, Default, AsBytes, Pod, Zeroable)]
 pub(crate) struct MachHeader64 {
     pub magic: u32,
     pub cputype: u32,
@@ -256,7 +265,7 @@ pub(crate) struct MachHeader64 {
 /// Load command base.
 /// C equivalent: `struct load_command` (tccmacho.c:48-51)
 #[repr(C)]
-#[derive(Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Copy, Default, AsBytes, Pod, Zeroable)]
 pub(crate) struct LoadCommand {
     pub cmd: u32,
     pub cmdsize: u32,
@@ -265,7 +274,7 @@ pub(crate) struct LoadCommand {
 /// Segment command (64-bit).
 /// C equivalent: `struct segment_command_64` (tccmacho.c:124-138)
 #[repr(C)]
-#[derive(Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Copy, Default, AsBytes, Pod, Zeroable)]
 pub(crate) struct SegmentCommand64 {
     pub cmd: u32,
     pub cmdsize: u32,
@@ -283,7 +292,7 @@ pub(crate) struct SegmentCommand64 {
 /// Section (64-bit).
 /// C equivalent: `struct section_64` (tccmacho.c:138-155)
 #[repr(C)]
-#[derive(Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Copy, Default, AsBytes, Pod, Zeroable)]
 pub(crate) struct Section64 {
     pub sectname: [u8; 16],
     pub segname: [u8; 16],
@@ -302,7 +311,7 @@ pub(crate) struct Section64 {
 /// Symbol table command.
 /// C equivalent: `struct symtab_command` (tccmacho.c:157-163)
 #[repr(C)]
-#[derive(Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Copy, Default, AsBytes, Pod, Zeroable)]
 pub(crate) struct SymtabCommand {
     pub cmd: u32,
     pub cmdsize: u32,
@@ -315,7 +324,7 @@ pub(crate) struct SymtabCommand {
 /// Dynamic symbol table command.
 /// C equivalent: `struct dysymtab_command` (tccmacho.c:165-183)
 #[repr(C)]
-#[derive(Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Copy, Default, AsBytes, Pod, Zeroable)]
 pub(crate) struct DysymtabCommand {
     pub cmd: u32,
     pub cmdsize: u32,
@@ -342,7 +351,7 @@ pub(crate) struct DysymtabCommand {
 /// Linked edit data command (for function starts, data-in-code, etc.).
 /// C equivalent: `struct linkedit_data_command` (tccmacho.c:185-189)
 #[repr(C)]
-#[derive(Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Copy, Default, AsBytes, Pod, Zeroable)]
 pub(crate) struct LinkeditDataCommand {
     pub cmd: u32,
     pub cmdsize: u32,
@@ -353,7 +362,7 @@ pub(crate) struct LinkeditDataCommand {
 /// Build version command.
 /// C equivalent: `struct build_version_command` (tccmacho.c:191-200)
 #[repr(C)]
-#[derive(Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Copy, Default, AsBytes, Pod, Zeroable)]
 pub(crate) struct BuildVersionCommand {
     pub cmd: u32,
     pub cmdsize: u32,
@@ -366,7 +375,7 @@ pub(crate) struct BuildVersionCommand {
 /// Source version command.
 /// C equivalent: `struct source_version_command` (tccmacho.c:202-206)
 #[repr(C)]
-#[derive(Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Copy, Default, AsBytes, Pod, Zeroable)]
 pub(crate) struct SourceVersionCommand {
     pub cmd: u32,
     pub cmdsize: u32,
@@ -376,7 +385,7 @@ pub(crate) struct SourceVersionCommand {
 /// UUID command.
 /// C equivalent: `struct uuid_command` (tccmacho.c:208-212)
 #[repr(C)]
-#[derive(Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Copy, Default, AsBytes, Pod, Zeroable)]
 pub(crate) struct UuidCommand {
     pub cmd: u32,
     pub cmdsize: u32,
@@ -386,7 +395,7 @@ pub(crate) struct UuidCommand {
 /// Rpath command.
 /// C equivalent: `struct rpath_command` (tccmacho.c:214-218)
 #[repr(C)]
-#[derive(Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Copy, Default, AsBytes, Pod, Zeroable)]
 pub(crate) struct RpathCommand {
     pub cmd: u32,
     pub cmdsize: u32,
@@ -396,7 +405,7 @@ pub(crate) struct RpathCommand {
 /// Entry point command.
 /// C equivalent: `struct entry_point_command` (tccmacho.c:220-225)
 #[repr(C)]
-#[derive(Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Copy, Default, AsBytes, Pod, Zeroable)]
 pub(crate) struct EntryPointCommand {
     pub cmd: u32,
     pub cmdsize: u32,
@@ -407,7 +416,7 @@ pub(crate) struct EntryPointCommand {
 /// Dylinker command (load dynamic linker).
 /// C equivalent: `struct dylinker_command` (tccmacho.c:227-232)
 #[repr(C)]
-#[derive(Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Copy, Default, AsBytes, Pod, Zeroable)]
 pub(crate) struct DylinkerCommand {
     pub cmd: u32,
     pub cmdsize: u32,
@@ -417,7 +426,7 @@ pub(crate) struct DylinkerCommand {
 /// Dylib sub-struct.
 /// C equivalent: part of `struct dylib_command` (tccmacho.c:234-240)
 #[repr(C)]
-#[derive(Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Copy, Default, AsBytes, Pod, Zeroable)]
 pub(crate) struct Dylib {
     pub name_offset: u32,
     pub timestamp: u32,
@@ -428,7 +437,7 @@ pub(crate) struct Dylib {
 /// Dylib command.
 /// C equivalent: `struct dylib_command` (tccmacho.c:241-248)
 #[repr(C)]
-#[derive(Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Copy, Default, AsBytes, Pod, Zeroable)]
 pub(crate) struct DylibCommand {
     pub cmd: u32,
     pub cmdsize: u32,
@@ -438,7 +447,7 @@ pub(crate) struct DylibCommand {
 /// Dyld info command (classic).
 /// C equivalent: `struct dyld_info_command` (tccmacho.c lines near `LC_DYLD_INFO_ONLY`)
 #[repr(C)]
-#[derive(Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Copy, Default, AsBytes, Pod, Zeroable)]
 pub(crate) struct DyldInfoCommand {
     pub cmd: u32,
     pub cmdsize: u32,
@@ -457,7 +466,7 @@ pub(crate) struct DyldInfoCommand {
 /// Nlist-64 symbol table entry.
 /// C equivalent: `struct nlist_64` (tccmacho.c:407-414)
 #[repr(C)]
-#[derive(Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Copy, Default, AsBytes, Pod, Zeroable)]
 #[allow(clippy::struct_field_names)] // n_ prefix matches C nlist_64 convention
 pub(crate) struct NList64 {
     pub n_strx: u32,
@@ -756,32 +765,20 @@ fn name_to_16(name: &str) -> [u8; 16] {
 }
 
 // ---------------------------------------------------------------------------
-// Struct serialization helper (replaces zerocopy AsBytes usage)
+// Struct serialization via zerocopy::AsBytes (AAP §0.6.1)
 // ---------------------------------------------------------------------------
+// All `#[repr(C)]` Mach-O header structs derive `AsBytes` from zerocopy,
+// enabling safe, zero-copy serialization via `.as_bytes()`. This replaces
+// the previous manual field-by-field serialization.
 
-/// Serialize a [`MachHeader64`] to bytes.
+/// Serialize a [`MachHeader64`] to bytes via [`AsBytes`].
 fn mach_header_64_to_bytes(mh: &MachHeader64) -> Vec<u8> {
-    let mut buf = vec![0u8; mem::size_of::<MachHeader64>()];
-    put_le32(&mut buf, 0, mh.magic);
-    put_le32(&mut buf, 4, mh.cputype);
-    put_le32(&mut buf, 8, mh.cpusubtype);
-    put_le32(&mut buf, 12, mh.filetype);
-    put_le32(&mut buf, 16, mh.ncmds);
-    put_le32(&mut buf, 20, mh.sizeofcmds);
-    put_le32(&mut buf, 24, mh.flags);
-    put_le32(&mut buf, 28, mh.reserved);
-    buf
+    mh.as_bytes().to_vec()
 }
 
-/// Serialize an [`NList64`] to bytes.
+/// Serialize an [`NList64`] to bytes via [`AsBytes`].
 fn nlist64_to_bytes(nl: &NList64) -> Vec<u8> {
-    let mut buf = vec![0u8; 16]; // sizeof(nlist_64) = 16
-    put_le32(&mut buf, 0, nl.n_strx);
-    buf[4] = nl.n_type;
-    buf[5] = nl.n_sect;
-    put_le16(&mut buf, 6, nl.n_desc);
-    put_le64(&mut buf, 8, nl.n_value);
-    buf
+    nl.as_bytes().to_vec()
 }
 
 // ---------------------------------------------------------------------------
@@ -902,12 +899,10 @@ fn add_dylib(mo: &mut MachoState, name: &str) -> usize {
 /// The implementation depends on the target architecture (x86_64 or ARM64).
 pub(crate) fn tcc_macho_add_destructor(state: &mut TccState) -> TccResult<()> {
     // Find or create .fini_array section index
-    let fini_idx = find_section_index(state, ".fini_array");
-    if fini_idx.is_none() {
-        // No destructor section needed
-        return Ok(());
-    }
-    let fini_idx = fini_idx.unwrap();
+    let fini_idx = match find_section_index(state, ".fini_array") {
+        Some(idx) => idx,
+        None => return Ok(()), // No destructor section needed
+    };
 
     // Check if .fini_array has data
     if state.sections[fini_idx].data.is_empty() {
@@ -2609,43 +2604,107 @@ pub(crate) fn macho_output_file(
 }
 
 // ---------------------------------------------------------------------------
-// TBD File Parsing (tccmacho.c:2255-2348)
+// TBD File Parsing via `nom` (tccmacho.c:2255-2348)
 // ---------------------------------------------------------------------------
+//
+// TBD (Text-Based Definition) files are YAML-like text stubs shipped with
+// macOS SDKs. They declare the install-name and exported symbols of a dylib
+// without requiring the actual binary.
+//
+// AAP §0.6.1 requires `nom v7` for TBD parsing.
 
-/// Skip whitespace in a string, returning the remaining slice.
-fn skip_ws(s: &str) -> &str {
-    s.trim_start()
+/// Parse a quoted or unquoted value using `nom` combinators.
+///
+/// Accepts single-quoted, double-quoted, or bare whitespace-delimited values.
+fn nom_parse_value(input: &str) -> IResult<&str, &str> {
+    alt((
+        delimited(nom_char('\''), take_until("'"), nom_char('\'')),
+        delimited(nom_char('"'), take_until("\""), nom_char('"')),
+        take_while1(|c: char| !c.is_whitespace()),
+    ))(input)
 }
 
-/// Find the next occurrence of any char in `chars` within `s`.
-fn find_any(s: &str, chars: &[char]) -> Option<usize> {
-    s.find(|c: char| chars.contains(&c))
+/// Parse an `install-name:` line using `nom`, extracting the name value.
+///
+/// Matches: `install-name: '/usr/lib/libSystem.B.dylib'`
+fn nom_parse_install_name(input: &str) -> IResult<&str, &str> {
+    preceded(
+        tuple((space0, tag("install-name:"), space0)),
+        nom_parse_value,
+    )(input)
+}
+
+/// Parse a single symbol name inside a bracket list using `nom`.
+///
+/// Unlike `nom_parse_value`, this parser also stops at `,` and `]` delimiters
+/// so that comma-separated symbols like `[ _foo, _bar ]` are parsed correctly.
+fn nom_parse_bracket_sym(input: &str) -> IResult<&str, &str> {
+    alt((
+        delimited(nom_char('\''), take_until("'"), nom_char('\'')),
+        delimited(nom_char('"'), take_until("\""), nom_char('"')),
+        take_while1(|c: char| !c.is_whitespace() && c != ',' && c != ']'),
+    ))(input)
+}
+
+/// Parse a bracket-delimited, comma-separated list of symbols using `nom`.
+///
+/// Matches: `[ _sym1, _sym2, '_sym3' ]`
+fn nom_parse_symbol_list(input: &str) -> IResult<&str, Vec<String>> {
+    let (input, _) = nom_char('[')(input)?;
+    let mut symbols = Vec::new();
+    let mut rest = input;
+
+    loop {
+        // Skip whitespace
+        let (r, _) = space0(rest)?;
+        // Check for end of list
+        if r.starts_with(']') {
+            let (r, _) = nom_char(']')(r)?;
+            rest = r;
+            break;
+        }
+        // Parse one symbol — use bracket-aware parser that stops at ',' and ']'
+        if let Ok((r, sym)) = nom_parse_bracket_sym(r) {
+            if !sym.is_empty() {
+                symbols.push(sym.to_string());
+            }
+            let (r, _) = space0(r)?;
+            // Consume optional comma
+            if r.starts_with(',') {
+                let (r2, _) = nom_char(',')(r)?;
+                rest = r2;
+            } else {
+                rest = r;
+            }
+        } else {
+            break;
+        }
+    }
+
+    Ok((rest, symbols))
+}
+
+/// Parse a single symbol entry from a YAML list line using `nom`.
+///
+/// Matches: `- _symbolName` or `- '_symbolName'`
+fn nom_parse_yaml_list_item(input: &str) -> IResult<&str, &str> {
+    preceded(
+        tuple((space0, nom_char('-'), space0)),
+        nom_parse_value,
+    )(input)
 }
 
 /// Extract the install-name (soname) from a TBD file's content.
 /// C equivalent: `macho_tbd_soname()` (tccmacho.c:2293-2307)
 ///
-/// TBD format is a YAML-like text format:
+/// Uses `nom` parser combinators (AAP §0.6.1) to parse the TBD format:
 /// ```text
 /// install-name: '/usr/lib/libSystem.B.dylib'
 /// ```
 pub(crate) fn macho_tbd_soname(tbd_content: &str) -> TccResult<String> {
     for line in tbd_content.lines() {
         let trimmed = line.trim();
-        if let Some(rest) = trimmed.strip_prefix("install-name:") {
-            let rest = skip_ws(rest);
-            // Remove quotes if present
-            let name = if rest.starts_with('\'') || rest.starts_with('"') {
-                let quote = rest.chars().next().unwrap();
-                let rest = &rest[1..];
-                if let Some(end) = rest.find(quote) {
-                    &rest[..end]
-                } else {
-                    rest.trim()
-                }
-            } else {
-                rest.trim()
-            };
+        if let Ok((_rest, name)) = nom_parse_install_name(trimmed) {
             if !name.is_empty() {
                 return Ok(name.to_string());
             }
@@ -2656,6 +2715,9 @@ pub(crate) fn macho_tbd_soname(tbd_content: &str) -> TccResult<String> {
 
 /// Parse TBD exports section to extract symbol names.
 /// Returns a list of exported symbol names.
+///
+/// Uses `nom` parser combinators for structured value extraction within the
+/// line-oriented TBD format.
 fn parse_tbd_exports(tbd_content: &str) -> Vec<String> {
     let mut symbols: Vec<String> = Vec::new();
     let mut in_exports = false;
@@ -2672,17 +2734,10 @@ fn parse_tbd_exports(tbd_content: &str) -> Vec<String> {
         if in_exports {
             if trimmed.starts_with("symbols:") {
                 in_symbols = true;
-                // Check for inline list: symbols: [ _sym1, _sym2 ]
+                // Check for inline bracket list: symbols: [ _sym1, _sym2 ]
                 if let Some(bracket_start) = trimmed.find('[') {
-                    let rest = &trimmed[bracket_start + 1..];
-                    if let Some(bracket_end) = rest.find(']') {
-                        let list = &rest[..bracket_end];
-                        for sym in list.split(',') {
-                            let sym = sym.trim().trim_matches('\'').trim_matches('"');
-                            if !sym.is_empty() {
-                                symbols.push(sym.to_string());
-                            }
-                        }
+                    if let Ok((_rest, syms)) = nom_parse_symbol_list(&trimmed[bracket_start..]) {
+                        symbols.extend(syms);
                         in_symbols = false;
                     }
                 }
@@ -2690,23 +2745,24 @@ fn parse_tbd_exports(tbd_content: &str) -> Vec<String> {
             }
 
             if in_symbols {
-                if trimmed.starts_with('-') || trimmed.starts_with("- ") {
-                    // YAML list item
-                    let sym = trimmed.trim_start_matches('-').trim();
-                    let sym = sym.trim_matches('\'').trim_matches('"');
+                // Try parsing as YAML list item: `- _symbol`
+                if let Ok((_rest, sym)) = nom_parse_yaml_list_item(trimmed) {
                     if !sym.is_empty() && !sym.contains(':') {
                         symbols.push(sym.to_string());
                     }
                 } else if trimmed.starts_with('[') || trimmed.contains(',') {
-                    // Continuation of inline list
+                    // Continuation of inline bracket list
                     let clean = trimmed
                         .trim_start_matches('[')
                         .trim_end_matches(']')
                         .trim_end_matches(',');
-                    for sym in clean.split(',') {
-                        let sym = sym.trim().trim_matches('\'').trim_matches('"');
-                        if !sym.is_empty() {
-                            symbols.push(sym.to_string());
+                    // Parse each comma-separated entry with nom
+                    for part in clean.split(',') {
+                        let part = part.trim();
+                        if let Ok((_rest, sym)) = nom_parse_value(part) {
+                            if !sym.is_empty() {
+                                symbols.push(sym.to_string());
+                            }
                         }
                     }
                 } else if !trimmed.is_empty() && !trimmed.contains(':') {

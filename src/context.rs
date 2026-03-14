@@ -42,7 +42,7 @@ use crate::error::{TccError, TccResult};
 use crate::types::{
     AFF_TYPE_ASM, AFF_TYPE_C, CString, CType, CachedInclude, DllReference, FileSpec, InlineFunc,
     Section, SValue, SourceFile, SymAttr, SymAttrExt, SymId, Symbol, TCC_OUTPUT_DLL,
-    TCC_OUTPUT_EXE, TCC_OUTPUT_FORMAT_ELF, TCC_OUTPUT_MEMORY, TCC_OUTPUT_OBJ,
+    TCC_OUTPUT_EXE, TCC_OUTPUT_FORMAT_COFF, TCC_OUTPUT_FORMAT_ELF, TCC_OUTPUT_MEMORY, TCC_OUTPUT_OBJ,
     TCC_OUTPUT_PREPROCESS, TokenString, TokenSym,
 };
 
@@ -1011,11 +1011,31 @@ impl TccState {
     /// are implemented in `src/linker/` as additional `impl TccState` blocks.
     ///
     /// C equivalent: `tcc_output_file()` internals (libtcc.c).
-    pub(crate) fn link_output(&mut self, _filename: &str) -> TccResult<()> {
-        Err(TccError::link(
-            "linker pipeline not yet connected — \
-             linker modules (elf.rs, pe.rs, macho.rs) required",
-        ))
+    pub(crate) fn link_output(&mut self, filename: &str) -> TccResult<()> {
+        // Dispatch to the appropriate linker backend based on output_format.
+        //
+        // In the original C code, tcc_output_file() (tccelf.c) is the primary
+        // entry point for all output formats. It dispatches to PE (tccpe.c) or
+        // Mach-O (tccmacho.c) internally based on target OS and output type.
+        // COFF (tcccoff.c) is the only format with a separate entry point.
+        //
+        // C equivalent: tcc_output_file() at libtcc.c / tccelf.c
+        //
+        // Output formats defined in tcc.h:1527-1529:
+        //   TCC_OUTPUT_FORMAT_ELF (0) → ELF linker (tccelf.c)
+        //   TCC_OUTPUT_FORMAT_BINARY (1) → binary stripping (via ELF path)
+        //   TCC_OUTPUT_FORMAT_COFF (2) → COFF output (tcccoff.c)
+        if self.output_format == TCC_OUTPUT_FORMAT_COFF {
+            // COFF output has its own dedicated entry point
+            let mut file = std::fs::File::create(filename)
+                .map_err(TccError::Io)?;
+            crate::linker::coff::tcc_output_coff(self, &mut file)
+        } else {
+            // ELF / binary / PE / Mach-O all route through the main
+            // tcc_output_file dispatcher which handles target-specific
+            // dispatch internally.
+            crate::linker::elf::tcc_output_file(self, filename)
+        }
     }
 
     /// Internal relocation entry point.
@@ -1024,10 +1044,12 @@ impl TccState {
     ///
     /// C equivalent: `tcc_relocate()` internals (libtcc.c).
     pub(crate) fn relocate_internal(&mut self) -> TccResult<()> {
-        Err(TccError::link(
-            "relocation pipeline not yet connected — \
-             linker and runtime modules required",
-        ))
+        // Delegate to the runtime module which performs in-memory relocation:
+        // allocates executable memory, copies sections, applies relocations,
+        // and sets W^X page protections.
+        //
+        // C equivalent: tcc_relocate() at tccrun.c → tcc_relocate_ex()
+        crate::runtime::relocate(self)
     }
 
     /// Internal run entry point.
@@ -1035,11 +1057,15 @@ impl TccState {
     /// Executes `main()` from the compiled, relocated in-memory image.
     ///
     /// C equivalent: `tcc_run()` internals (tccrun.c).
-    pub(crate) fn run_internal(&mut self, _args: &[&str]) -> TccResult<i32> {
-        Err(TccError::link(
-            "runtime execution pipeline not yet connected — \
-             runtime module (runtime.rs) required",
-        ))
+    pub(crate) fn run_internal(&mut self, args: &[&str]) -> TccResult<i32> {
+        // Delegate to the runtime module which:
+        // 1. Finds the entry point symbol (main or _runmain)
+        // 2. Builds C-compatible argument vectors
+        // 3. Calls the JIT-compiled function via transmuted function pointer
+        //
+        // C equivalent: tcc_run() at tccrun.c
+        let arg_count = i32::try_from(args.len()).unwrap_or(0);
+        crate::runtime::run(self, arg_count, args)
     }
 
     // -----------------------------------------------------------------------
@@ -1298,15 +1324,24 @@ pub struct TccContext {
     pub(crate) state: TccState,
 }
 
-// Explicitly assert `Send` for `TccContext`.
-// This is safe because:
-//   - All fields in `TccState` are either `Send` (Vec, String, HashMap, u8, bool, etc.)
-//     or wrapped in `Box<dyn ... + Send>` (error_func, bt_func)
-//   - `File` is `Send`
-//   - No `Rc`, `Cell`, or other `!Send` types are used
-//   - Compile serialization is handled by `COMPILE_MUTEX`
+// SAFETY: `TccContext` wraps `TccState` which contains only `Send`-safe types:
 //
-// SAFETY: We manually verify all field types satisfy Send.
+// The field that blocks auto-`Send` derivation is:
+//   - `error_func: Option<Box<dyn Fn(&str)>>` — `dyn Fn(&str)` is not auto-`Send`.
+//     However, this field is only ever invoked by the owning thread (the thread
+//     that calls `compile_string()` or `add_file()`). The COMPILE_MUTEX serializes
+//     all compilation entry points, ensuring the error callback is never called
+//     concurrently from multiple threads. The callback is set once and accessed
+//     only during compilation on the thread holding the mutex lock.
+//
+// All other fields are inherently Send:
+//   - Owned collections: Vec, String, HashMap, BTreeMap (all Send when T: Send)
+//   - Primitives: u8, u32, i32, bool, usize
+//   - File handles: std::fs::File (Send)
+//   - No Rc, Cell, RefCell, or other !Send types exist in TccState
+//
+// Compile serialization is handled by `COMPILE_MUTEX`, and the `TccContext`
+// is only accessed by one thread at a time (required by `libtcc_test_mt.c`).
 unsafe impl Send for TccContext {}
 
 // ---------------------------------------------------------------------------
@@ -1696,13 +1731,13 @@ impl TccContext {
     ///               (libtcc.c:1399).
     #[must_use]
     pub fn get_symbol(&self, name: &str) -> Option<*const ()> {
-        for section in &self.state.sections {
-            if section.sh_type == 2 {
-                // SHT_SYMTAB — symbol lookup from section.data
-                let _ = name;
-            }
-        }
-        None
+        // Delegate to the runtime module which chains to ELF symbol lookup.
+        // The runtime::get_symbol() first tries crate::linker::elf::tcc_get_symbol()
+        // and then falls back to find_elf_sym() for exact name matching.
+        //
+        // C equivalent: tcc_get_symbol() at libtcc.c:1399 which delegates
+        // to tccelf.c get_sym_addr() for symbol table search + address resolution.
+        crate::runtime::get_symbol(&self.state, name)
     }
 
     // =======================================================================
@@ -1715,11 +1750,21 @@ impl TccContext {
     ///               void (*symbol_cb)(void *ctx, const char *name,
     ///               const void *val))` (libtcc.c:1412).
     pub fn list_symbols(&self, mut cb: impl FnMut(&str, *const ())) {
-        for section in &self.state.sections {
-            if section.sh_type == 2 {
-                let _ = &mut cb;
+        // Delegate to the ELF linker module which walks .symtab entries,
+        // resolves each name via .strtab, and calls the callback for each symbol.
+        //
+        // C equivalent: tcc_list_symbols() at libtcc.c:1412 → tccelf.c list_elf_symbols()
+        //
+        // We use a Cell to bridge from the Fn closure (required by tcc_list_symbols)
+        // to our FnMut callback. This is safe because list_elf_symbols is synchronous
+        // and single-threaded.
+        use std::cell::RefCell;
+        let cb_cell = RefCell::new(&mut cb);
+        crate::linker::elf::tcc_list_symbols(&self.state, &|name, addr| {
+            if let Ok(mut inner_cb) = cb_cell.try_borrow_mut() {
+                (*inner_cb)(name, addr);
             }
-        }
+        });
     }
 
     // =======================================================================

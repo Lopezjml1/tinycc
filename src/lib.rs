@@ -57,10 +57,12 @@
 // General quality lints — MANDATORY per AAP §0.6.2 "Clippy Lints"
 #![warn(clippy::all)]
 #![warn(clippy::pedantic)]
-// Allow dead code during incremental module development — types, structs, and
-// functions are defined ahead of their callers across multiple build phases.
-// This will be removed once all modules are fully connected.
-#![allow(dead_code)]
+// Note: dead_code warnings are suppressed at the module level (not crate level)
+// using `#[allow(dead_code)]` on individual module declarations below. This is
+// necessary because the compilation pipeline (parser.rs) is not yet fully
+// connected, leaving many functions in linker, codegen, debug, and format
+// modules unreachable from the public API. Once the full pipeline is wired,
+// these module-level allows should be reviewed and removed where possible.
 // Allow module name repetitions for public re-exports (e.g., error::TccError)
 #![allow(clippy::module_name_repetitions)]
 
@@ -96,6 +98,7 @@ pub mod context;
 /// and associated constants (`TOK_*`, `VT_*`).
 ///
 /// C equivalent: `tcctok.h` (430 lines) and token definitions in `tcc.h`.
+#[allow(dead_code)] // Token constants are defined ahead of parser connection
 pub(crate) mod tokens;
 
 /// Shared type definitions from the monolithic `tcc.h` header.
@@ -104,6 +107,7 @@ pub(crate) mod tokens;
 /// `Section`, `Symbol`, `SourceFile`, `TokenString`, `CachedInclude`, etc.
 ///
 /// C equivalent: Struct definitions in `tcc.h`.
+#[allow(dead_code)] // Types defined ahead of full pipeline connection
 pub(crate) mod types;
 
 /// Preprocessor — tokenizer, macro expansion, include caching, directives.
@@ -113,6 +117,7 @@ pub(crate) mod types;
 /// a raw pointer linked list.
 ///
 /// C equivalent: `tccpp.c` (4,005 lines).
+#[allow(dead_code)] // Preprocessor functions await parser pipeline connection
 pub(crate) mod preprocessor;
 
 /// Recursive-descent parser (single-pass architecture).
@@ -123,6 +128,7 @@ pub(crate) mod preprocessor;
 /// comparisons.
 ///
 /// C equivalent: Parser functions from `tccgen.c` (8,920 lines).
+#[allow(dead_code)] // Parser module is a placeholder pending full implementation
 pub(crate) mod parser;
 
 /// Value stack, code emission, and constant folding.
@@ -131,6 +137,7 @@ pub(crate) mod parser;
 /// and emits code through the `CodegenBackend` trait.
 ///
 /// C equivalent: Codegen functions from `tccgen.c` (8,920 lines).
+#[allow(dead_code)] // Codegen functions await parser pipeline connection
 pub(crate) mod codegen;
 
 /// GAS-style assembler and inline assembly support.
@@ -140,6 +147,7 @@ pub(crate) mod codegen;
 /// indexing).
 ///
 /// C equivalent: `tccasm.c` (1,466 lines).
+#[allow(dead_code)] // Assembler functions await parser pipeline connection
 pub(crate) mod assembler;
 
 /// STABS and DWARF debug information generation, code coverage hooks.
@@ -148,6 +156,7 @@ pub(crate) mod assembler;
 /// and implements STABS generation for legacy debug info support.
 ///
 /// C equivalent: `tccdbg.c` (2,676 lines).
+#[allow(dead_code)] // Debug generation functions await linker integration
 pub(crate) mod debug;
 
 /// Runtime engine — W^X enforcement, in-memory execution, signal handlers.
@@ -157,6 +166,7 @@ pub(crate) mod debug;
 /// Each `unsafe` block includes a `// SAFETY:` justification comment.
 ///
 /// C equivalent: `tccrun.c` (1,556 lines).
+#[allow(dead_code)] // Runtime functions include backtrace/debug helpers used at JIT time
 pub(crate) mod runtime;
 
 /// Utility tools — archiver, dependency generator, impdef.
@@ -164,7 +174,12 @@ pub(crate) mod runtime;
 /// Provides `tcc -ar` (archiver), `-MD`/`-MF` (dependency generation),
 /// and `-impdef` (Windows import definition extraction) tool implementations.
 ///
+/// Note: Visibility is `pub` (not `pub(crate)`) because these tool functions
+/// are invoked from `src/main.rs` which is a separate binary crate that
+/// accesses the library via `use tcc::tools::{tool_ar, tool_cross, tool_impdef}`.
+///
 /// C equivalent: `tcctools.c` (651 lines).
+#[allow(dead_code)] // Tool utility helpers may be unused until CLI integration
 pub mod tools;
 
 /// Linker backends — ELF, PE/COFF, Mach-O, and COFF output.
@@ -176,6 +191,7 @@ pub mod tools;
 /// - `coff` — COFF output for C67 target
 ///
 /// C equivalent: `tccelf.c`, `tccpe.c`, `tccmacho.c`, `tcccoff.c`.
+#[allow(dead_code)] // Linker functions are invoked via context.rs link_output dispatch
 pub(crate) mod linker;
 
 /// Architecture-specific code generation backends.
@@ -184,6 +200,7 @@ pub(crate) mod linker;
 /// i386, x86_64, ARM, AArch64, RISC-V 64, and TMS320C67 architectures.
 ///
 /// C equivalent: `{arch}-gen.c`, `{arch}-asm.c`, `{arch}-link.c` files.
+#[allow(dead_code)] // Target backends await codegen pipeline connection
 pub(crate) mod targets;
 
 /// Runtime library components — bounds checking, builtins, coverage, etc.
@@ -193,6 +210,7 @@ pub(crate) mod targets;
 /// compiler builtins, constructor/destructor handling, and more.
 ///
 /// C equivalent: `lib/*.c` and `lib/*.S` (18 files, 8,319 lines).
+#[allow(dead_code)] // Runtime library components used at JIT compile time
 pub(crate) mod runtime_lib;
 
 /// Binary format structure definitions — ELF, DWARF, COFF, STABS.
@@ -201,6 +219,7 @@ pub(crate) mod runtime_lib;
 /// format headers used by the linker backends.
 ///
 /// C equivalent: `elf.h`, `dwarf.h`, `coff.h`, `stab.h`/`stab.def`.
+#[allow(dead_code)] // Format constants are referenced by linker and debug modules
 pub(crate) mod formats;
 
 // =============================================================================

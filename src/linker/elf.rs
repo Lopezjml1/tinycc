@@ -20,7 +20,6 @@ use crate::types::{
 };
 use crate::formats::elf::*;
 
-use std::collections::HashMap;
 use std::fs::File;
 use std::io::{self, BufReader, BufWriter, Read, Write};
 use std::path::PathBuf;
@@ -508,7 +507,11 @@ pub fn tccelf_end_file(state: &mut TccState) -> TccResult<()> {
         if bind == STB_LOCAL && sym.st_shndx == SHN_UNDEF {
             let new_info = elf_st_info(STB_GLOBAL, elf_st_type(sym.st_info));
             let off = i * ELF_SYM_SIZE;
-            state.sections[symtab_idx].data[off + 4] = new_info;
+            // Bounds-checked access: st_info is at offset +4 within each ELF sym entry.
+            let info_byte = state.sections[symtab_idx].data
+                .get_mut(off + 4)
+                .ok_or_else(|| TccError::Link("truncated symbol table section data".into()))?;
+            *info_byte = new_info;
         }
     }
     // Rebuild hash with appropriate bucket count
@@ -625,7 +628,16 @@ pub fn find_elf_sym(state: &TccState, sec_idx: usize, name: &str) -> Option<i32>
 /// C equivalent: `set_elf_sym()` at tccelf.c ~line 530
 pub fn set_elf_sym(state: &mut TccState, value: u64, size: u64,
                    info: u8, other: u8, shndx: u16, name: &str) -> i32 {
-    let symtab_idx = find_section_index(state, ".symtab").unwrap_or(0);
+    // .symtab must exist — index 0 is the ELF null section, not a valid symtab.
+    let symtab_idx = match find_section_index(state, ".symtab") {
+        Some(idx) => idx,
+        None => {
+            // If no .symtab section exists, fall back to adding via put_elf_sym
+            // which will also fail gracefully. This should not happen in practice
+            // because tccelf_new() always creates .symtab.
+            return 0;
+        }
+    };
     // Check if symbol already exists
     if let Some(existing_idx) = find_elf_sym(state, symtab_idx, name) {
         let existing = read_sym_entry(&state.sections[symtab_idx].data,
@@ -2256,7 +2268,6 @@ pub fn tcc_load_object_file(state: &mut TccState, reader: &mut dyn Read,
     };
     // Map old section indices to new section indices
     let mut sec_map: Vec<Option<usize>> = vec![None; e_shnum];
-    let _sym_map: HashMap<usize, Vec<(usize, usize)>> = HashMap::new();
     // First pass: create sections (skip null, strtab used by symtab, etc.)
     for i in 1..e_shnum {
         let sh = &shdrs[i];
