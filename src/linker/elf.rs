@@ -45,9 +45,9 @@ const PTR_SIZE: usize = 4;
 
 /// Size of an ELF symbol table entry (Elf64Sym = 24, Elf32Sym = 16).
 #[cfg(target_pointer_width = "64")]
-const ELF_SYM_SIZE: usize = 24;
+pub(crate) const ELF_SYM_SIZE: usize = 24;
 #[cfg(target_pointer_width = "32")]
-const ELF_SYM_SIZE: usize = 16;
+pub(crate) const ELF_SYM_SIZE: usize = 16;
 
 /// Size of an ELF rela relocation entry.
 #[cfg(target_pointer_width = "64")]
@@ -239,7 +239,7 @@ fn write_elf_sym(data: &mut [u8], name: u32, value: u64, size: u64,
 }
 
 /// Read a native-width ELF symbol entry from section data at `offset`.
-fn read_sym_entry(data: &[u8], index: usize) -> Elf64Sym {
+pub(crate) fn read_sym_entry(data: &[u8], index: usize) -> Elf64Sym {
     let off = index * ELF_SYM_SIZE;
     read_elf64_sym(&data[off..off + ELF_SYM_SIZE])
 }
@@ -344,7 +344,7 @@ pub fn elf_hash(name: &str) -> u32 {
 }
 
 /// Read a NUL-terminated C string from a byte buffer at the given offset.
-fn read_cstr(data: &[u8], offset: usize) -> String {
+pub(crate) fn read_cstr(data: &[u8], offset: usize) -> String {
     if offset >= data.len() {
         return String::new();
     }

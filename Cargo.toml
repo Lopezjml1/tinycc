@@ -29,8 +29,8 @@ bounds-checking = []
 thiserror = "1"
 clap = { version = "4", features = ["derive"] }
 gimli = { version = "0.28", features = ["write"] }
-zerocopy = "0.7"
-bytemuck = "1"
+zerocopy = { version = "0.7", features = ["derive"] }
+bytemuck = { version = "1", features = ["derive"] }
 nom = "7"
 libc = { version = "0.2", optional = true }
 
