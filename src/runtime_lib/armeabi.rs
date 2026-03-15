@@ -418,6 +418,7 @@ pub(crate) fn aeabi_memmove8(dest: &mut [u8], src: &[u8], n: usize) {
 // ---------------------------------------------------------------------------
 
 #[cfg(test)]
+#[allow(clippy::float_cmp)]
 mod tests {
     use super::*;
 

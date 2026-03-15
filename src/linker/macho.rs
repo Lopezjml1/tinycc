@@ -3270,7 +3270,7 @@ mod tests {
         assert_eq!(buf, vec![0x80, 0x01]);
 
         buf.clear();
-        write_uleb128(&mut buf, 624485);
+        write_uleb128(&mut buf, 624_485);
         assert_eq!(buf, vec![0xe5, 0x8e, 0x26]);
     }
 
@@ -3531,10 +3531,10 @@ mod tests {
 
     #[test]
     fn test_parse_tbd_exports_inline() {
-        let content = r#"exports:
+        let content = r"exports:
   - targets: [ x86_64-macos ]
     symbols: [ _foo, _bar, _baz ]
-"#;
+";
         let symbols = parse_tbd_exports(content);
         assert!(symbols.contains(&"_foo".to_string()));
         assert!(symbols.contains(&"_bar".to_string()));

@@ -3062,7 +3062,7 @@ mod tests {
         put_elf_sym(&mut state, symtab_idx, 0, 0,
                     elf_st_info(STB_GLOBAL, STT_FUNC), 0,
                     text_idx as u16, "defined_fn");
-        state.sections[text_idx].sh_addr = 0x400000;
+        state.sections[text_idx].sh_addr = 0x0040_0000;
         assert!(relocate_syms(&mut state, false).is_ok());
     }
 }

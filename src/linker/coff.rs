@@ -1615,8 +1615,10 @@ mod tests {
 
     #[test]
     fn test_output_the_section() {
-        let mut sec = Section::default();
-        sec.name = ".text".into();
+        let mut sec = Section {
+            name: ".text".into(),
+            ..Section::default()
+        };
         assert!(output_the_section(&sec));
 
         sec.name = ".data".into();
@@ -1709,6 +1711,7 @@ mod tests {
             f_timdat: 0,
             f_symptr: 100,
             f_nsyms: 10,
+            #[allow(clippy::cast_possible_truncation)]
             f_opthdr: AOUTSZ as u16,
             f_flags: 0x1143,
             f_target_id: 0x99,
@@ -1727,8 +1730,8 @@ mod tests {
             dsize: 200,
             bsize: 50,
             entrypt: 0,
-            text_start: 0x400000,
-            data_start: 0x500000,
+            text_start: 0x0040_0000,
+            data_start: 0x0050_0000,
         };
         let mut buf = Vec::new();
         write_aout_header(&mut buf, &hdr);

@@ -827,10 +827,12 @@ mod tests {
         blob.push(0); // end functions
         blob.push(0); // end files
         let offset = blob.len();
-        blob[0] = (offset & 0xFF) as u8;
-        blob[1] = ((offset >> 8) & 0xFF) as u8;
-        blob[2] = ((offset >> 16) & 0xFF) as u8;
-        blob[3] = ((offset >> 24) & 0xFF) as u8;
+        #[allow(clippy::cast_possible_truncation)]
+        let offset_bytes = (offset as u32).to_le_bytes();
+        blob[0] = offset_bytes[0];
+        blob[1] = offset_bytes[1];
+        blob[2] = offset_bytes[2];
+        blob[3] = offset_bytes[3];
         blob.extend_from_slice(b"output.tcov\0");
         blob
     }
@@ -868,10 +870,12 @@ mod tests {
         blob.push(0); // end functions for beta.c
         blob.push(0); // end files
         let offset = blob.len();
-        blob[0] = (offset & 0xFF) as u8;
-        blob[1] = ((offset >> 8) & 0xFF) as u8;
-        blob[2] = ((offset >> 16) & 0xFF) as u8;
-        blob[3] = ((offset >> 24) & 0xFF) as u8;
+        #[allow(clippy::cast_possible_truncation)]
+        let offset_bytes = (offset as u32).to_le_bytes();
+        blob[0] = offset_bytes[0];
+        blob[1] = offset_bytes[1];
+        blob[2] = offset_bytes[2];
+        blob[3] = offset_bytes[3];
         blob.extend_from_slice(b"multi.tcov\0");
         blob
     }
@@ -1189,10 +1193,10 @@ mod tests {
         let mut buf: Vec<u8> = Vec::new();
         write_coverage_report(&mut buf, &files, "out.tcov", 1).unwrap();
         let out = String::from_utf8(buf).unwrap();
-        assert!(out.contains("Runs:1"), "output: {}", out);
-        assert!(out.contains("Files:1 Functions:1"), "output: {}", out);
-        assert!(out.contains(&format!("File:{}", src_str)), "output: {}", out);
-        assert!(out.contains("Function:main"), "output: {}", out);
+        assert!(out.contains("Runs:1"), "output: {out}");
+        assert!(out.contains("Files:1 Functions:1"), "output: {out}");
+        assert!(out.contains(&format!("File:{src_str}")), "output: {out}");
+        assert!(out.contains("Function:main"), "output: {out}");
 
         let _ = std::fs::remove_file(&src_path);
     }
@@ -1219,10 +1223,12 @@ mod tests {
         blob.push(0);
         blob.push(0);
         let offset = blob.len();
-        blob[0] = (offset & 0xFF) as u8;
-        blob[1] = ((offset >> 8) & 0xFF) as u8;
-        blob[2] = ((offset >> 16) & 0xFF) as u8;
-        blob[3] = ((offset >> 24) & 0xFF) as u8;
+        #[allow(clippy::cast_possible_truncation)]
+        let offset_bytes = (offset as u32).to_le_bytes();
+        blob[0] = offset_bytes[0];
+        blob[1] = offset_bytes[1];
+        blob[2] = offset_bytes[2];
+        blob[3] = offset_bytes[3];
         blob.extend_from_slice(cov_str.as_bytes());
         blob.push(0);
 
@@ -1230,13 +1236,13 @@ mod tests {
         store_test_coverage(&blob).unwrap();
         let mut c1 = String::new();
         File::open(&cov_path).unwrap().read_to_string(&mut c1).unwrap();
-        assert!(c1.contains("Runs:1"), "first run: {}", c1);
+        assert!(c1.contains("Runs:1"), "first run: {c1}");
 
         // Run 2 — merge
         store_test_coverage(&blob).unwrap();
         let mut c2 = String::new();
         File::open(&cov_path).unwrap().read_to_string(&mut c2).unwrap();
-        assert!(c2.contains("Runs:2"), "second run: {}", c2);
+        assert!(c2.contains("Runs:2"), "second run: {c2}");
 
         let _ = std::fs::remove_file(&cov_path);
     }

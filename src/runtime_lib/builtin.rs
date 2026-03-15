@@ -329,6 +329,7 @@ pub(crate) fn builtin_parityl(x: usize) -> i32 {
 // ---------------------------------------------------------------------------
 
 #[cfg(test)]
+#[allow(clippy::cast_possible_truncation, clippy::cast_possible_wrap)]
 mod tests {
     use super::*;
 

@@ -603,7 +603,7 @@ mod tests {
         assert_eq!(ops_4::nand_fetch(&atom32, 0xFFFF_FFFF, Ordering::SeqCst), !0xDEAD_BEEF);
     }
 
-    /// Verify is_lock_free for various sizes.
+    /// Verify `is_lock_free` for various sizes.
     #[test]
     fn test_is_lock_free() {
         // Sizes 1, 2, 4 are always lock-free
@@ -627,7 +627,7 @@ mod tests {
         assert!(!is_lock_free(usize::MAX));
     }
 
-    /// Verify convert_c_memorder delegates correctly to c_memorder_to_rust.
+    /// Verify `convert_c_memorder` delegates correctly to `c_memorder_to_rust`.
     #[test]
     fn test_convert_c_memorder() {
         assert_eq!(convert_c_memorder(0), Ordering::Relaxed);
@@ -641,7 +641,7 @@ mod tests {
         assert_eq!(convert_c_memorder(-1), Ordering::SeqCst);
     }
 
-    /// Verify AtomicOp enum has all 13 variants and they are distinct.
+    /// Verify `AtomicOp` enum has all 13 variants and they are distinct.
     #[test]
     fn test_atomic_op_enum() {
         let ops = [
@@ -666,15 +666,15 @@ mod tests {
         // All distinct (no duplicates)
         for i in 0..ops.len() {
             for j in (i + 1)..ops.len() {
-                assert_ne!(ops[i], ops[j], "Variants at index {} and {} should differ", i, j);
+                assert_ne!(ops[i], ops[j], "Variants at index {i} and {j} should differ");
             }
         }
 
         // Debug + Clone + Copy
         let op = AtomicOp::Exchange;
-        let _debug = format!("{:?}", op);
-        let _copy = op;
-        let _clone = op.clone();
+        let _debug = format!("{op:?}");
+        let _ = op;
+        let _ = op;
     }
 
     /// Verify that different memory orderings work without panicking.

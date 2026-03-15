@@ -1680,7 +1680,7 @@ mod tests {
     #[test]
     fn literal_tokens_have_no_keyword_str() {
         assert_eq!(Token::IntegerLiteral(42).keyword_str(), None);
-        assert_eq!(Token::FloatLiteral(3.14).keyword_str(), None);
+        assert_eq!(Token::FloatLiteral(3.125).keyword_str(), None);
         assert_eq!(Token::StringLiteral.keyword_str(), None);
         assert_eq!(Token::CharLiteral(b'x').keyword_str(), None);
         assert_eq!(Token::Identifier.keyword_str(), None);
@@ -1706,13 +1706,14 @@ mod tests {
         set.insert(Token::IntegerLiteral(42));
         assert_eq!(set.len(), 2);
 
-        set.insert(Token::FloatLiteral(3.14));
-        set.insert(Token::FloatLiteral(3.14));
+        set.insert(Token::FloatLiteral(3.125));
+        set.insert(Token::FloatLiteral(3.125));
         assert_eq!(set.len(), 3);
     }
 
     #[test]
     fn float_literal_nan_eq() {
+        use std::collections::HashSet;
         // NaN tokens with identical bits must be equal (Eq reflexivity).
         // The manual PartialEq uses f64::to_bits() so NaN == NaN holds.
         let nan = f64::NAN;
@@ -1720,7 +1721,6 @@ mod tests {
         let t2 = Token::FloatLiteral(nan);
         assert_eq!(t1, t2, "NaN tokens with identical bits must be equal");
         // HashSet deduplication must work correctly for NaN tokens.
-        use std::collections::HashSet;
         let mut set = HashSet::new();
         set.insert(t1);
         set.insert(t2);

@@ -1693,7 +1693,7 @@ mod tests {
         assert_eq!(bc.free_reuse_index, 1);
 
         // The oldest entry (1000) should have been fully removed
-        assert!(bc.regions.get(&1000).is_none());
+        assert!(!bc.regions.contains_key(&1000));
     }
 
     #[test]

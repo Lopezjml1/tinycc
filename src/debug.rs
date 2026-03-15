@@ -2860,7 +2860,7 @@ mod tests {
         assert_eq!(buf, vec![0x80, 0x01]);
 
         let mut buf = Vec::new();
-        dwarf_write_uleb128(&mut buf, 624485);
+        dwarf_write_uleb128(&mut buf, 624_485);
         assert_eq!(buf, vec![0xe5, 0x8e, 0x26]);
     }
 
@@ -2955,6 +2955,6 @@ mod tests {
     fn test_dwarf_line_constants() {
         assert_eq!(DWARF_LINE_BASE, -5);
         assert_eq!(DWARF_LINE_RANGE, 14);
-        assert!(DWARF_OPCODE_BASE > 0);
+        assert_eq!(DWARF_OPCODE_BASE, 13);
     }
 }

@@ -2852,6 +2852,7 @@ mod tests {
         for i in (0..10).rev() {
             let popped = vs.pop().unwrap();
             match &popped.value {
+                #[allow(clippy::cast_sign_loss)]
                 SValueData::Constant(CValue::Int(v)) => assert_eq!(*v, u64::from(i as u32)),
                 _ => panic!("expected Int constant"),
             }
@@ -2929,17 +2930,19 @@ mod tests {
     }
 
     fn make_text_section() -> Section {
-        let mut sec = Section::default();
-        sec.sh_num = 1;
-        sec.name = ".text".to_string();
-        sec
+        Section {
+            sh_num: 1,
+            name: ".text".to_string(),
+            ..Section::default()
+        }
     }
 
     fn make_data_section() -> Section {
-        let mut sec = Section::default();
-        sec.sh_num = 2;
-        sec.name = ".data".to_string();
-        sec
+        Section {
+            sh_num: 2,
+            name: ".data".to_string(),
+            ..Section::default()
+        }
     }
 
     #[test]
@@ -3038,8 +3041,10 @@ mod tests {
 
     #[test]
     fn test_pointed_type_lookup() {
-        let mut sym = Symbol::default();
-        sym.ctype = CType { t: VT_INT, ref_sym: None };
+        let sym = Symbol {
+            ctype: CType { t: VT_INT, ref_sym: None },
+            ..Symbol::default()
+        };
         let symbols = vec![Symbol::default(), sym];
         let ct = CType { t: VT_PTR, ref_sym: Some(1) };
         let pointed = pointed_type(&ct, &symbols);

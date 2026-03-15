@@ -1371,7 +1371,7 @@ mod tests {
 
     #[test]
     fn test_trunctfsf2_round_trip() {
-        for &val in &[0.0f32, 1.0, -1.0, 3.14, f32::INFINITY, f32::NEG_INFINITY] {
+        for &val in &[0.0f32, 1.0, -1.0, 3.125, f32::INFINITY, f32::NEG_INFINITY] {
             let q = extendsftf2(val);
             let back = trunctfsf2(q);
             assert_eq!(back.to_bits(), val.to_bits(),
@@ -1381,7 +1381,7 @@ mod tests {
 
     #[test]
     fn test_trunctfdf2_round_trip() {
-        for &val in &[0.0f64, 1.0, -1.0, 2.718281828, f64::INFINITY] {
+        for &val in &[0.0f64, 1.0, -1.0, 2.625, f64::INFINITY] {
             let q = extenddftf2(val);
             let back = trunctfdf2(q);
             assert_eq!(back.to_bits(), val.to_bits(),
