@@ -305,7 +305,7 @@ pub fn section_add(sec: &mut Section, size: usize, align: usize) -> usize {
     let offset = if align.is_power_of_two() {
         (sec.data_offset + align - 1) & !(align - 1)
     } else {
-        ((sec.data_offset + align - 1) / align) * align
+        sec.data_offset.div_ceil(align) * align
     };
     let new_offset = offset + size;
     if sec.sh_type != SHT_NOBITS {

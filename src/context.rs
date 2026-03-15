@@ -1,18 +1,18 @@
-// Copyright (c) 2024 tinycc-rs contributors
-// SPDX-License-Identifier: MIT OR LGPL-2.1-or-later
-//
-// TccState struct and TccContext handle — the heart of the TinyCC Rust port.
-//
-// This module translates the C `TCCState` struct (tcc.h:738–1020) into a Rust
-// struct (`TccState`) with exclusively owned types, and wraps it in a public
-// API handle (`TccContext`) that exposes the 22 libtcc API functions as safe
-// Rust methods.
-//
-// C equivalents replaced:
-//   - `TCCState *tcc_new(void)`           → `TccContext::new()`
-//   - `void tcc_delete(TCCState *)`       → `impl Drop for TccContext`
-//   - `tcc_compile_sem`                   → `COMPILE_MUTEX: Mutex<()>`
-//   - All 22 libtcc.h functions           → methods on `TccContext`
+//! Copyright (c) 2024 tinycc-rs contributors
+//! SPDX-License-Identifier: MIT OR LGPL-2.1-or-later
+//!
+//! TccState struct and TccContext handle — the heart of the TinyCC Rust port.
+//!
+//! This module translates the C `TCCState` struct (tcc.h:738–1020) into a Rust
+//! struct (`TccState`) with exclusively owned types, and wraps it in a public
+//! API handle (`TccContext`) that exposes the 22 libtcc API functions as safe
+//! Rust methods.
+//!
+//! C equivalents replaced:
+//!   - `TCCState *tcc_new(void)`           → `TccContext::new()`
+//!   - `void tcc_delete(TCCState *)`       → `impl Drop for TccContext`
+//!   - `tcc_compile_sem`                   → `COMPILE_MUTEX: Mutex<()>`
+//!   - All 22 libtcc.h functions           → methods on `TccContext`
 
 // Module-level lint configuration for context.rs:
 #![allow(clippy::doc_markdown)]
@@ -1326,7 +1326,7 @@ impl TccState {
 ///
 /// `TccContext` implements `Send`, allowing it to be moved between threads.
 /// This is required by `libtcc_test_mt.c` where multiple contexts compile
-/// concurrently.  Compilation is serialized internally via [`COMPILE_MUTEX`].
+/// concurrently.  Compilation is serialized internally via `COMPILE_MUTEX`.
 ///
 /// # Lifecycle
 ///

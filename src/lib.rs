@@ -40,7 +40,7 @@
 //!
 //! ## Safety
 //!
-//! This crate contains `unsafe` code **only** in [`runtime`] for platform syscalls
+//! This crate contains `unsafe` code **only** in the `runtime` module for platform syscalls
 //! (`mprotect`, `VirtualProtect`, `mmap`). All other modules are 100% safe Rust.
 //! Each `unsafe` block includes a `// SAFETY:` justification comment.
 
@@ -90,7 +90,7 @@ pub mod error;
 
 /// Compiler context and public API handle.
 ///
-/// Contains [`TccContext`] (public API) wrapping [`TccState`](context::TccState)
+/// Contains [`TccContext`] (public API) wrapping `TccState`
 /// (internal state). Provides the 22-method libtcc-compatible API.
 ///
 /// C equivalent: `TCCState` struct in `tcc.h` lines 738–1020 and the

@@ -1,7 +1,7 @@
-// Copyright (c) 2024 tinycc-rs contributors
-// SPDX-License-Identifier: MIT OR LGPL-2.1-or-later
-//
-// Value stack, code emission, and constant folding.
+//! Copyright (c) 2024 tinycc-rs contributors
+//! SPDX-License-Identifier: MIT OR LGPL-2.1-or-later
+//!
+//! Value stack, code emission, and constant folding.
 
 // Module-level lint configuration:
 // - doc_markdown: Many doc comments reference C identifiers (tccgen.c, SValue,
@@ -36,26 +36,26 @@
 // collapsible_if: Some nested ifs are intentionally kept separate for
 // readability mirroring the C conditional structure.
 #![allow(clippy::collapsible_if)]
-//
-// This module translates the CODEGEN portion of `tccgen.c` (8,920 lines) into
-// safe Rust.  It implements the value stack operations, code emission helpers,
-// constant folding, symbol management, type utilities, and the interface to
-// architecture-specific backends via the `CodegenBackend` trait.
-//
-// Key data structures:
-//   - `ValueStack` — replaces fixed-size C array `SValue vstack[VSTACK_SIZE]`
-//     with `Vec<SValue>` (AAP §0.4.4)
-//   - Code output via `Section.data: Vec<u8>` (no raw pointer writes)
-//   - Symbol table operations using safe indices (`SymId = usize`)
-//
-// CVE remediation:
-//   - CVE-2006-0635: All signed/unsigned comparisons use explicit `TryFrom`
-//     conversions — `#![deny(clippy::cast_sign_loss)]` enforced at crate root
-//
-// Safety:
-//   - No `unsafe` blocks in this module
-//   - No `unwrap()` in library code — all fallible operations return `TccResult<T>`
-//   - Integer arithmetic uses checked operations
+//!
+//! This module translates the CODEGEN portion of `tccgen.c` (8,920 lines) into
+//! safe Rust.  It implements the value stack operations, code emission helpers,
+//! constant folding, symbol management, type utilities, and the interface to
+//! architecture-specific backends via the `CodegenBackend` trait.
+//!
+//! Key data structures:
+//!   - `ValueStack` — replaces fixed-size C array `SValue vstack[VSTACK_SIZE]`
+//!     with `Vec<SValue>` (AAP §0.4.4)
+//!   - Code output via `Section.data: Vec<u8>` (no raw pointer writes)
+//!   - Symbol table operations using safe indices (`SymId = usize`)
+//!
+//! CVE remediation:
+//!   - CVE-2006-0635: All signed/unsigned comparisons use explicit `TryFrom`
+//!     conversions — `#![deny(clippy::cast_sign_loss)]` enforced at crate root
+//!
+//! Safety:
+//!   - No `unsafe` blocks in this module
+//!   - No `unwrap()` in library code — all fallible operations return `TccResult<T>`
+//!   - Integer arithmetic uses checked operations
 
 use crate::context::TccState;
 use crate::error::{TccError, TccResult};

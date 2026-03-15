@@ -6,36 +6,36 @@
 #![allow(clippy::no_effect_underscore_binding)]
 #![allow(clippy::unnecessary_wraps)]
 
-// Copyright (c) 2024 tinycc-rs contributors
-// SPDX-License-Identifier: MIT OR LGPL-2.1-or-later
-//
-// Preprocessor — Tokenizer, Macro Expansion, Include Caching, Directives
-//
-// This module translates the C preprocessor (`tccpp.c`, 4,005 lines) into
-// idiomatic, memory-safe Rust.  It implements the full C99 preprocessor
-// including lexing, macro expansion (#define / #undef), conditional
-// compilation (#if / #ifdef / #ifndef / #elif / #else / #endif), file
-// inclusion (#include / #include_next), pragma handling, and the __COUNTER__
-// built-in.
-//
-// CVE-2019-9754 REMEDIATION (AAP §0.7.1 — MANDATORY):
-//   The macro expansion stack uses `Vec<MacroEntry>` instead of a C linked
-//   list.  `end_macro()` uses `Vec::pop()` which returns `None` on an empty
-//   stack — preventing the underflow that caused the original OOB write
-//   vulnerability.
-//
-// AAP §0.4.4 Compliance:
-//   - Include cache: `HashMap<PathBuf, CachedInclude>` replaces C hash table
-//   - Buffered I/O: `BufReader<File>` replaces C 8192-byte manual buffer
-//   - Macro stack: `Vec<MacroEntry>` replaces C linked list
-//
-// AAP §0.8.1 Compliance:
-//   - No `unsafe` blocks (preprocessor is pure text processing)
-//   - No `unwrap()` in library code paths
-//   - All fallible operations return `TccResult<T>`
-//   - Error propagation via `?` operator replaces C setjmp/longjmp
-//
-// C equivalent: `tccpp.c` (4,005 lines)
+//! Copyright (c) 2024 tinycc-rs contributors
+//! SPDX-License-Identifier: MIT OR LGPL-2.1-or-later
+//!
+//! Preprocessor — Tokenizer, Macro Expansion, Include Caching, Directives
+//!
+//! This module translates the C preprocessor (`tccpp.c`, 4,005 lines) into
+//! idiomatic, memory-safe Rust.  It implements the full C99 preprocessor
+//! including lexing, macro expansion (#define / #undef), conditional
+//! compilation (#if / #ifdef / #ifndef / #elif / #else / #endif), file
+//! inclusion (#include / #include_next), pragma handling, and the __COUNTER__
+//! built-in.
+//!
+//! CVE-2019-9754 REMEDIATION (AAP §0.7.1 — MANDATORY):
+//!   The macro expansion stack uses `Vec<MacroEntry>` instead of a C linked
+//!   list.  `end_macro()` uses `Vec::pop()` which returns `None` on an empty
+//!   stack — preventing the underflow that caused the original OOB write
+//!   vulnerability.
+//!
+//! AAP §0.4.4 Compliance:
+//!   - Include cache: `HashMap<PathBuf, CachedInclude>` replaces C hash table
+//!   - Buffered I/O: `BufReader<File>` replaces C 8192-byte manual buffer
+//!   - Macro stack: `Vec<MacroEntry>` replaces C linked list
+//!
+//! AAP §0.8.1 Compliance:
+//!   - No `unsafe` blocks (preprocessor is pure text processing)
+//!   - No `unwrap()` in library code paths
+//!   - All fallible operations return `TccResult<T>`
+//!   - Error propagation via `?` operator replaces C setjmp/longjmp
+//!
+//! C equivalent: `tccpp.c` (4,005 lines)
 
 #![allow(clippy::too_many_lines)]
 

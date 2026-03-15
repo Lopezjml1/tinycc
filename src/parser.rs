@@ -3075,7 +3075,7 @@ pub fn decl_initializer_alloc(
             // Uninitialized global: allocate in BSS
             let sec_idx = state.bss_section_idx;
             let offset = state.sections[sec_idx].data_offset;
-            let aligned = ((offset + align - 1) / align) * align;
+            let aligned = offset.div_ceil(align) * align;
             state.sections[sec_idx].data_offset = aligned + size;
             // aligned is a usize offset, safe to cast to i64 since section offsets
             // are bounded by available memory and never exceed i64::MAX.

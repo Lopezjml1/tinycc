@@ -1163,7 +1163,7 @@ pub fn eh_frame_hdr(state: &mut TccState) -> TccResult<()> {
         if length == 0 { break; }
         let entry_start = pos;
         pos = pos.saturating_add(4);
-        if pos.checked_add(4).map_or(true, |end| end > eh_data.len()) { break; }
+        if pos.checked_add(4).is_none_or(|end| end > eh_data.len()) { break; }
         let cie_offset = u32::from_le_bytes([
             eh_data[pos], eh_data[pos + 1], eh_data[pos + 2], eh_data[pos + 3],
         ]);

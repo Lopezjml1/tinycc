@@ -62,7 +62,7 @@ TCC's hallmark properties while gaining Rust's compile-time safety guarantees:
 
 ### Prerequisites
 
-- **Rust toolchain**: Rust 2021 edition (MSRV 1.70). Install via
+- **Rust toolchain**: Rust 2021 edition (MSRV 1.85). Install via
   [rustup](https://rustup.rs/).
 
 ### Quick Start
@@ -235,6 +235,9 @@ The `TccContext` struct exposes the full 22-function libtcc API:
 | `ctx.relocate()` | Relocate compiled code for symbol resolution |
 | `ctx.get_symbol(name)` | Retrieve a pointer to a compiled symbol |
 | `ctx.list_symbols(cb)` | Iterate over all compiled symbols |
+| `ctx.compile_string_file(buf, filename)` | Compile C source with an associated filename for debug info |
+| `ctx.elf_output_obj(filename)` | Output an ELF object file (debug/testing utility) |
+| `ctx.set_backtrace_func(f)` | Set a custom backtrace handler function |
 
 The context is automatically cleaned up when it goes out of scope (Rust `Drop`
 trait replaces `tcc_delete()`). `TccContext` implements `Send`, so it can be

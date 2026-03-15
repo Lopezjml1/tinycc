@@ -565,7 +565,7 @@ fn set_coff_sym_name(
         // Long name: store in string table
         if str_offset
             .checked_add(name.len().saturating_add(1))
-            .map_or(true, |end| end > MAX_STR_TABLE)
+            .is_none_or(|end| end > MAX_STR_TABLE)
         {
             return Err(TccError::Link("String table too large".into()));
         }

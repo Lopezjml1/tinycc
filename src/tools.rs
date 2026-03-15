@@ -1,6 +1,6 @@
-// Utility tools — archiver, dependency generator, and impdef tool. Variable
-// naming and struct patterns follow the original tcctools.c for traceability.
-// Complex functions are faithfully ported from the C implementation.
+//! Utility tools — archiver, dependency generator, and impdef tool. Variable
+//! naming and struct patterns follow the original tcctools.c for traceability.
+//! Complex functions are faithfully ported from the C implementation.
 #![allow(clippy::doc_markdown)]
 #![allow(clippy::format_push_string)]
 #![allow(clippy::items_after_statements)]
@@ -11,26 +11,26 @@
 #![allow(clippy::struct_field_names)]
 #![allow(clippy::too_many_lines)]
 
-// Copyright (c) 2024 tinycc-rs contributors
-// SPDX-License-Identifier: MIT OR LGPL-2.1-or-later
-//
-// Utility tools for the TinyCC Rust compiler.
-//
-// This module provides four standalone tool functions translated from
-// `tcctools.c` (651 lines):
-//
-//   1. `tool_ar()`      — Static library archiver (`tcc -ar`)
-//   2. `gen_makedeps()`  — Makefile dependency file generator (`-MD`/`-MF`)
-//   3. `tool_impdef()`   — Windows import definition file generator (`-impdef`)
-//   4. `tool_cross()`    — Cross-compiler re-execution helper (`-m32`/`-m64`)
-//
-// C equivalent: `tcctools.c`
-//
-// AAP §0.8.1 compliance:
-//   - No `unsafe` blocks — all operations are safe file I/O and byte parsing
-//   - Error handling via `TccResult<T>` throughout
-//   - All file I/O uses `std::fs` and `std::io`
-//   - String handling uses `String`/`&str`, not raw C strings
+//! Copyright (c) 2024 tinycc-rs contributors
+//! SPDX-License-Identifier: MIT OR LGPL-2.1-or-later
+//!
+//! Utility tools for the TinyCC Rust compiler.
+//!
+//! This module provides four standalone tool functions translated from
+//! `tcctools.c` (651 lines):
+//!
+//!   1. `tool_ar()`      — Static library archiver (`tcc -ar`)
+//!   2. `gen_makedeps()`  — Makefile dependency file generator (`-MD`/`-MF`)
+//!   3. `tool_impdef()`   — Windows import definition file generator (`-impdef`)
+//!   4. `tool_cross()`    — Cross-compiler re-execution helper (`-m32`/`-m64`)
+//!
+//! C equivalent: `tcctools.c`
+//!
+//! AAP §0.8.1 compliance:
+//!   - No `unsafe` blocks — all operations are safe file I/O and byte parsing
+//!   - Error handling via `TccResult<T>` throughout
+//!   - All file I/O uses `std::fs` and `std::io`
+//!   - String handling uses `String`/`&str`, not raw C strings
 
 use std::fs;
 use std::path::{Path, PathBuf};

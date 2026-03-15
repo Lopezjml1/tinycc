@@ -1,24 +1,24 @@
-// Copyright (c) 2024 tinycc-rs contributors
-// SPDX-License-Identifier: MIT OR LGPL-2.1-or-later
-//
-// Error types for the TinyCC Rust compiler.
-//
-// This module defines the crate-wide error enum (`TccError`) and result type
-// alias (`TccResult<T>`), replacing the C error-handling pattern of
-// `setjmp`/`longjmp` (used in `error1()` at libtcc.c:621-690) with
-// structured error propagation via `Result` + the `?` operator.
-//
-// The four error variants cover every failure mode in the compiler:
-//   - `Parse`  — lexer, preprocessor, parser, and code-generation errors
-//   - `Link`   — linker, relocation, and symbol-resolution errors
-//   - `Io`     — file-system and I/O errors (wraps `std::io::Error`)
-//   - `UnsupportedTarget` — missing or feature-gated architecture backends
-//
-// C equivalents replaced:
-//   - `tcc_error()` / `_tcc_error()` (libtcc.c:711)         → `Err(TccError::*)`
-//   - `tcc_error_noabort()` / `_tcc_error_noabort()` (libtcc.c:701) → `Err(TccError::*)`
-//   - `tcc_warning()` / `_tcc_warning()` (libtcc.c:720)     → diagnostic callback (not an error)
-//   - `longjmp(s1->error_jmp_buf, 1)` (libtcc.c:690)        → `?` operator propagation
+//! Copyright (c) 2024 tinycc-rs contributors
+//! SPDX-License-Identifier: MIT OR LGPL-2.1-or-later
+//!
+//! Error types for the TinyCC Rust compiler.
+//!
+//! This module defines the crate-wide error enum (`TccError`) and result type
+//! alias (`TccResult<T>`), replacing the C error-handling pattern of
+//! `setjmp`/`longjmp` (used in `error1()` at libtcc.c:621-690) with
+//! structured error propagation via `Result` + the `?` operator.
+//!
+//! The four error variants cover every failure mode in the compiler:
+//!   - `Parse`  — lexer, preprocessor, parser, and code-generation errors
+//!   - `Link`   — linker, relocation, and symbol-resolution errors
+//!   - `Io`     — file-system and I/O errors (wraps `std::io::Error`)
+//!   - `UnsupportedTarget` — missing or feature-gated architecture backends
+//!
+//! C equivalents replaced:
+//!   - `tcc_error()` / `_tcc_error()` (libtcc.c:711)         → `Err(TccError::*)`
+//!   - `tcc_error_noabort()` / `_tcc_error_noabort()` (libtcc.c:701) → `Err(TccError::*)`
+//!   - `tcc_warning()` / `_tcc_warning()` (libtcc.c:720)     → diagnostic callback (not an error)
+//!   - `longjmp(s1->error_jmp_buf, 1)` (libtcc.c:690)        → `?` operator propagation
 
 use std::num::TryFromIntError;
 use thiserror::Error;
