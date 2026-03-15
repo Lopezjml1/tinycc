@@ -6,9 +6,6 @@
 // Cast lints are suppressed at module level for this backend because
 // instruction encoding inherently requires lossy integer casts between
 // register sizes (u8↔u32↔u64) and signed/unsigned immediate fields.
-#![allow(clippy::cast_sign_loss)]
-#![allow(clippy::cast_possible_truncation)]
-#![allow(clippy::cast_possible_wrap)]
 #![allow(clippy::bool_to_int_with_if)]
 #![allow(clippy::cast_lossless)]
 #![allow(clippy::decimal_bitwise_operands)]
@@ -272,32 +269,41 @@ pub const ELF_START_ADDR: u64 = 0x0040_0000;
 /// C equivalent: `ELF_PAGE_SIZE 0x10000` (arm64-link.c:6).
 pub const ELF_PAGE_SIZE: u64 = 0x0001_0000;
 
+// ELF relocation type constants: u32 → i32 cast is safe because these are
+// small ELF relocation type IDs defined by the AArch64 ELF specification.
 /// 32-bit data relocation type.
 /// C equivalent: `R_DATA_32 R_AARCH64_ABS32` (arm64-link.c:8).
+#[allow(clippy::cast_possible_wrap)]
 pub const R_DATA_32: i32 = R_AARCH64_ABS32 as i32;
 
 /// Pointer-sized data relocation type.
 /// C equivalent: `R_DATA_PTR R_AARCH64_ABS64` (arm64-link.c:9).
+#[allow(clippy::cast_possible_wrap)]
 pub const R_DATA_PTR: i32 = R_AARCH64_ABS64 as i32;
 
 /// Jump slot relocation for PLT.
 /// C equivalent: `R_JMP_SLOT R_AARCH64_JUMP_SLOT` (arm64-link.c:10).
+#[allow(clippy::cast_possible_wrap)]
 pub const R_JMP_SLOT: i32 = R_AARCH64_JUMP_SLOT as i32;
 
 /// Global data relocation for GOT.
 /// C equivalent: `R_GLOB_DAT R_AARCH64_GLOB_DAT` (arm64-link.c:11).
+#[allow(clippy::cast_possible_wrap)]
 pub const R_GLOB_DAT: i32 = R_AARCH64_GLOB_DAT as i32;
 
 /// Copy relocation type.
 /// C equivalent: `R_COPY R_AARCH64_COPY` (arm64-link.c:12).
+#[allow(clippy::cast_possible_wrap)]
 pub const R_COPY: i32 = R_AARCH64_COPY as i32;
 
 /// Relative relocation type.
 /// C equivalent: `R_RELATIVE R_AARCH64_RELATIVE` (arm64-link.c:13).
+#[allow(clippy::cast_possible_wrap)]
 pub const R_RELATIVE: i32 = R_AARCH64_RELATIVE as i32;
 
 /// Maximum relocation number (boundary check).
 /// C equivalent: `R_NUM R_AARCH64_NUM` (arm64-link.c:15).
+#[allow(clippy::cast_possible_wrap)]
 pub const R_NUM: i32 = R_AARCH64_NUM as i32;
 
 /// Whether DLL PLT relocations are PC-relative on AArch64.
@@ -356,7 +362,9 @@ fn is_freg(r: i32) -> bool {
 ///
 /// Used throughout the backend for immediate operand extraction.
 #[inline]
-#[allow(clippy::cast_possible_truncation)] // Floating-point to integer truncation is intentional
+// Floating-point to integer truncation and u64→i64 reinterpret are intentional:
+// the value stack stores all constants as u64 bit patterns.
+#[allow(clippy::cast_possible_truncation, clippy::cast_possible_wrap)]
 fn sv_constant_value(sv: &SValue) -> i64 {
     match &sv.value {
         SValueData::Constant(cv) => match cv {

@@ -23,9 +23,6 @@
 // Debug info generation — STABS/DWARF requires integer casts for debug symbol
 // encoding (type indices, section offsets, line-number tables).  All casts are
 // faithful translations of tccdbg.c.
-#![allow(clippy::cast_sign_loss)]
-#![allow(clippy::cast_possible_truncation)]
-#![allow(clippy::cast_possible_wrap)]
 #![allow(clippy::cast_lossless)]
 #![allow(clippy::assigning_clones)]
 #![allow(clippy::too_many_arguments)]
@@ -1989,7 +1986,11 @@ fn init_dwarf_line_program(
         section_data1(&mut state.sections, line_idx, 1); // max_ops_per_instruction
     }
     section_data1(&mut state.sections, line_idx, 1); // default_is_stmt
-    section_data1(&mut state.sections, line_idx, DWARF_LINE_BASE as u8);
+    // DWARF format: line_base is encoded as a signed byte reinterpreted to u8;
+    // DWARF_LINE_BASE is -5, matching the DWARF specification requirement.
+    #[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation)]
+    let line_base_byte = DWARF_LINE_BASE as u8;
+    section_data1(&mut state.sections, line_idx, line_base_byte);
     section_data1(&mut state.sections, line_idx, u8::try_from(DWARF_LINE_RANGE).unwrap_or(14));
     section_data1(&mut state.sections, line_idx, u8::try_from(DWARF_OPCODE_BASE).unwrap_or(13));
 
@@ -2538,6 +2539,8 @@ fn emit_dwarf_extern_sym(
     dwarf_strp(&mut state.sections, info_idx, str_idx, &mut str_hash, &sym_name);
 
     // DW_AT_decl_file, DW_AT_decl_line
+    // Line numbers are non-negative in practice; cast is safe for DWARF encoding.
+    #[allow(clippy::cast_sign_loss)]
     let decl_line = current_line_num(state) as u32;
     section_uleb128(&mut state.sections, info_idx, 1);
     section_uleb128(&mut state.sections, info_idx, u64::from(decl_line));

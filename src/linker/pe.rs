@@ -27,9 +27,6 @@
 // PE/COFF linker — inherently performs integer casts between u16/u32/u64/usize
 // and i16/i32 for PE header fields, section RVAs, and import/export table
 // entries.  All casts are faithful translations of tccpe.c.
-#![allow(clippy::cast_sign_loss)]
-#![allow(clippy::cast_possible_truncation)]
-#![allow(clippy::cast_possible_wrap)]
 #![allow(clippy::cast_lossless)]
 #![allow(clippy::field_reassign_with_default)]
 #![allow(clippy::items_after_statements)]
@@ -780,6 +777,9 @@ struct CoffSyment {
 
 /// Add COFF symbol table entries to PE output sections.
 /// C equivalent: `pe_add_coffsym()` at tccpe.c line 480
+#[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss, clippy::cast_possible_wrap)]
+// COFF symbol values (u32), section numbers (i16), and name offsets are per COFF spec;
+// ELF symbol values bounded by section size
 fn pe_add_coffsym(
     state: &mut TccState,
     coffsym_idx: usize,
@@ -1838,6 +1838,8 @@ fn pe_write(pe: &mut PeInfo, state: &mut TccState, writer: &mut dyn Write) -> Tc
 ///
 /// This creates a symbol entry in the dynamic symbol table (.dynsym) that
 /// represents a function or data imported from a DLL.
+#[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+// ordinal→u8 intentional (low byte per PE spec); dll_index→u64 for ELF st_size encoding
 pub(crate) fn pe_putimport(
     state: &mut TccState,
     dll_index: i32,
@@ -2081,6 +2083,8 @@ fn get_token(s: &str) -> (&str, &str) {
 
 /// Load a .def (module definition) file, adding imports for each exported symbol.
 /// C equivalent: `pe_load_def()` at tccpe.c line 1715
+#[allow(clippy::cast_possible_truncation, clippy::cast_possible_wrap)]
+// DLL index (usize→i32) bounded by loaded_dlls vec length; fits in i32
 pub(crate) fn pe_load_def(state: &mut TccState, content: &str) -> TccResult<()> {
     let mut in_exports = false;
     let mut dll_index: i32 = -1;
@@ -2144,6 +2148,8 @@ pub(crate) fn pe_load_def(state: &mut TccState, content: &str) -> TccResult<()> 
 
 /// Load a DLL file, extracting all exports as imports for the current compilation.
 /// C equivalent: `pe_load_dll()` at tccpe.c line 1796
+#[allow(clippy::cast_possible_truncation, clippy::cast_possible_wrap)]
+// DLL index (usize→i32) bounded by loaded_dlls vec length; fits in i32
 pub(crate) fn pe_load_dll(state: &mut TccState, filename: &str) -> TccResult<()> {
     let exports = get_dllexports(filename)?;
 
@@ -2471,6 +2477,8 @@ pub(crate) fn pe_set_options(_state: &mut TccState, pe: &mut PeInfo) -> TccResul
 /// runtime addition, symbol resolution, address assignment, relocation, and writing.
 ///
 /// C equivalent: `pe_output_file()` at tccpe.c line 2066
+#[allow(clippy::cast_possible_truncation)]
+// PE entry point start_addr is u32 RVA; computed from 64-bit address subtracted by image_base
 pub(crate) fn pe_output_file(state: &mut TccState, filename: &str) -> TccResult<()> {
     let mut pe = PeInfo::new();
     pe.filename = filename.to_string();

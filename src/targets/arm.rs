@@ -1,9 +1,6 @@
 // ARM 32-bit backend — instruction encoding inherently requires
 // integer casts between u8/u16/u32/i32/i64/u64 for register indices,
 // immediate fields, and opcode composition.
-#![allow(clippy::cast_sign_loss)]
-#![allow(clippy::cast_possible_truncation)]
-#![allow(clippy::cast_possible_wrap)]
 #![allow(clippy::bool_to_int_with_if)]
 #![allow(clippy::cast_lossless)]
 #![allow(clippy::doc_markdown)]
@@ -450,6 +447,9 @@ impl ArmAsmToken {
 
 /// Map a TCC register index to ARM hardware integer register number.
 /// C equivalent: `intr(r)` (arm-gen.c:208).
+// Register mapping: i32→u32 cast is safe because register indices are validated
+// by the match arms; only small positive values pass through the default case.
+#[allow(clippy::cast_sign_loss)]
 fn intr(r: i32) -> u32 {
     match r {
         0 => 0,  // r0
@@ -463,6 +463,8 @@ fn intr(r: i32) -> u32 {
 
 /// Map a TCC register index to ARM VFP double-precision register number.
 /// C equivalent: `vfpr(r)` (arm-gen.c:216).
+// Register mapping: validated range [5,12] ensures (r-5) is non-negative.
+#[allow(clippy::cast_sign_loss)]
 fn vfpr(r: i32) -> u32 {
     if r >= 5 && r <= 12 { (r - 5) as u32 } else { 0 }
 }
@@ -473,6 +475,9 @@ fn is_freg(r: i32) -> bool {
 }
 
 /// Extract a constant integer value from an SValue.
+// Value extraction: u64→i64 reinterpret and float→int truncation are intentional;
+// the value stack stores all constants as u64 bit patterns.
+#[allow(clippy::cast_possible_wrap, clippy::cast_possible_truncation)]
 fn sv_constant_value(sv: &SValue) -> i64 {
     match &sv.value {
         SValueData::Constant(cv) => match cv {
@@ -583,6 +588,9 @@ fn stuff_const_harder(op: u32, c: u32) -> Option<u32> {
 
 /// Encode a branch offset for ARM B/BL instructions.
 /// C equivalent: `encbranch(pos, addr, fail)` (arm-gen.c:381).
+// Instruction encoding: branch offset is range-checked above, then truncated
+// to 24-bit field; sign is discarded intentionally for the ARM encoding format.
+#[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation)]
 fn encbranch(pos: i64, addr: i64) -> TccResult<u32> {
     let offset = addr.wrapping_sub(pos).wrapping_sub(8);
     let shifted = offset >> 2;
@@ -594,6 +602,8 @@ fn encbranch(pos: i64, addr: i64) -> TccResult<u32> {
 
 /// Decode a branch instruction to get the target address.
 /// C equivalent: `decbranch(pos)` (arm-gen.c:393).
+// Instruction decoding: 24-bit field is sign-extended to i32, matching ARM spec.
+#[allow(clippy::cast_possible_wrap)]
 fn decbranch(insn: u32, pos: i64) -> i64 {
     let mut offset = (insn & 0x00FF_FFFF) as i32;
     if offset & 0x0080_0000 != 0 {

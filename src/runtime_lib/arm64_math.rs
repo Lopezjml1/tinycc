@@ -22,9 +22,6 @@
 // manipulation with casts between i32/u32/i64/u64 for mantissa, exponent, and
 // sign-bit fields.  These operations are faithful translations of lib-arm64.c
 // where the C code uses implicit integer promotions.
-#![allow(clippy::cast_sign_loss)]
-#![allow(clippy::cast_possible_truncation)]
-#![allow(clippy::cast_possible_wrap)]
 #![allow(clippy::cast_lossless)]
 #![allow(clippy::similar_names)]
 #![allow(clippy::many_single_char_names)]
@@ -625,6 +622,8 @@ pub(crate) fn negtf2(a: QuadFloat) -> QuadFloat {
 /// Extend `f32` to quad-precision.
 ///
 /// C equivalent: `__extendsftf2` in `lib/lib-arm64.c` lines 392–416.
+#[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation, clippy::cast_possible_wrap)]
+// IEEE 754 bit-level manipulation: exponent/mantissa field extraction and assembly
 pub(crate) fn extendsftf2(f: f32) -> QuadFloat {
     let a: u32 = f.to_bits();
     let aa: u64 = u64::from(a);
@@ -664,6 +663,8 @@ pub(crate) fn extendsftf2(f: f32) -> QuadFloat {
 /// Extend `f64` to quad-precision.
 ///
 /// C equivalent: `__extenddftf2` in `lib/lib-arm64.c` lines 418–440.
+#[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation, clippy::cast_possible_wrap)]
+// IEEE 754 bit-level manipulation: exponent/mantissa field extraction and assembly
 pub(crate) fn extenddftf2(f: f64) -> QuadFloat {
     let a: u64 = f.to_bits();
     let mut x0: u64 = a << 60;
@@ -705,6 +706,8 @@ pub(crate) fn extenddftf2(f: f64) -> QuadFloat {
 /// Truncate quad-precision to `f32`.
 ///
 /// C equivalent: `__trunctfsf2` in `lib/lib-arm64.c` lines 442–471.
+#[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation, clippy::cast_possible_wrap)]
+// IEEE 754 bit-level manipulation: exponent narrowing and mantissa rounding
 pub(crate) fn trunctfsf2(f: QuadFloat) -> f32 {
     let (sgn, exp, mnt_lo, mnt_hi) = unpack(f);
     let sgn_bit = u32::from(sgn) << 31;
@@ -741,6 +744,8 @@ pub(crate) fn trunctfsf2(f: QuadFloat) -> f32 {
 /// Truncate quad-precision to `f64`.
 ///
 /// C equivalent: `__trunctfdf2` in `lib/lib-arm64.c` lines 473–503.
+#[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation, clippy::cast_possible_wrap)]
+// IEEE 754 bit-level manipulation: exponent narrowing and mantissa rounding
 pub(crate) fn trunctfdf2(f: QuadFloat) -> f64 {
     let (sgn, exp, mnt_lo, mnt_hi) = unpack(f);
     let sgn_bit = u64::from(sgn) << 63;
@@ -784,6 +789,8 @@ pub(crate) fn trunctfdf2(f: QuadFloat) -> f64 {
 /// Convert quad-precision to `i32` (truncating towards zero).
 ///
 /// C equivalent: `__fixtfsi` in `lib/lib-arm64.c` lines 505–518.
+#[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation, clippy::cast_possible_wrap)]
+// IEEE 754 quad→i32 conversion: mantissa shift and sign application
 pub(crate) fn fixtfsi(fa: QuadFloat) -> i32 {
     let (a_sgn, a_exp, _a_lo, a_hi) = unpack(fa);
     if a_exp < 16369 {
@@ -804,6 +811,8 @@ pub(crate) fn fixtfsi(fa: QuadFloat) -> i32 {
 /// Convert quad-precision to `i64` (truncating towards zero).
 ///
 /// C equivalent: `__fixtfdi` in `lib/lib-arm64.c` lines 520–533.
+#[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation, clippy::cast_possible_wrap)]
+// IEEE 754 quad→i64 conversion: mantissa shift and sign application
 pub(crate) fn fixtfdi(fa: QuadFloat) -> i64 {
     let (a_sgn, a_exp, a_lo, a_hi) = unpack(fa);
     if a_exp < 16383 {
@@ -825,6 +834,8 @@ pub(crate) fn fixtfdi(fa: QuadFloat) -> i64 {
 /// Convert quad-precision to `u32` (truncating towards zero, negative → 0).
 ///
 /// C equivalent: `__fixunstfsi` in `lib/lib-arm64.c` lines 535–546.
+#[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation)]
+// IEEE 754 quad→u32 conversion: mantissa shift with sign-guard
 pub(crate) fn fixunstfsi(fa: QuadFloat) -> u32 {
     let (a_sgn, a_exp, _a_lo, a_hi) = unpack(fa);
     if a_sgn || a_exp < 16369 {
@@ -840,6 +851,8 @@ pub(crate) fn fixunstfsi(fa: QuadFloat) -> u32 {
 /// Convert quad-precision to `u64` (truncating towards zero, negative → 0).
 ///
 /// C equivalent: `__fixunstfdi` in `lib/lib-arm64.c` lines 548–559.
+#[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation)]
+// IEEE 754 quad→u64 conversion: mantissa shift with sign-guard
 pub(crate) fn fixunstfdi(fa: QuadFloat) -> u64 {
     let (a_sgn, a_exp, a_lo, a_hi) = unpack(fa);
     if a_sgn || a_exp < 16383 {
@@ -860,6 +873,8 @@ pub(crate) fn fixunstfdi(fa: QuadFloat) -> u64 {
 /// Convert `i32` to quad-precision.
 ///
 /// C equivalent: `__floatsitf` in `lib/lib-arm64.c` lines 561–584.
+#[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation, clippy::cast_possible_wrap)]
+// IEEE 754 i32→quad conversion: sign extraction, magnitude→mantissa, exponent assembly
 pub(crate) fn floatsitf(a: i32) -> QuadFloat {
     if a == 0 {
         return QuadFloat::zero(false);
@@ -890,6 +905,8 @@ pub(crate) fn floatsitf(a: i32) -> QuadFloat {
 /// Convert `i64` to quad-precision.
 ///
 /// C equivalent: `__floatditf` in `lib/lib-arm64.c` lines 586–609.
+#[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation, clippy::cast_possible_wrap)]
+// IEEE 754 i64→quad conversion: sign extraction, magnitude→mantissa, exponent assembly
 pub(crate) fn floatditf(a: i64) -> QuadFloat {
     if a == 0 {
         return QuadFloat::zero(false);
@@ -921,6 +938,8 @@ pub(crate) fn floatditf(a: i64) -> QuadFloat {
 /// Convert `u32` to quad-precision.
 ///
 /// C equivalent: `__floatunsitf` in `lib/lib-arm64.c` lines 611–628.
+#[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation, clippy::cast_possible_wrap)]
+// IEEE 754 u32→quad conversion: magnitude→mantissa, exponent assembly; sh→i32 for exp adjust
 pub(crate) fn floatunsitf(a: u32) -> QuadFloat {
     if a == 0 {
         return QuadFloat::zero(false);
@@ -947,6 +966,8 @@ pub(crate) fn floatunsitf(a: u32) -> QuadFloat {
 /// Convert `u64` to quad-precision.
 ///
 /// C equivalent: `__floatunditf` in `lib/lib-arm64.c` lines 630–648.
+#[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation, clippy::cast_possible_wrap)]
+// IEEE 754 u64→quad conversion: magnitude→mantissa, exponent assembly; sh→i32 for exp adjust
 pub(crate) fn floatunditf(a: u64) -> QuadFloat {
     if a == 0 {
         return QuadFloat::zero(false);

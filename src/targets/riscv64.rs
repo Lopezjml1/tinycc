@@ -1,9 +1,6 @@
 // RISC-V 64 backend — instruction encoding requires size casts for immediate
 // fields and register indices. Match arms for opcode dispatch, variable naming,
 // and function complexity follow the original riscv64-gen.c/riscv64-asm.c.
-#![allow(clippy::cast_sign_loss)]
-#![allow(clippy::cast_possible_truncation)]
-#![allow(clippy::cast_possible_wrap)]
 #![allow(clippy::cast_lossless)]
 #![allow(clippy::collapsible_match)]
 #![allow(clippy::doc_lazy_continuation)]
@@ -301,6 +298,8 @@ pub(crate) fn is_freg(r: i32) -> bool {
 /// Compute upper 20 bits for HI20+LO12 address splitting.
 /// The +0x800 rounds up so that the sign-extended LO12 recombines correctly.
 /// C equivalent: `UPPER(x)` / `LOW_OVERFLOW(x)` macros in `riscv64-gen.c:38-39`.
+// RISC-V address split: i32→u32 reinterpret preserves bit pattern for HI20 mask.
+#[allow(clippy::cast_sign_loss)]
 pub(crate) fn upper(x: i32) -> u32 {
     (x as u32).wrapping_add(0x800) & 0xffff_f000
 }
@@ -1796,6 +1795,8 @@ pub(crate) fn asm_emit_r(
 
 /// Emit I-type instruction.
 /// C equivalent: `asm_emit_i()` in `riscv64-asm.c:836-855`.
+#[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation)]
+// Immediate already validated as 12-bit signed; cast to u32 for RISC-V bitfield encoding
 pub(crate) fn asm_emit_i(
     state: &mut TccState,
     _token: i32,
@@ -1818,6 +1819,8 @@ pub(crate) fn asm_emit_i(
 
 /// Emit S-type instruction.
 /// C equivalent: `asm_emit_s()` in `riscv64-asm.c:1354-1377`.
+#[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation)]
+// Immediate already validated as 12-bit signed; cast to u32 for RISC-V bitfield encoding
 pub(crate) fn asm_emit_s(
     state: &mut TccState,
     _token: i32,
@@ -1845,6 +1848,8 @@ pub(crate) fn asm_emit_s(
 
 /// Emit B-type instruction.
 /// C equivalent: `asm_emit_b()` in `riscv64-asm.c:1379-1405`.
+#[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation)]
+// Branch offset validated as 13-bit signed; cast to u32 for RISC-V bitfield encoding
 pub(crate) fn asm_emit_b(
     state: &mut TccState,
     _token: i32,
@@ -1871,6 +1876,8 @@ pub(crate) fn asm_emit_b(
 
 /// Emit U-type instruction (LUI, AUIPC).
 /// C equivalent: `asm_emit_u()` in `riscv64-asm.c:459-474`.
+#[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation)]
+// Upper immediate validated as 20-bit; cast to u32 for RISC-V bitfield encoding
 pub(crate) fn asm_emit_u(
     state: &mut TccState,
     _token: i32,
@@ -1889,6 +1896,8 @@ pub(crate) fn asm_emit_u(
 
 /// Emit J-type instruction (JAL).
 /// C equivalent: `asm_emit_j()` in `riscv64-asm.c:857-886`.
+#[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation)]
+// Jump offset validated as 21-bit signed; cast to u32 for RISC-V bitfield encoding
 pub(crate) fn asm_emit_j(
     state: &mut TccState,
     _token: i32,
@@ -1913,6 +1922,8 @@ pub(crate) fn asm_emit_j(
 
 /// Emit A-type (atomic) instruction.
 /// C equivalent: `asm_emit_a()` in `riscv64-asm.c:1332-1351`.
+#[allow(clippy::cast_sign_loss)]
+// aq/rl are 1-bit boolean flags (0 or 1); cast to u32 for RISC-V bitfield encoding
 pub(crate) fn asm_emit_a(
     state: &mut TccState,
     _token: i32,

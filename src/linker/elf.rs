@@ -15,9 +15,6 @@
 // ELF linker — inherently performs integer casts between u8/u16/u32/u64/usize
 // and i32/i64 for ELF header fields, section offsets, symbol table indices, and
 // relocation entries.  All casts are faithful translations of tccelf.c.
-#![allow(clippy::cast_sign_loss)]
-#![allow(clippy::cast_possible_truncation)]
-#![allow(clippy::cast_possible_wrap)]
 #![allow(clippy::cast_lossless)]
 #![allow(clippy::field_reassign_with_default)]
 #![allow(clippy::manual_let_else)]
@@ -560,6 +557,9 @@ fn require_section_index(state: &TccState, name: &str) -> TccResult<usize> {
 /// Returns the 1-based symbol index within the symbol table.
 ///
 /// C equivalent: `put_elf_sym()` at tccelf.c line 428
+#[allow(clippy::cast_possible_truncation, clippy::cast_possible_wrap, clippy::cast_sign_loss)]
+// ELF symbol indices, hash bucket offsets, and chain entries are u32/i32/usize
+// per the ELF spec; all values are bounded by section sizes
 pub fn put_elf_sym(state: &mut TccState, sec_idx: usize,
                    value: u64, size: u64, info: u8, other: u8,
                    shndx: u16, name: &str) -> i32 {
@@ -879,6 +879,8 @@ pub fn put_elf_reloca(rel_sec: &mut Section, _sym_sec: &Section,
 }
 
 /// Internal: Add a Rela entry without requiring a reference to the sym section.
+#[allow(clippy::cast_sign_loss)]
+// sym_idx (i32) cast to u64 for ELF r_info encoding; indices are non-negative
 fn put_elf_reloca_direct(rel_sec: &mut Section,
                          offset: u64, rel_type: u32,
                          sym_idx: i32, addend: i64) {
@@ -2034,6 +2036,8 @@ pub fn elf_output_file(state: &mut TccState, filename: &str) -> TccResult<()> {
 }
 
 /// Helper: Build an ELF64 file header.
+#[allow(clippy::cast_possible_truncation)]
+// ELF header entry/section sizes are compile-time constants that fit in u16
 fn build_elf_ehdr(e_type: u16, machine: u16, entry: u64,
                   phoff: u64, shoff: u64, phnum: u16,
                   shnum: u16, shstrndx: u16) -> Elf64Ehdr {

@@ -21,9 +21,6 @@
 // u32/u64/usize/i32/i64 for Mach-O header field encoding, segment offsets,
 // and load-command sizes.  All casts are faithful translations of tccmacho.c
 // where the C code used implicit integer promotions.
-#![allow(clippy::cast_sign_loss)]
-#![allow(clippy::cast_possible_truncation)]
-#![allow(clippy::cast_possible_wrap)]
 #![allow(clippy::cast_lossless)]
 #![allow(clippy::assigning_clones)]
 #![allow(clippy::field_reassign_with_default)]
@@ -1034,6 +1031,8 @@ fn classify_section(sec: &Section) -> SectionKind {
 
 /// Scan relocations in a section to identify which need bind/rebase fixups.
 /// C equivalent: `check_relocs()` (tccmacho.c:570-730)
+#[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation, clippy::cast_possible_wrap)]
+// Mach-O relocation offsets and symbol indices are mixed i32/u32/u64 per format spec
 fn check_relocs(
     state: &TccState,
     mo: &mut MachoState,
@@ -1198,6 +1197,8 @@ fn check_symbols(state: &mut TccState, mo: &mut MachoState) -> TccResult<()> {
 
 /// Convert an ELF symbol to a Mach-O [`NList64`] symbol.
 /// C equivalent: `convert_symbol()` (tccmacho.c:1052-1080)
+#[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+// ELF symbol section index (u16) and Mach-O section number (i32) fit in n_sect (u8)
 fn convert_symbol(
     state: &TccState,
     mo: &MachoState,
@@ -1504,6 +1505,8 @@ fn create_symtab(state: &mut TccState, mo: &mut MachoState) -> TccResult<()> {
 
 /// Find the segment and offset for a given virtual address.
 /// C equivalent: `set_segment_and_offset()` (tccmacho.c:1281)
+#[allow(clippy::cast_possible_truncation, clippy::cast_possible_wrap)]
+// Segment index (usize→i32) bounded by small number of Mach-O segments
 fn set_segment_and_offset(
     mo: &MachoState,
     addr: u64,
@@ -1521,7 +1524,8 @@ fn set_segment_and_offset(
 
 /// Generate classic bind/rebase opcodes for the dynamic linker.
 /// C equivalent: `bind_rebase()` (tccmacho.c:1300-1400)
-#[allow(unused_assignments)]
+#[allow(unused_assignments, clippy::cast_sign_loss, clippy::cast_possible_truncation, clippy::cast_possible_wrap)]
+// Mach-O bind/rebase opcodes encode segment/offset/ordinal as mixed u8/i32/u64 per dyld spec
 fn bind_rebase(
     state: &TccState,
     mo: &mut MachoState,
@@ -1902,6 +1906,9 @@ fn emit_trie_node(node: &TrieNode, buf: &mut Vec<u8>) -> TccResult<()> {
 
 /// Master section layout: maps ELF sections to Mach-O segments and computes offsets.
 /// C equivalent: `collect_sections()` (tccmacho.c:1615-1957)
+#[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation, clippy::cast_possible_wrap)]
+// Mach-O segment/section offsets, load command sizes, and alignment values are
+// mixed u32/u64/usize/i32 per the Mach-O format; all values bounded by file size
 fn collect_sections(
     state: &mut TccState,
     mo: &mut MachoState,
@@ -2263,6 +2270,8 @@ fn collect_sections(
 
 /// Write the complete Mach-O file to the output writer.
 /// C equivalent: `macho_write()` (tccmacho.c:1959-2010)
+#[allow(clippy::cast_possible_truncation)]
+// Load command count/size fit in u32; section data lengths bounded by file size
 fn macho_write(
     state: &TccState,
     mo: &MachoState,
@@ -2361,6 +2370,8 @@ fn macho_write(
 
 /// Process import bindings for chained fixups (`CONFIG_NEW_MACHO`).
 /// C equivalent: `bind_rebase_import()` (tccmacho.c:2012-2176)
+#[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation, clippy::cast_possible_wrap)]
+// Chained fixup table entries use mixed u32/i32/u64 for ordinal, segment index, and offset
 fn bind_rebase_import(
     state: &mut TccState,
     mo: &mut MachoState,
@@ -2820,6 +2831,8 @@ fn parse_tbd_exports(tbd_content: &str) -> Vec<String> {
 /// TBD files are YAML-like text files containing the install-name and
 /// exported symbols for a dylib. Used by macOS SDKs instead of shipping
 /// full dylib binaries.
+#[allow(clippy::cast_possible_truncation, clippy::cast_possible_wrap)]
+// DLL index (usize→i32) bounded by loaded_dlls vec length; fits in i32
 pub(crate) fn macho_load_tbd(
     state: &mut TccState,
     filename: &str,

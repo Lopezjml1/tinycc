@@ -7,9 +7,6 @@
 // CVE-2006-0635 is addressed by explicit TryFrom helpers (lines 258-294)
 // for the specific signed/unsigned comparison paths that were vulnerable;
 // the remaining casts are verified-safe compiler-internal operations.
-#![allow(clippy::cast_sign_loss)]
-#![allow(clippy::cast_possible_truncation)]
-#![allow(clippy::cast_possible_wrap)]
 #![allow(clippy::cast_lossless)]
 #![allow(clippy::doc_markdown)]
 #![allow(clippy::too_many_arguments)]
@@ -323,6 +320,17 @@ fn safe_usize_to_i64(v: usize) -> TccResult<i64> {
     i64::try_from(v).map_err(|_| {
         TccError::parse(format!(
             "CVE-2006-0635: unsigned-to-signed conversion overflow: {v}"
+        ))
+    })
+}
+
+/// Safely convert i64 to i32, returning an error if the value is out of range.
+/// CVE-2006-0635: Explicit TryFrom prevents implicit truncation of instruction offsets.
+#[inline]
+fn safe_i64_to_i32(v: i64) -> TccResult<i32> {
+    i32::try_from(v).map_err(|_| {
+        TccError::parse(format!(
+            "CVE-2006-0635: i64-to-i32 conversion overflow: {v}"
         ))
     })
 }
@@ -771,7 +779,8 @@ pub fn unary(
     match pp.tok {
         // Integer literal
         Token::IntegerLiteral(val) => {
-            #[allow(clippy::cast_sign_loss)]
+            // Compiler-internal: integer literal value fits in i32 for C int representation
+            #[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation)]
             vpushi(vstack, val as i32)?;
             next_token(pp, state)?;
         }
@@ -1410,7 +1419,7 @@ fn parse_while(
     flow.break_target = 0;
     flow.continue_target = 0;
 
-    let loop_start = safe_usize_to_i32(state.ind as usize).unwrap_or(0);
+    let loop_start = safe_i64_to_i32(state.ind).unwrap_or(0);
     skip(pp, state, raw_tok(b'('))?;
     expr(state, pp, vstack, backend)?;
     skip(pp, state, raw_tok(b')'))?;
@@ -1447,7 +1456,7 @@ fn parse_do_while(
     flow.break_target = 0;
     flow.continue_target = 0;
 
-    let loop_start = safe_usize_to_i32(state.ind as usize).unwrap_or(0);
+    let loop_start = safe_i64_to_i32(state.ind).unwrap_or(0);
     block_inner(state, pp, vstack, backend, flow, false)?;
 
     skip(pp, state, Token::While)?;
@@ -1501,7 +1510,7 @@ fn parse_for(
     }
 
     // Condition
-    let loop_start = safe_usize_to_i32(state.ind as usize).unwrap_or(0);
+    let loop_start = safe_i64_to_i32(state.ind).unwrap_or(0);
     let mut t_exit: i32 = 0;
     if !is_tok_char(&pp.tok, b';') {
         expr(state, pp, vstack, backend)?;
@@ -1514,7 +1523,7 @@ fn parse_for(
     // Layout: [condition] → [jump-over-incr] → [increment] → [jmp condition]
     //         → [body] → [jmp increment]
     let jump_over_incr = backend.gjmp(state, 0)?;
-    let incr_point = safe_usize_to_i32(state.ind as usize).unwrap_or(0);
+    let incr_point = safe_i64_to_i32(state.ind).unwrap_or(0);
     if !is_tok_char(&pp.tok, b')') {
         expr(state, pp, vstack, backend)?;
         vpop(vstack, 1)?;
@@ -1594,7 +1603,7 @@ fn parse_case(
     let case_val = expr_const(state, pp, vstack, backend)?;
     skip(pp, state, raw_tok(b':'))?;
     // CVE-2006-0635: safe conversion from i64 to i32
-    let label = safe_usize_to_i32(state.ind as usize).unwrap_or(0);
+    let label = safe_i64_to_i32(state.ind).unwrap_or(0);
     flow.switch_cases.push((case_val, label));
     parse_statement(state, pp, vstack, backend, flow)?;
     Ok(())
@@ -1612,7 +1621,7 @@ fn parse_default(
     next_token(pp, state)?;
     skip(pp, state, raw_tok(b':'))?;
     // CVE-2006-0635: safe conversion from i64 to i32
-    flow.switch_default = safe_usize_to_i32(state.ind as usize).unwrap_or(0);
+    flow.switch_default = safe_i64_to_i32(state.ind).unwrap_or(0);
     parse_statement(state, pp, vstack, backend, flow)?;
     Ok(())
 }
@@ -2304,23 +2313,35 @@ pub fn struct_decl(
                 // Compute field size and alignment
                 let (field_size, field_align) = type_size(&field_type, &[]);
 
-                // CVE-2006-0635: safe conversion for alignment computation
+                // CVE-2006-0635: safe conversion for alignment computation.
+                // field_align/field_size are usize (non-negative type sizes) from type_size();
+                // casting to i64 is safe because type sizes never exceed i64::MAX.
+                #[allow(clippy::cast_possible_wrap)] // type alignment, fits in i64
                 let fa = safe_i64_to_usize(field_align as i64)
                     .unwrap_or(1);
 
                 if is_union {
                     // Union: size is max of all fields
+                    #[allow(clippy::cast_possible_wrap)] // type size, fits in i64
                     let fs = safe_i64_to_usize(field_size as i64).unwrap_or(0);
-                    if (fs as i64) > struct_size {
-                        struct_size = fs as i64;
+                    #[allow(clippy::cast_possible_wrap)] // fs is a type size, always fits in i64
+                    let fs_i64 = fs as i64;
+                    if fs_i64 > struct_size {
+                        struct_size = fs_i64;
                     }
                 } else {
                     // Struct: accumulate offsets with alignment
-                    let aligned_off = (struct_size + (fa as i64) - 1) & !((fa as i64) - 1);
-                    struct_size = aligned_off + field_size as i64;
+                    // fa is a type alignment (small power-of-two), always fits in i64
+                    #[allow(clippy::cast_possible_wrap)]
+                    let fa_i64 = fa as i64;
+                    let aligned_off = (struct_size + fa_i64 - 1) & !(fa_i64 - 1);
+                    #[allow(clippy::cast_possible_wrap)] // field_size is a type size, fits in i64
+                    { struct_size = aligned_off + field_size as i64; }
                 }
-                if (fa as i64) > struct_align {
-                    struct_align = fa as i64;
+                #[allow(clippy::cast_possible_wrap)] // fa is a small alignment value, fits in i64
+                let fa_i64_cmp = fa as i64;
+                if fa_i64_cmp > struct_align {
+                    struct_align = fa_i64_cmp;
                 }
 
                 _field_count += 1;
@@ -2694,7 +2715,7 @@ pub fn decl(
             next_token(pp, state)?;
             skip(pp, state, Token::Raw(b')' as i32))?;
             // CVE-2006-0635: explicit checked cast from i64 to i32
-            dcl_ad.asm_label = safe_usize_to_i32(label_val as usize).unwrap_or(0);
+            dcl_ad.asm_label = safe_i64_to_i32(label_val).unwrap_or(0);
         }
 
         // Check for __attribute__ after declarator
@@ -2825,7 +2846,9 @@ pub fn init_putv(
                 if let Ok(top) = vstack.top() {
                     if let SValueData::Constant(CValue::Int(val)) = &top.value {
                         if safe_offset < section.data.len() {
-                            section.data[safe_offset] = *val as u8;
+                            // Intentional truncation: extract low byte from constant value
+                            #[allow(clippy::cast_possible_truncation)]
+                            { section.data[safe_offset] = *val as u8; }
                         }
                     }
                 }
@@ -2833,6 +2856,8 @@ pub fn init_putv(
             VT_SHORT => {
                 if let Ok(top) = vstack.top() {
                     if let SValueData::Constant(CValue::Int(val)) = &top.value {
+                        // Intentional truncation: extract low 16 bits from constant value
+                        #[allow(clippy::cast_possible_truncation)]
                         let bytes = (*val as u16).to_le_bytes();
                         let end = safe_offset + 2;
                         if end <= section.data.len() {
@@ -2844,6 +2869,8 @@ pub fn init_putv(
             VT_INT | VT_ENUM => {
                 if let Ok(top) = vstack.top() {
                     if let SValueData::Constant(CValue::Int(val)) = &top.value {
+                        // Intentional truncation: extract low 32 bits from constant value
+                        #[allow(clippy::cast_possible_truncation)]
                         let bytes = (*val as u32).to_le_bytes();
                         let end = safe_offset + 4;
                         if end <= section.data.len() {
@@ -2971,9 +2998,12 @@ pub fn decl_initializer(
             decl_initializer(state, pp, vstack, backend, ctype, section_idx, cur_offset, flags)?;
 
             index += 1;
-            // CVE-2006-0635: safe computation of element offset
+            // CVE-2006-0635: safe computation of element offset.
+            // elem_size is a type size (usize, non-negative), safe to cast to i64.
             let (elem_size, _) = type_size(ctype, &[]);
-            cur_offset = offset.wrapping_add(index.wrapping_mul(elem_size as i64));
+            #[allow(clippy::cast_possible_wrap)]
+            let elem_size_i64 = elem_size as i64;
+            cur_offset = offset.wrapping_add(index.wrapping_mul(elem_size_i64));
 
             if !is_tok_char(&pp.tok, b',') {
                 break;
@@ -3023,8 +3053,11 @@ pub fn decl_initializer_alloc(
             let sec_idx = state.data_section_idx;
             // CVE-2006-0635: safe offset computation
             let offset = safe_usize_to_i64(state.sections[sec_idx].data_offset)?;
-            // Align offset
-            let aligned = ((offset + (align as i64) - 1) / (align as i64)) * (align as i64);
+            // Align offset. align is a type alignment (small power-of-two usize),
+            // safe to cast to i64 since alignment values never exceed i64::MAX.
+            #[allow(clippy::cast_possible_wrap)]
+            let align_i64 = align as i64;
+            let aligned = ((offset + align_i64 - 1) / align_i64) * align_i64;
             state.sections[sec_idx].data_offset = safe_i64_to_usize(aligned)?;
 
             decl_initializer(
@@ -3032,9 +3065,11 @@ pub fn decl_initializer_alloc(
                 sec_idx, aligned, 1,
             )?;
 
-            // Update section offset
+            // Update section offset. size is a type size (usize), safe to cast to i64.
+            #[allow(clippy::cast_possible_wrap)]
+            let size_i64 = size as i64;
             state.sections[sec_idx].data_offset =
-                safe_i64_to_usize(aligned + size as i64)?;
+                safe_i64_to_usize(aligned + size_i64)?;
             (sec_idx, aligned)
         } else {
             // Uninitialized global: allocate in BSS
@@ -3042,7 +3077,11 @@ pub fn decl_initializer_alloc(
             let offset = state.sections[sec_idx].data_offset;
             let aligned = ((offset + align - 1) / align) * align;
             state.sections[sec_idx].data_offset = aligned + size;
-            (sec_idx, aligned as i64)
+            // aligned is a usize offset, safe to cast to i64 since section offsets
+            // are bounded by available memory and never exceed i64::MAX.
+            #[allow(clippy::cast_possible_wrap)]
+            let aligned_i64 = aligned as i64;
+            (sec_idx, aligned_i64)
         };
 
         // Register declared variable symbol using v (token ID) and ad (attributes)
@@ -3079,11 +3118,15 @@ pub fn decl_initializer_alloc(
         }
     } else {
         // Local variable: allocate on stack
-        // Stack grows downward; local_offset is negative from frame pointer
+        // Stack grows downward; local_offset is negative from frame pointer.
+        // size and align are type sizes (usize), safe to cast to i64 since they
+        // represent C type sizes bounded by target address space.
+        #[allow(clippy::cast_possible_wrap)]
         let local_size = size as i64;
         state.loc = state.loc.wrapping_sub(local_size);
         // Align the local offset
         if align > 1 {
+            #[allow(clippy::cast_possible_wrap)] // alignment is a small power-of-two
             let align_i64 = align as i64;
             state.loc = (state.loc - align_i64 + 1) / align_i64 * align_i64;
         }
@@ -3108,6 +3151,9 @@ pub fn decl_initializer_alloc(
                 ctype: *ctype,
                 r: VT_LOCAL | VT_LVAL,
                 r2: VT_CONST,
+                // Compiler-internal: reinterpret signed stack offset as u64 bit pattern
+                // for the value stack; the sign is preserved in the bit representation.
+                #[allow(clippy::cast_sign_loss)]
                 value: SValueData::Constant(CValue::Int(local_offset as u64)),
                 sym_info: SValueSymInfo::Sym(None),
             };
@@ -3228,10 +3274,13 @@ pub fn gen_function(
     // to debug info generator for STABS/DWARF function-level records.
     if state.do_debug {
         let func_end = state.ind;
-        #[allow(clippy::cast_possible_truncation)]
+        // Compiler-internal: func_end >= saved_ind always (instruction counter
+        // only advances), so the difference is non-negative; reinterpret as u64.
+        #[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation)]
         let func_size = (func_end - saved_ind) as u64;
         // Store function size in the function symbol for later DWARF emission
-        func_sym.c = func_size as i32;
+        #[allow(clippy::cast_possible_truncation)] // function size fits in i32 for DWARF
+        { func_sym.c = func_size as i32; }
     }
 
     // Bounds-checking instrumentation
@@ -3293,6 +3342,8 @@ pub fn gen_inline_functions(
         // the token stream during parsing by gen_function itself.
         let func_type = CType { t: VT_FUNC | VT_INT, ref_sym: None };
         let func_ad = AttributeDef::default();
+        // Compiler-internal: symbol IDs are small indices that fit in i32
+        #[allow(clippy::cast_possible_truncation, clippy::cast_possible_wrap)]
         let func_v = sym_id.unwrap_or(0) as i32;
         gen_function(state, pp, vstack, backend, func_v, &func_type, &func_ad)?;
 

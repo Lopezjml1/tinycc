@@ -24,9 +24,6 @@
 // register names, opcode mnemonics, and low-level bit manipulation are pervasive.
 // Cast lints are suppressed at module level because instruction encoding
 // inherently requires lossy integer casts between register sizes and opcode fields.
-#![allow(clippy::cast_sign_loss)]
-#![allow(clippy::cast_possible_truncation)]
-#![allow(clippy::cast_possible_wrap)]
 #![allow(clippy::cast_lossless)]
 #![allow(clippy::too_many_lines)]
 #![allow(clippy::similar_names)]
@@ -562,7 +559,9 @@ fn sym_for_reloc(sym_id: SymId) -> Symbol {
 /// Emit a 32-bit address or displacement for a symbol reference.
 /// Adds a relocation entry for the symbol.
 /// C equivalent: `gen_addr32()` (i386-gen.c:200-210).
-#[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation)]
+// Instruction encoding: relocation type constants (u32) are safely narrowed to i32
+// for the greloc API; values are small ELF relocation type IDs.
+#[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation, clippy::cast_possible_wrap)]
 pub fn gen_addr32(state: &mut TccState, _r: u16, sym: Option<SymId>, c: i64) -> TccResult<()> {
     if let Some(sym_idx) = sym {
         let sec_idx = state.cur_text_section;
@@ -576,7 +575,8 @@ pub fn gen_addr32(state: &mut TccState, _r: u16, sym: Option<SymId>, c: i64) -> 
 
 /// Emit a PC-relative 32-bit address for a symbol reference.
 /// C equivalent: `gen_addrpc32()` (i386-gen.c:215-225).
-#[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation)]
+// Instruction encoding: relocation type constants (u32) safely narrowed to i32.
+#[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation, clippy::cast_possible_wrap)]
 pub fn gen_addrpc32(state: &mut TccState, _r: u16, sym: Option<SymId>, c: i64) -> TccResult<()> {
     if let Some(sym_idx) = sym {
         let sec_idx = state.cur_text_section;
@@ -628,7 +628,8 @@ pub fn gen_modrm(
 
 /// Adjust the stack pointer by `val` bytes (add esp, val).
 /// C equivalent: `gadd_sp()` (i386-gen.c:453-462).
-#[allow(clippy::cast_possible_truncation)]
+// Instruction encoding: val is reinterpreted as unsigned byte for imm8 encoding.
+#[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
 pub fn gadd_sp(state: &mut TccState, val: i32) -> TccResult<()> {
     if val == i32::from(val as i8) {
         // add esp, imm8: 83 c4 XX
@@ -665,6 +666,9 @@ pub fn gcall_or_jmp(state: &mut TccState, is_jmp: bool) -> TccResult<()> {
 
 /// Generate a GOT-relative PC-relative reference for PIC code.
 /// C equivalent: `gen_gotpcrel()` (i386-gen.c:182-199).
+// Instruction encoding: relocation type (u32) safely narrowed to i32; signed offset
+// reinterpreted as u64 bit pattern for relocation table.
+#[allow(clippy::cast_sign_loss, clippy::cast_possible_wrap)]
 pub fn gen_gotpcrel(
     state: &mut TccState,
     _r: u16,
@@ -1869,6 +1873,9 @@ pub fn asm_parse_regvar(name: &str) -> Option<i32> {
 /// Main assembler opcode dispatch function.
 /// Encodes an x86 instruction given its opcode info and operands.
 /// C equivalent: `asm_opcode()` (i386-asm.c main dispatcher).
+// Instruction encoding: opcode bytes are extracted via shift-and-truncate,
+// which is the standard pattern for multi-byte x86 opcode emission.
+#[allow(clippy::cast_possible_truncation)]
 pub fn asm_opcode(
     state: &mut TccState,
     opcode: u32,
