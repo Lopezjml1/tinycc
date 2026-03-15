@@ -2605,3 +2605,151 @@ fn parse_integer_constant(s: &str) -> TccResult<i64> {
     result.map_err(|_| TccError::parse(format!("invalid integer constant: {s}")))
 }
 
+// ===========================================================================
+//  Unit Tests
+// ===========================================================================
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::tokens::Token;
+
+    // -------------------------------------------------------------------
+    //  CVE-2019-9754: Macro stack underflow detection
+    // -------------------------------------------------------------------
+
+    /// Verify that `begin_macro` pushes an entry onto the macro stack.
+    #[test]
+    fn test_begin_macro_pushes_entry() {
+        let mut pp = PreprocessorState::default();
+        assert!(pp.macro_stack.is_empty());
+
+        begin_macro(&mut pp, vec![Token::Eof], AllocMode::None);
+        assert_eq!(pp.macro_stack.len(), 1);
+
+        begin_macro(&mut pp, vec![Token::Eof], AllocMode::Allocated);
+        assert_eq!(pp.macro_stack.len(), 2);
+    }
+
+    /// Verify that `end_macro` pops an entry from the macro stack.
+    #[test]
+    fn test_end_macro_pops_entry() {
+        let mut pp = PreprocessorState::default();
+        begin_macro(&mut pp, vec![Token::Eof], AllocMode::None);
+        begin_macro(&mut pp, vec![Token::Eof], AllocMode::None);
+        assert_eq!(pp.macro_stack.len(), 2);
+
+        end_macro(&mut pp).expect("pop from 2-entry stack must succeed");
+        assert_eq!(pp.macro_stack.len(), 1);
+
+        end_macro(&mut pp).expect("pop from 1-entry stack must succeed");
+        assert!(pp.macro_stack.is_empty());
+    }
+
+    /// CVE-2019-9754: Popping from an empty macro stack must return Err,
+    /// not cause undefined behavior (NULL dereference in the C version).
+    #[test]
+    fn test_cve_2019_9754_empty_stack_pop_returns_err() {
+        let mut pp = PreprocessorState::default();
+        assert!(pp.macro_stack.is_empty());
+
+        // CVE-2019-9754: Vec::pop() returns None on empty stack,
+        // which end_macro converts to Err(TccError::Parse).
+        let result = end_macro(&mut pp);
+        assert!(
+            result.is_err(),
+            "CVE-2019-9754: popping from empty macro stack must return Err"
+        );
+        let err_msg = format!("{}", result.unwrap_err());
+        assert!(
+            err_msg.contains("underflow"),
+            "CVE-2019-9754: error message must mention underflow, got: {err_msg}"
+        );
+    }
+
+    /// CVE-2019-9754: After popping all entries, the next pop must return Err.
+    #[test]
+    fn test_cve_2019_9754_exhausted_stack_pop_returns_err() {
+        let mut pp = PreprocessorState::default();
+        begin_macro(&mut pp, vec![Token::Eof], AllocMode::None);
+        begin_macro(&mut pp, vec![Token::Eof], AllocMode::None);
+
+        end_macro(&mut pp).expect("first pop must succeed");
+        end_macro(&mut pp).expect("second pop must succeed");
+
+        // Stack is now empty — next pop must fail.
+        let result = end_macro(&mut pp);
+        assert!(
+            result.is_err(),
+            "CVE-2019-9754: third pop on 2-entry stack must return Err"
+        );
+    }
+
+    /// CVE-2019-9754: Deep macro stack nesting (1000 levels) must work correctly.
+    #[test]
+    fn test_cve_2019_9754_deep_nesting() {
+        let mut pp = PreprocessorState::default();
+
+        // Push 1000 entries.
+        for _ in 0..1000 {
+            begin_macro(&mut pp, vec![Token::Eof], AllocMode::None);
+        }
+        assert_eq!(pp.macro_stack.len(), 1000);
+
+        // Pop all 1000 entries.
+        for i in 0..1000 {
+            end_macro(&mut pp).unwrap_or_else(|e| {
+                panic!("CVE-2019-9754: pop {i} of 1000 failed: {e}");
+            });
+        }
+        assert!(pp.macro_stack.is_empty());
+
+        // Final pop on empty stack must fail.
+        assert!(end_macro(&mut pp).is_err());
+    }
+
+    /// Verify that `begin_macro` sets `macro_ptr` to `Some(0)`.
+    #[test]
+    fn test_begin_macro_resets_macro_ptr() {
+        let mut pp = PreprocessorState::default();
+        assert_eq!(pp.macro_ptr, None);
+
+        begin_macro(&mut pp, vec![Token::Eof], AllocMode::None);
+        assert_eq!(pp.macro_ptr, Some(0));
+    }
+
+    /// Verify that `parse_integer_constant` handles various integer formats.
+    #[test]
+    fn test_parse_integer_constant_decimal() {
+        assert_eq!(parse_integer_constant("42").unwrap(), 42);
+        assert_eq!(parse_integer_constant("0").unwrap(), 0);
+        assert_eq!(parse_integer_constant("-1").unwrap(), -1);
+    }
+
+    /// Verify that `parse_integer_constant` handles hex, octal, and binary.
+    #[test]
+    fn test_parse_integer_constant_other_bases() {
+        assert_eq!(parse_integer_constant("0xFF").unwrap(), 255);
+        assert_eq!(parse_integer_constant("0x1A").unwrap(), 26);
+        assert_eq!(parse_integer_constant("010").unwrap(), 8); // octal
+        assert_eq!(parse_integer_constant("0b1010").unwrap(), 10); // binary
+    }
+
+    /// Verify that `parse_integer_constant` strips suffixes.
+    #[test]
+    fn test_parse_integer_constant_suffixes() {
+        assert_eq!(parse_integer_constant("42u").unwrap(), 42);
+        assert_eq!(parse_integer_constant("42U").unwrap(), 42);
+        assert_eq!(parse_integer_constant("42l").unwrap(), 42);
+        assert_eq!(parse_integer_constant("42UL").unwrap(), 42);
+        assert_eq!(parse_integer_constant("42ull").unwrap(), 42);
+    }
+
+    /// Verify that `parse_integer_constant` returns error for invalid input.
+    #[test]
+    fn test_parse_integer_constant_invalid() {
+        assert!(parse_integer_constant("abc").is_err());
+        assert!(parse_integer_constant("0xZZ").is_err());
+    }
+}
+

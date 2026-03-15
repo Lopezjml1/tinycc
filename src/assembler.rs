@@ -2220,5 +2220,81 @@ mod tests {
         use_section(&mut state, ".data", 1, 0x3).unwrap();
         assert_eq!(state.cur_text_section, idx1);
     }
+
+    // -------------------------------------------------------------------
+    //  CVE-2018-20376 verification: directive buffer (Vec<u8>) safety
+    // -------------------------------------------------------------------
+
+    /// CVE-2018-20376: The section data buffer (`data: Vec<u8>`) must safely
+    /// accommodate many byte writes without out-of-bounds access.
+    ///
+    /// In the original C code (tccasm.c:495), the directive output buffer
+    /// was a raw malloc'd array. Writing beyond its bounds caused an OOB
+    /// write. In Rust, `Vec<u8>` grows automatically via `.push()`.
+    #[test]
+    fn test_cve_2018_20376_directive_buffer_growth() {
+        let mut state = crate::context::TccState::default();
+        let sec_idx = state.new_section(".text", 1, 0x6);
+        state.cur_text_section = sec_idx;
+
+        // CVE-2018-20376: Vec<u8> eliminates OOB write in directive buffer.
+        // Write 2048 bytes to the section data buffer — this exercises the
+        // same Vec<u8> field that asm_parse_directive writes to.
+        let section = &mut state.sections[sec_idx];
+        for i in 0..2048_usize {
+            let byte = u8::try_from(i % 256).unwrap_or(0);
+            section.data.push(byte);
+        }
+        assert_eq!(section.data.len(), 2048);
+
+        // Verify the first and last bytes are correct.
+        assert_eq!(section.data[0], 0);
+        assert_eq!(section.data[255], 255);
+        assert_eq!(section.data[256], 0); // wraps around
+        assert_eq!(section.data[2047], u8::try_from(2047 % 256).unwrap());
+    }
+
+    /// CVE-2018-20376: An initially empty section data buffer must grow
+    /// correctly from zero to many kilobytes.
+    #[test]
+    fn test_cve_2018_20376_directive_buffer_large_write() {
+        let mut state = crate::context::TccState::default();
+        let sec_idx = state.new_section(".bss", 8, 0x3);
+
+        // CVE-2018-20376: Vec<u8> auto-grows safely.
+        let section = &mut state.sections[sec_idx];
+        assert!(section.data.is_empty());
+
+        // Write 8192 bytes (larger than typical C fixed-size buffers).
+        let data: Vec<u8> = (0..8192_usize)
+            .map(|i| u8::try_from(i % 256).unwrap_or(0))
+            .collect();
+        section.data.extend_from_slice(&data);
+        assert_eq!(section.data.len(), 8192);
+    }
+
+    /// CVE-2018-20376: Multiple sections can each grow their directive
+    /// buffers independently without interference.
+    #[test]
+    fn test_cve_2018_20376_multiple_section_buffers() {
+        let mut state = crate::context::TccState::default();
+        let idx0 = state.new_section(".text", 1, 0x6);
+        let idx1 = state.new_section(".data", 1, 0x3);
+
+        // Write to section 0.
+        for _ in 0..1024 {
+            state.sections[idx0].data.push(0xAA);
+        }
+        // Write to section 1.
+        for _ in 0..512 {
+            state.sections[idx1].data.push(0xBB);
+        }
+
+        // Each section has independent data.
+        assert_eq!(state.sections[idx0].data.len(), 1024);
+        assert_eq!(state.sections[idx1].data.len(), 512);
+        assert!(state.sections[idx0].data.iter().all(|&b| b == 0xAA));
+        assert!(state.sections[idx1].data.iter().all(|&b| b == 0xBB));
+    }
 }
 

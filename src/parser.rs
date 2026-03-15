@@ -3442,3 +3442,151 @@ pub fn parse_asm_str(
     parse_mult_str(state, pp, vstack, backend, &mut result)?;
     Ok(result)
 }
+
+// ===========================================================================
+//  Unit Tests
+// ===========================================================================
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // -------------------------------------------------------------------
+    //  CVE-2006-0635: Safe signed/unsigned conversion functions
+    // -------------------------------------------------------------------
+
+    /// CVE-2006-0635: Converting -1 to usize must return Err.
+    /// In the original C code, -1 was implicitly promoted to a large
+    /// unsigned value (0xFFFFFFFF), making comparisons like
+    /// `(-1 > sizeof(int))` incorrectly evaluate to true.
+    #[test]
+    fn test_cve_2006_0635_negative_i64_to_usize() {
+        // CVE-2006-0635: Explicit TryFrom prevents implicit signed/unsigned coercion
+        let result = safe_i64_to_usize(-1);
+        assert!(
+            result.is_err(),
+            "CVE-2006-0635: converting -1_i64 to usize must fail"
+        );
+        let err_msg = format!("{}", result.unwrap_err());
+        assert!(
+            err_msg.contains("CVE-2006-0635"),
+            "error should reference CVE-2006-0635, got: {err_msg}"
+        );
+    }
+
+    /// CVE-2006-0635: Converting i64::MIN to usize must return Err.
+    #[test]
+    fn test_cve_2006_0635_i64_min_to_usize() {
+        let result = safe_i64_to_usize(i64::MIN);
+        assert!(
+            result.is_err(),
+            "CVE-2006-0635: converting i64::MIN to usize must fail"
+        );
+    }
+
+    /// CVE-2006-0635: Converting 0 to usize must succeed.
+    #[test]
+    fn test_cve_2006_0635_zero_i64_to_usize() {
+        let result = safe_i64_to_usize(0);
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), 0);
+    }
+
+    /// CVE-2006-0635: Converting positive i64 to usize must succeed.
+    #[test]
+    fn test_cve_2006_0635_positive_i64_to_usize() {
+        let result = safe_i64_to_usize(42);
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), 42);
+
+        let result = safe_i64_to_usize(1024);
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), 1024);
+    }
+
+    /// CVE-2006-0635: Converting -1_i32 to usize must return Err.
+    #[test]
+    fn test_cve_2006_0635_negative_i32_to_usize() {
+        let result = safe_i32_to_usize(-1);
+        assert!(
+            result.is_err(),
+            "CVE-2006-0635: converting -1_i32 to usize must fail"
+        );
+    }
+
+    /// CVE-2006-0635: Converting i32::MIN to usize must return Err.
+    #[test]
+    fn test_cve_2006_0635_i32_min_to_usize() {
+        let result = safe_i32_to_usize(i32::MIN);
+        assert!(result.is_err());
+    }
+
+    /// CVE-2006-0635: Converting non-negative i32 to usize must succeed.
+    #[test]
+    fn test_cve_2006_0635_positive_i32_to_usize() {
+        assert_eq!(safe_i32_to_usize(0).unwrap(), 0);
+        assert_eq!(safe_i32_to_usize(100).unwrap(), 100);
+        assert_eq!(safe_i32_to_usize(i32::MAX).unwrap(), i32::MAX as usize);
+    }
+
+    /// CVE-2006-0635: Converting large usize to i32 must return Err.
+    #[test]
+    fn test_cve_2006_0635_large_usize_to_i32() {
+        let result = safe_usize_to_i32(usize::MAX);
+        assert!(
+            result.is_err(),
+            "CVE-2006-0635: converting usize::MAX to i32 must fail"
+        );
+
+        let large: usize = i32::MAX as usize + 1;
+        let result = safe_usize_to_i32(large);
+        assert!(result.is_err());
+    }
+
+    /// CVE-2006-0635: Converting small usize to i32 must succeed.
+    #[test]
+    fn test_cve_2006_0635_small_usize_to_i32() {
+        assert_eq!(safe_usize_to_i32(0).unwrap(), 0);
+        assert_eq!(safe_usize_to_i32(42).unwrap(), 42);
+        assert_eq!(
+            safe_usize_to_i32(i32::MAX as usize).unwrap(),
+            i32::MAX
+        );
+    }
+
+    /// CVE-2006-0635: Converting small usize to i64 must succeed.
+    #[test]
+    fn test_cve_2006_0635_small_usize_to_i64() {
+        assert_eq!(safe_usize_to_i64(0).unwrap(), 0);
+        assert_eq!(safe_usize_to_i64(42).unwrap(), 42);
+        assert_eq!(safe_usize_to_i64(1000).unwrap(), 1000);
+    }
+
+    /// Verify that the CVE-2006-0635 edge case (-1 > sizeof(int)) is handled.
+    /// In C, this comparison is incorrectly true because -1 is promoted to
+    /// a large unsigned value. In Rust, the conversion fails cleanly.
+    #[test]
+    fn test_cve_2006_0635_sizeof_comparison_edge_case() {
+        // sizeof(int) on most platforms is 4
+        let sizeof_int: usize = 4;
+        let negative_one: i64 = -1;
+
+        // In C: (int)-1 > sizeof(int) → true (because -1 → 0xFFFFFFFF)
+        // In Rust: TryFrom(-1) → Err (comparison cannot happen)
+        let conversion = safe_i64_to_usize(negative_one);
+        assert!(
+            conversion.is_err(),
+            "CVE-2006-0635: -1 must not be convertible to usize for comparison"
+        );
+
+        // If the conversion succeeded, the comparison would be wrong.
+        // Since it fails, the CVE is prevented.
+        if let Ok(value) = conversion {
+            // This branch should never execute.
+            assert!(
+                value <= sizeof_int,
+                "CVE-2006-0635: if -1 somehow converted, it must not be > sizeof(int)"
+            );
+        }
+    }
+}
