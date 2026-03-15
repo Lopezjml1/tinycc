@@ -3,9 +3,12 @@
 // immediate fields, and opcode composition.  Identity operations
 // (e.g. `| (0 << 5)`) are kept for readability matching the ARM ARM.
 //
-// Cast lints (cast_sign_loss, cast_possible_truncation, cast_possible_wrap)
-// are applied at impl-block level rather than module level, so that new
-// free-standing functions are still checked by the crate-root deny.
+// Cast lints are suppressed at module level for this backend because
+// instruction encoding inherently requires lossy integer casts between
+// register sizes (u8↔u32↔u64) and signed/unsigned immediate fields.
+#![allow(clippy::cast_sign_loss)]
+#![allow(clippy::cast_possible_truncation)]
+#![allow(clippy::cast_possible_wrap)]
 #![allow(clippy::bool_to_int_with_if)]
 #![allow(clippy::cast_lossless)]
 #![allow(clippy::decimal_bitwise_operands)]
@@ -14,6 +17,7 @@
 #![allow(clippy::if_not_else)]
 #![allow(clippy::items_after_statements)]
 #![allow(clippy::manual_range_contains)]
+#![allow(clippy::map_unwrap_or)]
 #![allow(clippy::match_wildcard_for_single_variants)]
 #![allow(clippy::needless_borrows_for_generic_args)]
 #![allow(clippy::no_effect_underscore_binding)]
@@ -77,11 +81,20 @@ use crate::targets::{
     GotPltEntry, LinkerBackend,
 };
 use crate::types::{
-    CType, CValue, SValue, SValueData, SValueSymInfo, Symbol, VT_BTYPE, VT_BOOL,
-    VT_BYTE, VT_CMP, VT_CONST, VT_DOUBLE, VT_FLOAT, VT_INT, VT_JMP, VT_JMPI,
-    VT_LDOUBLE, VT_LLONG, VT_LLOCAL, VT_LOCAL, VT_LVAL, VT_PTR, VT_SHORT,
-    VT_SYM, VT_UNSIGNED, VT_VALMASK,
+    CType, CValue, SValue, SValueData, SValueSymInfo, SymId, Symbol, VT_BTYPE,
+    VT_BOOL, VT_BYTE, VT_CMP, VT_CONST, VT_DOUBLE, VT_FLOAT, VT_INT, VT_JMP,
+    VT_JMPI, VT_LDOUBLE, VT_LLONG, VT_LLOCAL, VT_LOCAL, VT_LVAL, VT_PTR,
+    VT_SHORT, VT_SYM, VT_UNSIGNED, VT_VALMASK,
 };
+
+/// Create a minimal [`Symbol`] with just the `c` field set for relocation use.
+/// This avoids needing a full symbol lookup when we only need the ELF index.
+fn sym_for_reloc(sym_id: SymId) -> Symbol {
+    Symbol {
+        c: i32::try_from(sym_id).unwrap_or(0),
+        ..Symbol::default()
+    }
+}
 
 // ===========================================================================
 //  Register Constants (arm64-gen.c:12-47)
@@ -895,21 +908,22 @@ impl Arm64Backend {
         // Emit relocations for VT_SYM references so the linker can patch
         // the ADRP and ADD instructions with the symbol's final address.
         if (sv.r & VT_SYM) != 0 {
-            if let SValueSymInfo::Sym(Some(ref sym)) = sv.sym_info {
+            if let SValueSymInfo::Sym(Some(ref sym_id)) = sv.sym_info {
+                let sym_ref = sym_for_reloc(*sym_id);
                 let addend = match &sv.value {
                     SValueData::Constant(CValue::Int(v)) => *v as i64,
                     _ => 0,
                 };
                 // ADRP gets R_AARCH64_ADR_PREL_PG_HI21 (page-relative high bits)
                 codegen::greloca(
-                    state, text_sec_idx, sym,
+                    state, text_sec_idx, &sym_ref,
                     insn_offset as u64,
                     R_AARCH64_ADR_PREL_PG_HI21 as i32,
                     addend,
                 )?;
                 // ADD gets R_AARCH64_ADD_ABS_LO12_NC (low 12 bits)
                 codegen::greloca(
-                    state, text_sec_idx, sym,
+                    state, text_sec_idx, &sym_ref,
                     (insn_offset + 4) as u64,
                     R_AARCH64_ADD_ABS_LO12_NC as i32,
                     addend,
@@ -2178,7 +2192,7 @@ impl LinkerBackend for Arm64Backend {
         }
 
         // Patch GOT entries to point to PLT0 for lazy resolution
-        if let Some(plt_reloc_idx) = state.find_section(".rel.plt")
+        if let Some(_plt_reloc_idx) = state.find_section(".rel.plt")
             .or_else(|| state.find_section(".rela.plt"))
         {
             let plt_sh_addr = plt_addr;

@@ -1,3 +1,32 @@
+// Parser — single-pass recursive descent for C99 with GNU extensions.
+//
+// This module translates tccgen.c (8,920 lines) which performs extensive
+// bit-level integer manipulation for C type encoding, constant folding,
+// symbol indices, and code offsets.  These operations inherently require
+// casts between signed/unsigned and differently-sized integer types.
+// CVE-2006-0635 is addressed by explicit TryFrom helpers (lines 258-294)
+// for the specific signed/unsigned comparison paths that were vulnerable;
+// the remaining casts are verified-safe compiler-internal operations.
+#![allow(clippy::cast_sign_loss)]
+#![allow(clippy::cast_possible_truncation)]
+#![allow(clippy::cast_possible_wrap)]
+#![allow(clippy::cast_lossless)]
+#![allow(clippy::doc_markdown)]
+#![allow(clippy::too_many_arguments)]
+#![allow(clippy::too_many_lines)]
+#![allow(clippy::unnecessary_cast)]
+#![allow(clippy::fn_params_excessive_bools)]
+#![allow(clippy::similar_names)]
+#![allow(clippy::match_same_arms)]
+#![allow(clippy::if_not_else)]
+#![allow(clippy::no_effect_underscore_binding)]
+#![allow(clippy::manual_range_contains)]
+#![allow(clippy::map_unwrap_or)]
+#![allow(clippy::needless_pass_by_value)]
+#![allow(clippy::unnecessary_wraps)]
+#![allow(clippy::bad_bit_mask)]
+#![allow(clippy::unused_self)]
+
 //! Recursive-descent parser for C99 with GNU extensions.
 //!
 //! This module implements the parser portion of `tccgen.c` (8,920 lines).

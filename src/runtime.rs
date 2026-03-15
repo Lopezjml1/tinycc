@@ -160,6 +160,8 @@ static RT_MUTEX: Mutex<RtGlobalState> = Mutex::new(RtGlobalState::new());
 /// a normal exit(0) from a longjmp-triggered exit.
 ///
 /// C equivalent: `#define RT_EXIT_ZERO 0xE0E00E0E` at tccrun.c:200
+// Allow the wrapping cast: this sentinel is a bit pattern, not a numeric value.
+#[allow(clippy::cast_possible_wrap)]
 const RT_EXIT_ZERO: i32 = 0xE0E0_0E0E_u32 as i32;
 
 /// Default page size for alignment calculations.
@@ -498,7 +500,6 @@ fn flush_icache(addr: usize, len: usize) {
 // and off_t/size_t for sizes. All values originate from validated page-aligned sizes.
 #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss, clippy::cast_possible_wrap)]
 #[cfg(all(unix, feature = "selinux"))]
-#[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation, clippy::cast_possible_wrap)]
 fn selinux_mmap_pair(size: usize) -> TccResult<(usize, usize)> {
     use libc::{
         c_char, close, ftruncate, mmap, unlink, MAP_FAILED, MAP_FIXED, MAP_SHARED, PROT_EXEC,
@@ -1133,7 +1134,6 @@ fn st_unlink(state: &TccState) {
 /// C equivalent: `rt_elfsym()` at tccrun.c:654-667
 // ELF struct field casts: st_name (u32→usize for string table offset),
 // st_size/st_value (u64→usize for address comparisons). Values are from ELF headers.
-#[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
 #[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation, clippy::cast_possible_wrap)]
 fn rt_elfsym(rc: &RtContext, wanted_pc: usize) -> Option<(String, usize)> {
     if rc.esym_start == 0 || rc.esym_end == 0 || rc.elf_str == 0 {
@@ -1265,7 +1265,6 @@ unsafe fn read_stab_sym_from_addr(addr: RawAddr) -> StabSym {
 ///
 /// C equivalent: `rt_printline()` at tccrun.c:679-779
 // STABS n_value (u32) → usize for PC comparison. Values from validated ELF data.
-#[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
 #[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation, clippy::cast_possible_wrap)]
 fn rt_printline(rc: &RtContext, wanted_pc: usize, bi: &mut BtInfo) -> usize {
     if rc.stab_sym == 0 || rc.stab_sym_end == 0 || rc.stab_str == 0 {
@@ -1413,7 +1412,6 @@ const DW_LNE_HI_USER_MINUS_1: u8 = 254;
 /// C equivalent: `rt_printline_dwarf()` at tccrun.c:799-1081
 // DWARF state machine decoding requires extensive casts between u8/u16/u32/u64
 // header fields and usize offsets. All values originate from validated DWARF data.
-#[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss, clippy::cast_possible_wrap)]
 #[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation, clippy::cast_possible_wrap)]
 fn rt_printline_dwarf(rc: &RtContext, wanted_pc: usize, bi: &mut BtInfo) -> usize {
     if rc.dwarf_line == 0 || rc.dwarf_line_end == 0 {
@@ -1773,7 +1771,6 @@ fn read_uleb128(data: &[u8], cursor: &mut usize) -> u64 {
 /// Read a signed LEB128 value, advancing `cursor`.
 // LEB128 decoding accumulates into i64 then truncates to i32 — this matches
 // the DWARF spec where signed LEB128 values fit in 32 bits for line info.
-#[allow(clippy::cast_possible_truncation)]
 #[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation, clippy::cast_possible_wrap)]
 fn read_sleb128(data: &[u8], cursor: &mut usize) -> i32 {
     let mut result: i64 = 0;
@@ -1999,6 +1996,9 @@ fn rt_get_caller_pc(frame: &RtFrame, level: i32) -> Option<usize> {
             fp = unsafe { *(fp as *const usize) };
         }
         // Return address is at fp + sizeof(usize) on x86/x86_64/aarch64
+        // SAFETY: Frame pointer `fp` was validated above (> 0x1000, not in NULL
+        // page) and we successfully read from it in the loop.  The return address
+        // is stored at `fp + sizeof(usize)` per the standard calling convention.
         let ret_addr = unsafe { *((fp as *const usize).add(1)) };
         Some(ret_addr)
     }
@@ -2125,7 +2125,6 @@ pub fn relocate(state: &mut TccState) -> TccResult<()> {
 /// # Errors
 /// Returns `TccError::Link` if the entry point cannot be found.
 // JIT entry point address cast (u64→usize) is necessary for function pointer transmute.
-#[allow(clippy::cast_possible_truncation)]
 #[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation, clippy::cast_possible_wrap)]
 pub fn run(state: &mut TccState, argc: i32, argv: &[&str]) -> TccResult<i32> {
     // The run_main field is a symbol table index for the entry point.
@@ -2346,7 +2345,6 @@ pub fn tcc_setjmp(state: &mut TccState, top_func_addr: usize) {
 /// # Returns
 /// Always returns 0 (matching C convention).
 // Backtrace level tracking uses i32→usize for frame level indexing.
-#[allow(clippy::cast_sign_loss)]
 #[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation, clippy::cast_possible_wrap)]
 pub fn tcc_backtrace(frame: &RtFrame, message: &str) -> i32 {
     eprintln!("{message}");

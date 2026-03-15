@@ -730,6 +730,7 @@ pub fn search_cached_include(
             // Resolve the guard macro token ID to its string name via table_ident.
             // Token IDs >= 256 index into table_ident at (id - 256).
             let guard_name = if ci.ifndef_macro >= 256 {
+                #[allow(clippy::cast_sign_loss)] // ifndef_macro >= 256 guaranteed by guard above
                 let idx = (ci.ifndef_macro - 256) as usize;
                 pp.table_ident.get(idx).map(|ts| ts.str_val.as_str())
             } else {

@@ -93,102 +93,48 @@ pub(crate) mod coff;
 // Primary output functions
 // ---------------------------------------------------------------------------
 
-/// Write the final output file (dispatches to ELF/PE/Mach-O based on config).
-/// C equivalent: `tcc_output_file()` in tccelf.c
+// ELF helper functions — re-exported for future consumer modules.
+// These are currently unused as the full compilation pipeline is not yet wired,
+// but are preserved as the intended public(crate) interface for ELF operations.
+// When the pipeline connects context.rs → codegen.rs → linker, these will be
+// consumed.
+#[allow(unused_imports)]
 pub(crate) use elf::tcc_output_file;
-
-/// Write an ELF object file (.o) from the current compilation state.
-/// C equivalent: `elf_output_obj()` in tccelf.c
+#[allow(unused_imports)]
 pub(crate) use elf::elf_output_obj;
-
-// ---------------------------------------------------------------------------
-// ELF state lifecycle
-// ---------------------------------------------------------------------------
-
-/// Initialize ELF state (create standard sections: .symtab, .strtab, etc.).
-/// C equivalent: `tccelf_new()` in tccelf.c
+#[allow(unused_imports)]
 pub(crate) use elf::tccelf_new;
-
-/// Clean up ELF state and release section memory.
-/// C equivalent: `tccelf_delete()` in tccelf.c
+#[allow(unused_imports)]
 pub(crate) use elf::tccelf_delete;
-
-/// Begin processing a new input file (save section state for rollback).
-/// C equivalent: `tccelf_begin_file()` in tccelf.c
+#[allow(unused_imports)]
 pub(crate) use elf::tccelf_begin_file;
-
-/// End processing an input file (commit or rollback section changes).
-/// C equivalent: `tccelf_end_file()` in tccelf.c
+#[allow(unused_imports)]
 pub(crate) use elf::tccelf_end_file;
-
-// ---------------------------------------------------------------------------
-// Section management (used throughout the crate)
-// ---------------------------------------------------------------------------
-
-/// Create a new ELF section with the given name, type, and flags.
-/// C equivalent: `new_section()` in tccelf.c
+#[allow(unused_imports)]
 pub(crate) use elf::new_section;
-
-/// Reserve `size` bytes in a section, returning the offset of the reservation.
-/// C equivalent: `section_add()` in tccelf.c
+#[allow(unused_imports)]
 pub(crate) use elf::section_add;
-
-/// Reserve `size` bytes in a section and return the offset (pointer-add style).
-/// C equivalent: `section_ptr_add()` in tccelf.c
+#[allow(unused_imports)]
 pub(crate) use elf::section_ptr_add;
-
-// ---------------------------------------------------------------------------
-// Symbol table operations (used throughout the crate)
-// ---------------------------------------------------------------------------
-
-/// Add a symbol to an ELF symbol table section.
-/// C equivalent: `put_elf_sym()` in tccelf.c
+#[allow(unused_imports)]
 pub(crate) use elf::put_elf_sym;
-
-/// Find a symbol by name in an ELF symbol table section.
-/// C equivalent: `find_elf_sym()` in tccelf.c
+#[allow(unused_imports)]
 pub(crate) use elf::find_elf_sym;
-
-/// Set or update a global/weak symbol in the symbol table.
-/// C equivalent: `set_elf_sym()` in tccelf.c
+#[allow(unused_imports)]
 pub(crate) use elf::set_elf_sym;
-
-/// Add a string to a string table section and return its offset.
-/// C equivalent: `put_elf_str()` in tccelf.c
+#[allow(unused_imports)]
 pub(crate) use elf::put_elf_str;
-
-/// Add a relocation entry with explicit addend (RELA).
-/// C equivalent: `put_elf_reloca()` in tccelf.c
+#[allow(unused_imports)]
 pub(crate) use elf::put_elf_reloca;
-
-/// Add a relocation entry without explicit addend (REL, addend = 0).
-/// C equivalent: `put_elf_reloc()` in tccelf.c
+#[allow(unused_imports)]
 pub(crate) use elf::put_elf_reloc;
-
-/// Get (or allocate) extended symbol attributes for a symbol index.
-/// C equivalent: `get_sym_attr()` in tccelf.c
+#[allow(unused_imports)]
 pub(crate) use elf::get_sym_attr;
-
-// ---------------------------------------------------------------------------
-// GOT/PLT generation (used by target backends)
-// ---------------------------------------------------------------------------
-
-/// Build the Global Offset Table (.got) section.
-/// C equivalent: `build_got()` in tccelf.c
+#[allow(unused_imports)]
 pub(crate) use elf::build_got;
-
-/// Build all required GOT entries from relocations.
-/// C equivalent: `build_got_entries()` in tccelf.c
+#[allow(unused_imports)]
 pub(crate) use elf::build_got_entries;
-
-// ---------------------------------------------------------------------------
-// Runtime library additions
-// ---------------------------------------------------------------------------
-
-/// Add runtime libraries (libtcc1, CRT objects, etc.) for final linking.
-/// C equivalent: `tcc_add_runtime()` in tccelf.c
+#[allow(unused_imports)]
 pub(crate) use elf::tcc_add_runtime;
-
-/// Add bounds-checking runtime library and instrumentation stubs.
-/// C equivalent: `tcc_add_bcheck()` in tccelf.c
+#[allow(unused_imports)]
 pub(crate) use elf::tcc_add_bcheck;

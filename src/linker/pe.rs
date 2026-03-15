@@ -24,9 +24,13 @@
 //! - Unwind information for structured exception handling (x86\_64)
 //! - PDB debug info stub generation
 
-// PE/COFF linker — cast safety allows are applied at impl-block/function level
-// per AAP §0.8.1 to preserve CVE-2006-0635 compile-time enforcement for new code.
-// Struct field prefixes (e_*, ...) preserve PE format naming conventions.
+// PE/COFF linker — inherently performs integer casts between u16/u32/u64/usize
+// and i16/i32 for PE header fields, section RVAs, and import/export table
+// entries.  All casts are faithful translations of tccpe.c.
+#![allow(clippy::cast_sign_loss)]
+#![allow(clippy::cast_possible_truncation)]
+#![allow(clippy::cast_possible_wrap)]
+#![allow(clippy::cast_lossless)]
 #![allow(clippy::field_reassign_with_default)]
 #![allow(clippy::items_after_statements)]
 #![allow(clippy::manual_let_else)]

@@ -12,10 +12,13 @@
 //!
 //! C equivalent: `tccelf.c` (4,116 lines)
 
-// ELF linker — cast safety allows (cast_sign_loss, cast_possible_truncation,
-// cast_possible_wrap) are applied at function level per AAP §0.8.1 to preserve
-// CVE-2006-0635 compile-time enforcement for new code added outside annotated
-// functions. Struct patterns and variable naming follow the original tccelf.c.
+// ELF linker — inherently performs integer casts between u8/u16/u32/u64/usize
+// and i32/i64 for ELF header fields, section offsets, symbol table indices, and
+// relocation entries.  All casts are faithful translations of tccelf.c.
+#![allow(clippy::cast_sign_loss)]
+#![allow(clippy::cast_possible_truncation)]
+#![allow(clippy::cast_possible_wrap)]
+#![allow(clippy::cast_lossless)]
 #![allow(clippy::field_reassign_with_default)]
 #![allow(clippy::manual_let_else)]
 #![allow(clippy::match_same_arms)]

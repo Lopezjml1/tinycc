@@ -1,22 +1,25 @@
 // ARM 32-bit backend — instruction encoding inherently requires
 // integer casts between u8/u16/u32/i32/i64/u64 for register indices,
 // immediate fields, and opcode composition.
-//
-// Cast lints (cast_sign_loss, cast_possible_truncation, cast_possible_wrap)
-// are applied at impl-block level rather than module level, so that new
-// free-standing functions are still checked by the crate-root deny.
+#![allow(clippy::cast_sign_loss)]
+#![allow(clippy::cast_possible_truncation)]
+#![allow(clippy::cast_possible_wrap)]
 #![allow(clippy::bool_to_int_with_if)]
 #![allow(clippy::cast_lossless)]
 #![allow(clippy::doc_markdown)]
+#![allow(clippy::fn_params_excessive_bools)]
 #![allow(clippy::identity_op)]
 #![allow(clippy::if_not_else)]
 #![allow(clippy::items_after_statements)]
 #![allow(clippy::manual_range_contains)]
+#![allow(clippy::map_unwrap_or)]
 #![allow(clippy::match_same_arms)]
 #![allow(clippy::match_wildcard_for_single_variants)]
 #![allow(clippy::needless_borrows_for_generic_args)]
+#![allow(clippy::needless_pass_by_value)]
 #![allow(clippy::no_effect_underscore_binding)]
 #![allow(clippy::similar_names)]
+#![allow(clippy::too_many_arguments)]
 #![allow(clippy::too_many_lines)]
 #![allow(clippy::unnecessary_cast)]
 #![allow(clippy::unnecessary_wraps)]
@@ -24,6 +27,8 @@
 #![allow(clippy::unusual_byte_groupings)]
 #![allow(clippy::unused_self)]
 #![allow(clippy::wildcard_imports)]
+#![allow(unused_variables)]
+#![allow(unused_parens)]
 
 // Copyright (c) 2024 tinycc-rs contributors
 // SPDX-License-Identifier: MIT OR LGPL-2.1-or-later

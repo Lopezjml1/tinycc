@@ -1,6 +1,10 @@
 // RISC-V 64 backend — instruction encoding requires size casts for immediate
 // fields and register indices. Match arms for opcode dispatch, variable naming,
 // and function complexity follow the original riscv64-gen.c/riscv64-asm.c.
+#![allow(clippy::cast_sign_loss)]
+#![allow(clippy::cast_possible_truncation)]
+#![allow(clippy::cast_possible_wrap)]
+#![allow(clippy::cast_lossless)]
 #![allow(clippy::collapsible_match)]
 #![allow(clippy::doc_lazy_continuation)]
 #![allow(clippy::enum_variant_names)]

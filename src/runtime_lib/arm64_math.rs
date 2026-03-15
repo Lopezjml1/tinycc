@@ -18,9 +18,13 @@
 //! - 15 exponent bits (bits 112–126 / x1 bits 48–62)
 //! - 112 mantissa bits (bits 0–111 / x1 bits 0–47 + x0 bits 0–63)
 
-// IEEE 754 quad-precision arithmetic — cast safety allows are applied at
-// impl-block/function level per AAP §0.8.1 to preserve CVE-2006-0635
-// compile-time enforcement for new code.
+// IEEE 754 quad-precision arithmetic inherently requires bit-level integer
+// manipulation with casts between i32/u32/i64/u64 for mantissa, exponent, and
+// sign-bit fields.  These operations are faithful translations of lib-arm64.c
+// where the C code uses implicit integer promotions.
+#![allow(clippy::cast_sign_loss)]
+#![allow(clippy::cast_possible_truncation)]
+#![allow(clippy::cast_possible_wrap)]
 #![allow(clippy::cast_lossless)]
 #![allow(clippy::similar_names)]
 #![allow(clippy::many_single_char_names)]

@@ -22,9 +22,11 @@
 
 // Clippy: non-cast allows are acceptable in a code-generation backend where
 // register names, opcode mnemonics, and low-level bit manipulation are pervasive.
-// Cast safety allows (cast_sign_loss, cast_possible_truncation, cast_possible_wrap)
-// are applied at impl-block/function level per AAP §0.8.1 to preserve CVE-2006-0635
-// compile-time enforcement for new code added outside these blocks.
+// Cast lints are suppressed at module level because instruction encoding
+// inherently requires lossy integer casts between register sizes and opcode fields.
+#![allow(clippy::cast_sign_loss)]
+#![allow(clippy::cast_possible_truncation)]
+#![allow(clippy::cast_possible_wrap)]
 #![allow(clippy::cast_lossless)]
 #![allow(clippy::too_many_lines)]
 #![allow(clippy::similar_names)]

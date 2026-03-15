@@ -48,15 +48,20 @@
 // Crate-Level Lint Configuration
 // =============================================================================
 //
+// General quality lints — MANDATORY per AAP §0.6.2 "Clippy Lints"
+// NOTE: The `warn` group attributes MUST come BEFORE the specific `deny`
+// overrides, because Rust applies lint-level attributes in order.  If `deny`
+// appeared first, the subsequent `warn(clippy::pedantic)` (which includes the
+// cast lints as a sub-group) would downgrade them back to `warn`.
+#![warn(clippy::all)]
+#![warn(clippy::pedantic)]
 // Integer safety lints — MANDATORY per AAP §0.8.1 "Integer Safety"
 // These prevent implicit integer coercions that caused CVE-2006-0635
-// in the original C codebase.
+// in the original C codebase.  Placed AFTER the pedantic warn so they
+// take effect at deny level, overriding the group-level warn.
 #![deny(clippy::cast_sign_loss)]
 #![deny(clippy::cast_possible_truncation)]
 #![deny(clippy::cast_possible_wrap)]
-// General quality lints — MANDATORY per AAP §0.6.2 "Clippy Lints"
-#![warn(clippy::all)]
-#![warn(clippy::pedantic)]
 // Note: dead_code warnings are suppressed at the module level (not crate level)
 // using `#[allow(dead_code)]` on individual module declarations below. This is
 // necessary because the compilation pipeline (parser.rs) is not yet fully

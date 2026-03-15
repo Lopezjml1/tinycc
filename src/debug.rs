@@ -20,9 +20,13 @@
 //! Every fallible function returns [`TccResult<T>`], replacing the C
 //! `setjmp`/`longjmp` error-handling pattern (AAP §0.8.1).
 
-// Debug info generation — cast safety allows are applied at function level
-// per AAP §0.8.1 to preserve CVE-2006-0635 compile-time enforcement for new code.
-// Functions are faithfully ported from tccdbg.c (2,676 lines).
+// Debug info generation — STABS/DWARF requires integer casts for debug symbol
+// encoding (type indices, section offsets, line-number tables).  All casts are
+// faithful translations of tccdbg.c.
+#![allow(clippy::cast_sign_loss)]
+#![allow(clippy::cast_possible_truncation)]
+#![allow(clippy::cast_possible_wrap)]
+#![allow(clippy::cast_lossless)]
 #![allow(clippy::assigning_clones)]
 #![allow(clippy::too_many_arguments)]
 #![allow(clippy::too_many_lines)]

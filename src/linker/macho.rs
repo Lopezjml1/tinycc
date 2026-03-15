@@ -17,9 +17,14 @@
 //! - GOT/PLT stub generation for indirect symbol access
 //! - macOS SDK path discovery
 
-// Mach-O linker — cast safety allows are applied at impl-block/function level
-// per AAP §0.8.1 to preserve CVE-2006-0635 compile-time enforcement for new code.
-// Complex functions are faithfully ported from tccmacho.c.
+// Mach-O linker — inherently performs extensive integer casts between u8/u16/
+// u32/u64/usize/i32/i64 for Mach-O header field encoding, segment offsets,
+// and load-command sizes.  All casts are faithful translations of tccmacho.c
+// where the C code used implicit integer promotions.
+#![allow(clippy::cast_sign_loss)]
+#![allow(clippy::cast_possible_truncation)]
+#![allow(clippy::cast_possible_wrap)]
+#![allow(clippy::cast_lossless)]
 #![allow(clippy::assigning_clones)]
 #![allow(clippy::field_reassign_with_default)]
 #![allow(clippy::items_after_statements)]

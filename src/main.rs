@@ -696,7 +696,7 @@ fn run(args: CliArgs, run_program_args: &[String]) -> TccResult<i32> {
     // -------------------------------------------------------------------
     // 6. Validate inputs (tcc.c lines 334–349)
     // -------------------------------------------------------------------
-    if args.files.is_empty() && !args.preprocess_only {
+    if args.files.is_empty() {
         return Err(TccError::Parse {
             msg: "no input files".to_string(),
             line: 0,
