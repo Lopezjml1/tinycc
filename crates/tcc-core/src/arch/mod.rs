@@ -673,11 +673,14 @@ pub trait CodegenBackend {
 ///
 /// # Examples
 ///
-/// ```ignore
+/// ```no_run
 /// use tcc_core::arch::{create_backend, TargetArch};
 ///
-/// let backend = create_backend(TargetArch::X86_64)?;
-/// assert_eq!(backend.ptr_size(), 8);
+/// fn main() -> Result<(), Box<dyn std::error::Error>> {
+///     let backend = create_backend(TargetArch::X86_64)?;
+///     assert_eq!(backend.ptr_size(), 8);
+///     Ok(())
+/// }
 /// ```
 #[allow(unreachable_patterns)]
 pub fn create_backend(target: TargetArch) -> TccResult<Box<dyn CodegenBackend>> {

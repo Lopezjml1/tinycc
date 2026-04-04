@@ -108,13 +108,23 @@ const MAX_MACRO_DEPTH: u32 = 256;
 ///
 /// # Usage
 ///
-/// ```ignore
-/// let mut state = TCCState::new().unwrap()?;
-/// let mut pp = Preprocessor::new(&mut state);
-/// loop {
-///     let tok = pp.next()?;
-///     if tok == TOK_EOF { break; }
-///     // process token...
+/// ```no_run
+/// use tcc_core::TCCState;
+/// use tcc_core::preprocessor::Preprocessor;
+/// use tcc_core::lexer::TokenSymTable;
+/// use tcc_core::types::BufferedFile;
+/// use tcc_core::token::TOK_EOF;
+///
+/// fn main() -> Result<(), Box<dyn std::error::Error>> {
+///     let mut state = TCCState::new()?;
+///     let token_table = TokenSymTable::default();
+///     let file = BufferedFile::default();
+///     let mut pp = Preprocessor::new(&mut state, token_table, file);
+///     loop {
+///         let tok = pp.next()?;
+///         if tok == TOK_EOF { break; }
+///     }
+///     Ok(())
 /// }
 /// ```
 pub struct Preprocessor<'a> {

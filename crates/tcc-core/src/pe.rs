@@ -802,7 +802,7 @@ impl<'a> PeWriter<'a> {
             };
 
             // Handle dllexport: add to exports list
-            if is_dllexport && shndx != SHN_UNDEF as u16 {
+            if is_dllexport && shndx != SHN_UNDEF {
                 self.exports.push(PeExportEntry {
                     name: name.clone(),
                     sym_index: i,
@@ -812,7 +812,7 @@ impl<'a> PeWriter<'a> {
             }
 
             // Handle undefined symbols: try to resolve from DLL imports
-            if shndx == SHN_UNDEF as u16 {
+            if shndx == SHN_UNDEF {
                 // Search in dynsymtab (DLL imports)
                 let dyn_idx = find_elf_sym(self.state, dynsym_idx, &name);
                 if dyn_idx != 0 {
@@ -845,7 +845,7 @@ impl<'a> PeWriter<'a> {
                 self.state.nb_errors += 1;
                 eprintln!("tcc: error: undefined symbol '{}'", sym_name);
             }
-            return Err(TccError::linker(&format!(
+            return Err(TccError::linker(format!(
                 "{} undefined symbol(s)",
                 undefined_syms.len()
             )));
@@ -1111,7 +1111,7 @@ impl<'a> PeWriter<'a> {
             // Address table entry: RVA of the exported symbol
             let sym_value = get_sym_value(&self.state.sections[symtab_idx], export.sym_index);
             let sym_shndx = get_sym_shndx(&self.state.sections[symtab_idx], export.sym_index);
-            let rva = if sym_shndx != SHN_UNDEF as u16
+            let rva = if sym_shndx != SHN_UNDEF
                 && (sym_shndx as usize) < self.state.sections.len()
             {
                 let sec_addr = self.state.sections[sym_shndx as usize].sh_addr;
@@ -1322,31 +1322,22 @@ impl<'a> PeWriter<'a> {
     /// This is the main output routine that writes headers and section data.
     fn write_pe_file(&mut self) -> TccResult<()> {
         let file = fs::File::create(&self.filename).map_err(|e| {
-            TccError::IoError(io::Error::new(io::ErrorKind::Other,
-                format!("cannot create '{}': {}", self.filename, e)))
+            TccError::IoError(io::Error::other(format!("cannot create '{}': {}", self.filename, e)))
         })?;
         let mut writer = BufWriter::new(file);
 
         // --- DOS Header ---
-        let mut dos_header = ImageDosHeader::default();
-        dos_header.e_magic = MZ_MAGIC;
-        dos_header.e_lfanew = mem::size_of::<ImageDosHeader>() as i32;
+        let dos_header = ImageDosHeader {
+            e_magic: MZ_MAGIC,
+            e_lfanew: mem::size_of::<ImageDosHeader>() as i32,
+            ..Default::default()
+        };
         write_dos_header(&mut writer, &dos_header)?;
 
         // --- PE Signature ---
         writer.write_all(&PE_SIGNATURE.to_le_bytes())?;
 
         // --- COFF File Header ---
-        let mut file_header = ImageFileHeader::default();
-        file_header.Machine = self.machine_type();
-        file_header.NumberOfSections = self.num_sections;
-        file_header.TimeDateStamp = 0; // Reproducible builds
-        file_header.SizeOfOptionalHeader = if self.is_pe64() {
-            mem::size_of::<ImageOptionalHeader64>() as u16
-        } else {
-            mem::size_of::<ImageOptionalHeader32>() as u16
-        };
-
         let mut characteristics = IMAGE_FILE_EXECUTABLE_IMAGE
             | IMAGE_FILE_LINE_NUMS_STRIPPED
             | IMAGE_FILE_LOCAL_SYMS_STRIPPED;
@@ -1362,7 +1353,18 @@ impl<'a> PeWriter<'a> {
         if self.is_pe64() {
             characteristics |= IMAGE_FILE_LARGE_ADDRESS_AWARE;
         }
-        file_header.Characteristics = characteristics | self.pe_characteristics as u16;
+        let file_header = ImageFileHeader {
+            Machine: self.machine_type(),
+            NumberOfSections: self.num_sections,
+            TimeDateStamp: 0, // Reproducible builds
+            SizeOfOptionalHeader: if self.is_pe64() {
+                mem::size_of::<ImageOptionalHeader64>() as u16
+            } else {
+                mem::size_of::<ImageOptionalHeader32>() as u16
+            },
+            Characteristics: characteristics | self.pe_characteristics as u16,
+            ..Default::default()
+        };
         write_file_header(&mut writer, &file_header)?;
 
         // --- Optional Header ---
@@ -1391,46 +1393,50 @@ impl<'a> PeWriter<'a> {
         );
 
         if self.is_pe64() {
-            let mut opt = ImageOptionalHeader64::default();
-            opt.Magic = PE32PLUS_MAGIC;
-            opt.MajorLinkerVersion = 6;
-            opt.AddressOfEntryPoint = self.entry_addr;
-            opt.ImageBase = self.pe_imagebase;
-            opt.SectionAlignment = self.section_align;
-            opt.FileAlignment = self.pe_file_align;
-            opt.MajorOperatingSystemVersion = 4;
-            opt.MajorSubsystemVersion = 4;
-            opt.SizeOfImage = self.image_size;
-            opt.SizeOfHeaders = headers_raw_size;
-            opt.Subsystem = subsystem;
-            opt.DllCharacteristics = dll_characteristics;
-            opt.SizeOfStackReserve = self.pe_stack_size;
-            opt.SizeOfStackCommit = 0x1000;
-            opt.SizeOfHeapReserve = PE_HEAP_SIZE_DEFAULT;
-            opt.SizeOfHeapCommit = 0x1000;
-            opt.NumberOfRvaAndSizes = IMAGE_NUMBER_OF_DIRECTORY_ENTRIES as u32;
-            opt.DataDirectory = self.data_dirs;
+            let opt = ImageOptionalHeader64 {
+                Magic: PE32PLUS_MAGIC,
+                MajorLinkerVersion: 6,
+                AddressOfEntryPoint: self.entry_addr,
+                ImageBase: self.pe_imagebase,
+                SectionAlignment: self.section_align,
+                FileAlignment: self.pe_file_align,
+                MajorOperatingSystemVersion: 4,
+                MajorSubsystemVersion: 4,
+                SizeOfImage: self.image_size,
+                SizeOfHeaders: headers_raw_size,
+                Subsystem: subsystem,
+                DllCharacteristics: dll_characteristics,
+                SizeOfStackReserve: self.pe_stack_size,
+                SizeOfStackCommit: 0x1000,
+                SizeOfHeapReserve: PE_HEAP_SIZE_DEFAULT,
+                SizeOfHeapCommit: 0x1000,
+                NumberOfRvaAndSizes: IMAGE_NUMBER_OF_DIRECTORY_ENTRIES as u32,
+                DataDirectory: self.data_dirs,
+                ..Default::default()
+            };
             write_opt_header_64(&mut writer, &opt)?;
         } else {
-            let mut opt = ImageOptionalHeader32::default();
-            opt.Magic = PE32_MAGIC;
-            opt.MajorLinkerVersion = 6;
-            opt.AddressOfEntryPoint = self.entry_addr;
-            opt.ImageBase = self.pe_imagebase as u32;
-            opt.SectionAlignment = self.section_align;
-            opt.FileAlignment = self.pe_file_align;
-            opt.MajorOperatingSystemVersion = 4;
-            opt.MajorSubsystemVersion = 4;
-            opt.SizeOfImage = self.image_size;
-            opt.SizeOfHeaders = headers_raw_size;
-            opt.Subsystem = subsystem;
-            opt.DllCharacteristics = dll_characteristics;
-            opt.SizeOfStackReserve = self.pe_stack_size as u32;
-            opt.SizeOfStackCommit = 0x1000;
-            opt.SizeOfHeapReserve = PE_HEAP_SIZE_DEFAULT as u32;
-            opt.SizeOfHeapCommit = 0x1000;
-            opt.NumberOfRvaAndSizes = IMAGE_NUMBER_OF_DIRECTORY_ENTRIES as u32;
-            opt.DataDirectory = self.data_dirs;
+            let opt = ImageOptionalHeader32 {
+                Magic: PE32_MAGIC,
+                MajorLinkerVersion: 6,
+                AddressOfEntryPoint: self.entry_addr,
+                ImageBase: self.pe_imagebase as u32,
+                SectionAlignment: self.section_align,
+                FileAlignment: self.pe_file_align,
+                MajorOperatingSystemVersion: 4,
+                MajorSubsystemVersion: 4,
+                SizeOfImage: self.image_size,
+                SizeOfHeaders: headers_raw_size,
+                Subsystem: subsystem,
+                DllCharacteristics: dll_characteristics,
+                SizeOfStackReserve: self.pe_stack_size as u32,
+                SizeOfStackCommit: 0x1000,
+                SizeOfHeapReserve: PE_HEAP_SIZE_DEFAULT as u32,
+                SizeOfHeapCommit: 0x1000,
+                NumberOfRvaAndSizes: IMAGE_NUMBER_OF_DIRECTORY_ENTRIES as u32,
+                DataDirectory: self.data_dirs,
+                ..Default::default()
+            };
             write_opt_header_32(&mut writer, &opt)?;
         }
 
@@ -1456,7 +1462,7 @@ impl<'a> PeWriter<'a> {
         // --- Section Data ---
         // Pad to first section's file offset
         let current_pos = writer.stream_position().map_err(|e| {
-            TccError::IoError(io::Error::new(io::ErrorKind::Other, format!("seek error: {}", e)))
+            TccError::IoError(io::Error::other(format!("seek error: {}", e)))
         })? as u32;
         if !self.pe_sections.is_empty() && self.pe_sections[0].raw_offset > current_pos {
             let pad = self.pe_sections[0].raw_offset - current_pos;
@@ -1486,7 +1492,7 @@ impl<'a> PeWriter<'a> {
                 let data_len = self.state.sections[sec_idx].data_offset;
                 if data_len > 0 {
                     writer.write_all(&self.state.sections[sec_idx].data[..data_len]).map_err(|e| {
-                        TccError::IoError(io::Error::new(io::ErrorKind::Other, format!("write error: {}", e)))
+                        TccError::IoError(io::Error::other(format!("write error: {}", e)))
                     })?;
                     written += data_len as u32;
                 }
@@ -1499,7 +1505,7 @@ impl<'a> PeWriter<'a> {
         }
 
         writer.flush().map_err(|e| {
-            TccError::IoError(io::Error::new(io::ErrorKind::Other, format!("flush error: {}", e)))
+            TccError::IoError(io::Error::other(format!("flush error: {}", e)))
         })?;
 
         Ok(())
@@ -1555,7 +1561,7 @@ impl<'a> PeWriter<'a> {
                 if self.pe_type == PeType::Dll {
                     Ok(0)
                 } else {
-                    Err(TccError::linker(&format!(
+                    Err(TccError::linker(format!(
                         "undefined entry point '{}'",
                         entry_name
                     )))
@@ -1726,7 +1732,7 @@ impl<'a> PeWriter<'a> {
 fn write_padding(writer: &mut impl Write, count: usize) -> TccResult<()> {
     let zeros = vec![0u8; count];
     writer.write_all(&zeros).map_err(|e| {
-        TccError::IoError(io::Error::new(io::ErrorKind::Other, format!("write padding error: {}", e)))
+        TccError::IoError(io::Error::other(format!("write padding error: {}", e)))
     })
 }
 
@@ -1862,8 +1868,7 @@ fn write_section_header(writer: &mut impl Write, hdr: &ImageSectionHeader) -> Tc
 
 /// Convert an IO error into a TccError.
 fn io_err(e: io::Error) -> TccError {
-    TccError::IoError(io::Error::new(io::ErrorKind::Other,
-        format!("PE output I/O error: {}", e)))
+    TccError::IoError(io::Error::other(format!("PE output I/O error: {}", e)))
 }
 
 // ============================================================
@@ -1935,8 +1940,7 @@ pub fn pe_load_file(state: &mut TCCState, filename: &str) -> TccResult<()> {
 /// ```
 fn pe_load_def(state: &mut TCCState, filename: &str) -> TccResult<()> {
     let content = fs::read_to_string(filename).map_err(|e| {
-        TccError::IoError(io::Error::new(io::ErrorKind::Other,
-            format!("cannot open def file '{}': {}", filename, e)))
+        TccError::IoError(io::Error::other(format!("cannot open def file '{}': {}", filename, e)))
     })?;
 
     let mut dll_name = String::new();
@@ -2020,14 +2024,12 @@ fn pe_load_def(state: &mut TCCState, filename: &str) -> TccResult<()> {
 /// adds them to the dynamic symbol table for linking.
 fn pe_load_dll(state: &mut TCCState, filename: &str) -> TccResult<()> {
     let mut file = fs::File::open(filename).map_err(|e| {
-        TccError::IoError(io::Error::new(io::ErrorKind::Other,
-            format!("cannot open DLL '{}': {}", filename, e)))
+        TccError::IoError(io::Error::other(format!("cannot open DLL '{}': {}", filename, e)))
     })?;
 
     let mut data = Vec::new();
     file.read_to_end(&mut data).map_err(|e| {
-        TccError::IoError(io::Error::new(io::ErrorKind::Other,
-            format!("cannot read DLL '{}': {}", filename, e)))
+        TccError::IoError(io::Error::other(format!("cannot read DLL '{}': {}", filename, e)))
     })?;
 
     // Extract DLL name from filename
@@ -2306,7 +2308,7 @@ pub fn pe_setsubsy(state: &mut TCCState, subsystem_str: &str) -> TccResult<()> {
         other => {
             // Try parsing as numeric value
             other.parse::<u16>().map_err(|_| {
-                TccError::linker(&format!("unknown PE subsystem: '{}'", other))
+                TccError::linker(format!("unknown PE subsystem: '{}'", other))
             })?
         }
     };
@@ -2364,7 +2366,7 @@ pub fn pe_add_unwind_data(
     let sym_value = get_sym_value(&state.sections[symtab_idx], sym_index);
     let sym_shndx = get_sym_shndx(&state.sections[symtab_idx], sym_index);
 
-    if sym_shndx == SHN_UNDEF as u16 {
+    if sym_shndx == SHN_UNDEF {
         return Ok(());
     }
 
@@ -2410,14 +2412,12 @@ pub fn pe_add_unwind_data(
 /// A vector of exported function/data names.
 pub fn tcc_get_dllexports(filename: &str) -> TccResult<Vec<String>> {
     let mut file = fs::File::open(filename).map_err(|e| {
-        TccError::IoError(io::Error::new(io::ErrorKind::Other,
-            format!("cannot open DLL '{}': {}", filename, e)))
+        TccError::IoError(io::Error::other(format!("cannot open DLL '{}': {}", filename, e)))
     })?;
 
     let mut data = Vec::new();
     file.read_to_end(&mut data).map_err(|e| {
-        TccError::IoError(io::Error::new(io::ErrorKind::Other,
-            format!("cannot read DLL '{}': {}", filename, e)))
+        TccError::IoError(io::Error::other(format!("cannot read DLL '{}': {}", filename, e)))
     })?;
 
     let dll_name = Path::new(filename)
@@ -2450,35 +2450,23 @@ fn pe_add_runtime(state: &mut TCCState) -> TccResult<()> {
     };
 
     // Try to add the CRT startup library
-    if let Err(_) = state.add_library(crt_name) {
-        if state.verbose > 0 {
-            eprintln!("warning: CRT startup '{}' not found", crt_name);
-        }
+    if state.add_library(crt_name).is_err() && state.verbose > 0 {
+        eprintln!("warning: CRT startup '{}' not found", crt_name);
     }
 
     // Add libtcc1 runtime library
-    if let Err(_) = state.add_library("tcc1") {
-        if state.verbose > 0 {
-            eprintln!("warning: runtime library '{}' not found", LIBTCC1);
-        }
+    if state.add_library("tcc1").is_err() && state.verbose > 0 {
+        eprintln!("warning: runtime library '{}' not found", LIBTCC1);
     }
 
     // Add bounds checking support if enabled
-    if state.do_bounds_check {
-        if let Err(_) = state.add_library("bcheck") {
-            if state.verbose > 0 {
-                eprintln!("warning: bounds checking library not found");
-            }
-        }
+    if state.do_bounds_check && state.add_library("bcheck").is_err() && state.verbose > 0 {
+        eprintln!("warning: bounds checking library not found");
     }
 
     // Add backtrace support if enabled
-    if state.do_backtrace {
-        if let Err(_) = state.add_library("bt-exe") {
-            if state.verbose > 0 {
-                eprintln!("warning: backtrace library not found");
-            }
-        }
+    if state.do_backtrace && state.add_library("bt-exe").is_err() && state.verbose > 0 {
+        eprintln!("warning: backtrace library not found");
     }
 
     Ok(())
@@ -2489,18 +2477,16 @@ fn pe_add_runtime(state: &mut TCCState) -> TccResult<()> {
 /// regular object files and merged into the .rsrc section.
 fn pe_load_res(state: &mut TCCState, filename: &str) -> TccResult<()> {
     let mut file = fs::File::open(filename).map_err(|e| {
-        TccError::IoError(io::Error::new(io::ErrorKind::Other,
-            format!("cannot open resource file '{}': {}", filename, e)))
+        TccError::IoError(io::Error::other(format!("cannot open resource file '{}': {}", filename, e)))
     })?;
 
     let mut data = Vec::new();
     file.read_to_end(&mut data).map_err(|e| {
-        TccError::IoError(io::Error::new(io::ErrorKind::Other,
-            format!("cannot read resource file '{}': {}", filename, e)))
+        TccError::IoError(io::Error::other(format!("cannot read resource file '{}': {}", filename, e)))
     })?;
 
     if data.len() < 4 {
-        return Err(TccError::linker(&format!(
+        return Err(TccError::linker(format!(
             "invalid resource file '{}': too small",
             filename
         )));
@@ -2509,7 +2495,7 @@ fn pe_load_res(state: &mut TCCState, filename: &str) -> TccResult<()> {
     // Check for COFF format (not PE, not MZ)
     let magic = read16le(&data[0..2]);
     if magic == MZ_MAGIC {
-        return Err(TccError::linker(&format!(
+        return Err(TccError::linker(format!(
             "'{}' is a PE executable, not a resource file",
             filename
         )));
@@ -2535,8 +2521,7 @@ fn pe_generate_def_file(_state: &TCCState, dll_filename: &str, exports: &[PeExpo
     let def_filename = def_path.to_str().unwrap_or("output.def");
 
     let mut file = fs::File::create(def_filename).map_err(|e| {
-        TccError::IoError(io::Error::new(io::ErrorKind::Other,
-            format!("cannot create def file '{}': {}", def_filename, e)))
+        TccError::IoError(io::Error::other(format!("cannot create def file '{}': {}", def_filename, e)))
     })?;
 
     let dll_name = Path::new(dll_filename)
@@ -2545,15 +2530,15 @@ fn pe_generate_def_file(_state: &TCCState, dll_filename: &str, exports: &[PeExpo
         .unwrap_or("output.dll");
 
     writeln!(file, "LIBRARY {}", dll_name).map_err(|e| {
-        TccError::IoError(io::Error::new(io::ErrorKind::Other, format!("write error: {}", e)))
+        TccError::IoError(io::Error::other(format!("write error: {}", e)))
     })?;
     writeln!(file, "EXPORTS").map_err(|e| {
-        TccError::IoError(io::Error::new(io::ErrorKind::Other, format!("write error: {}", e)))
+        TccError::IoError(io::Error::other(format!("write error: {}", e)))
     })?;
 
     for export in exports {
         writeln!(file, "    {}", export.name).map_err(|e| {
-            TccError::IoError(io::Error::new(io::ErrorKind::Other, format!("write error: {}", e)))
+            TccError::IoError(io::Error::other(format!("write error: {}", e)))
         })?;
     }
 

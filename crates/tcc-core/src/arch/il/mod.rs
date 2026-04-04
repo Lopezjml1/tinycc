@@ -645,3 +645,66 @@ impl CodegenBackend for IlBackend {
         false
     }
 }
+
+// ===========================================================================
+// Unit tests
+// ===========================================================================
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_il_backend_new() {
+        let backend = IlBackend::new();
+        assert!(!backend.outfile_initialized);
+        assert!(backend.il_output.is_empty());
+        assert_eq!(backend.ind, 0);
+        assert!(backend.code.is_empty());
+    }
+
+    #[test]
+    fn test_il_backend_default() {
+        let backend = IlBackend::default();
+        assert!(!backend.outfile_initialized);
+        assert_eq!(backend.ind, 0);
+    }
+
+    #[test]
+    fn test_il_backend_nb_regs() {
+        let backend = IlBackend::new();
+        assert_eq!(backend.nb_regs(), 3);
+    }
+
+    #[test]
+    fn test_il_backend_ptr_size() {
+        let backend = IlBackend::new();
+        assert_eq!(backend.ptr_size(), 4);
+    }
+
+    #[test]
+    fn test_il_backend_target_defs() {
+        let backend = IlBackend::new();
+        assert!(backend.target_machine_defs().contains("__IL__"));
+    }
+
+    #[test]
+    fn test_il_backend_reg_classes() {
+        let backend = IlBackend::new();
+        assert_eq!(backend.reg_classes().len(), NB_REGS);
+    }
+
+    #[test]
+    fn test_il_constants() {
+        assert_eq!(NB_REGS, 3);
+        assert_eq!(PTR_SIZE, 4);
+    }
+
+    #[test]
+    fn test_il_backend_elf_metadata() {
+        let backend = IlBackend::new();
+        // IL backend does not produce ELF output, but returns sensible defaults
+        assert_eq!(backend.pcrelative_dllplt(), false);
+        assert_eq!(backend.relocate_dllplt(), false);
+    }
+}

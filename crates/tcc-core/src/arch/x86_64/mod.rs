@@ -91,3 +91,106 @@ impl CodegenBackend for X86_64Backend {
     fn pcrelative_dllplt(&self) -> bool { true }
     fn relocate_dllplt(&self) -> bool { false }
 }
+
+// ===========================================================================
+// Unit tests
+// ===========================================================================
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_x86_64_backend_new() {
+        let backend = X86_64Backend::new();
+        let _ = backend;
+    }
+
+    #[test]
+    fn test_x86_64_backend_default() {
+        let backend = X86_64Backend::default();
+        let _ = backend;
+    }
+
+    #[test]
+    fn test_x86_64_backend_nb_regs() {
+        let backend = X86_64Backend::new();
+        assert_eq!(backend.nb_regs(), 25);
+    }
+
+    #[test]
+    fn test_x86_64_backend_ptr_size() {
+        let backend = X86_64Backend::new();
+        assert_eq!(backend.ptr_size(), 8);
+    }
+
+    #[test]
+    fn test_x86_64_backend_target_defs() {
+        let backend = X86_64Backend::new();
+        assert!(backend.target_machine_defs().contains("__x86_64__"));
+    }
+
+    #[test]
+    fn test_x86_64_backend_reg_classes() {
+        let backend = X86_64Backend::new();
+        assert_eq!(backend.reg_classes().len(), 25);
+    }
+
+    #[test]
+    fn test_x86_64_backend_elf_machine() {
+        let backend = X86_64Backend::new();
+        assert_eq!(backend.elf_machine(), 62); // EM_X86_64
+    }
+
+    #[test]
+    fn test_x86_64_backend_elf_start_addr() {
+        let backend = X86_64Backend::new();
+        assert_eq!(backend.elf_start_addr(), 0x400000);
+    }
+
+    #[test]
+    fn test_x86_64_backend_elf_page_size() {
+        let backend = X86_64Backend::new();
+        assert_eq!(backend.elf_page_size(), 0x1000);
+    }
+
+    #[test]
+    fn test_x86_64_backend_stub_operations() {
+        let mut backend = X86_64Backend::new();
+        assert!(backend.gsym_addr(0, 0).is_ok());
+        assert!(backend.gsym(0).is_ok());
+        assert!(backend.gfunc_call(0).is_ok());
+        assert!(backend.gfunc_epilog().is_ok());
+        assert!(backend.gen_fill_nops(4).is_ok());
+        assert!(backend.gen_opi(0).is_ok());
+        assert!(backend.gen_opf(0).is_ok());
+        assert!(backend.ggoto().is_ok());
+    }
+
+    #[test]
+    fn test_x86_64_backend_gjmp_passthrough() {
+        let mut backend = X86_64Backend::new();
+        assert_eq!(backend.gjmp(42).unwrap(), 42);
+        assert_eq!(backend.gjmp_cond(0, 99).unwrap(), 99);
+        assert_eq!(backend.gjmp_append(0, 123).unwrap(), 123);
+    }
+
+    #[test]
+    fn test_x86_64_backend_reloc_defaults() {
+        let backend = X86_64Backend::new();
+        assert_eq!(backend.code_reloc(0), -1);
+        assert_eq!(backend.gotplt_entry_type(0), 0);
+        assert!(backend.pcrelative_dllplt()); // x86_64 uses PC-relative PLT
+        assert!(!backend.relocate_dllplt());
+    }
+
+    #[test]
+    fn test_x86_64_backend_gfunc_sret_defaults() {
+        let backend = X86_64Backend::new();
+        let dummy_type = CType { t: 0, ref_sym: None };
+        let (sret, _ret_type, align, size) = backend.gfunc_sret(&dummy_type, false);
+        assert!(!sret);
+        assert_eq!(align, 8);
+        assert_eq!(size, 8);
+    }
+}

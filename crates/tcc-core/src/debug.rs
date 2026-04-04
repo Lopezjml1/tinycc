@@ -1331,7 +1331,7 @@ impl DebugInfo {
         };
 
         let str_offset = if !name.is_empty() {
-            put_elf_str(&mut state.sections[stabstr_idx], name) as u32
+            put_elf_str(&mut state.sections[stabstr_idx], name)
         } else {
             0
         };
@@ -1344,6 +1344,7 @@ impl DebugInfo {
     ///
     /// Creates a STAB entry and adds a relocation to the .stab section
     /// for the n_value field.
+    #[allow(clippy::too_many_arguments)]
     pub fn put_stabs_r(&mut self, state: &mut TCCState, name: &str, stype: u8, other: u8, desc: i16,
                        value: u32, _sec_idx: usize, sym_index: usize) -> TccResult<()> {
         let stab_idx = match self.stab_section {
@@ -1356,7 +1357,7 @@ impl DebugInfo {
         };
 
         let str_offset = if !name.is_empty() {
-            put_elf_str(&mut state.sections[stabstr_idx], name) as u32
+            put_elf_str(&mut state.sections[stabstr_idx], name)
         } else {
             0
         };
@@ -1906,9 +1907,8 @@ impl DebugInfo {
         };
 
         // Emit base types that were referenced
-        for i in 0..N_DEFAULT_DEBUG {
+        for (i, entry) in DEFAULT_DEBUG.iter().enumerate().take(N_DEFAULT_DEBUG) {
             if self.dwarf_info.base_type_used[i] != -1 {
-                let entry = &DEFAULT_DEBUG[i];
                 let offset = state.sections[info_idx].data.len();
                 // Patch the forward reference
                 let ref_offset = self.dwarf_info.base_type_used[i] as usize;
@@ -2099,14 +2099,13 @@ impl DebugInfo {
 
         // Try to encode as a special opcode
         let adjusted_opcode = line_delta - DWARF_LINE_BASE;
-        if adjusted_opcode >= 0
-            && adjusted_opcode < DWARF_LINE_RANGE
+        if (0..DWARF_LINE_RANGE).contains(&adjusted_opcode)
             && addr_delta >= 0
         {
             let max_addr = (255 - DWARF_OPCODE_BASE) / DWARF_LINE_RANGE;
-            if addr_delta <= max_addr as i32 {
+            if addr_delta <= max_addr {
                 let opcode = adjusted_opcode + (addr_delta * DWARF_LINE_RANGE) + DWARF_OPCODE_BASE;
-                if opcode >= DWARF_OPCODE_BASE && opcode <= 255 {
+                if (DWARF_OPCODE_BASE..=255).contains(&opcode) {
                     self.dwarf_line.line_data.push(opcode as u8);
                     self.dwarf_line.last_line = new_line;
                     self.dwarf_line.last_pc = cur_ind;
@@ -2299,8 +2298,8 @@ impl DebugInfo {
             }
             t if t == VT_STRUCT => {
                 // Structure or union type
-                let is_union_type = ctype.ref_sym.as_ref().map_or(false, |s| is_union(s.type_.t));
-                let has_members = ctype.ref_sym.as_ref().map_or(false, |s| s.next.is_some());
+                let is_union_type = ctype.ref_sym.as_ref().is_some_and(|s| is_union(s.type_.t));
+                let has_members = ctype.ref_sym.as_ref().is_some_and(|s| s.next.is_some());
 
                 let abbrev = if is_union_type {
                     if has_members {
@@ -2739,7 +2738,7 @@ impl DebugInfo {
                 format!("f{}", ret)
             }
             t if t == VT_STRUCT => {
-                let tag = if ctype.ref_sym.as_ref().map_or(false, |s| is_union(s.type_.t)) {
+                let tag = if ctype.ref_sym.as_ref().is_some_and(|s| is_union(s.type_.t)) {
                     "u"
                 } else {
                     "s"
@@ -2774,6 +2773,7 @@ impl DebugInfo {
     // =======================================================================
 
     /// Write a raw STAB entry to the .stab section.
+    #[allow(clippy::too_many_arguments)]
     fn emit_stab_entry(
         &self,
         state: &mut TCCState,

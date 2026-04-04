@@ -225,14 +225,17 @@ impl fmt::Display for OutputType {
 /// skipped cleanup code (BUG-16 fix).
 ///
 /// # Example
-/// ```ignore
+/// ```no_run
 /// use tcc_core::{TCCState, OutputType};
 ///
-/// let mut state = TCCState::new()?;
-/// state.set_output_type(OutputType::Memory)?;
-/// state.compile_string("int main() { return 0; }")?;
-/// let exit_code = state.run(&[])?;
-/// assert_eq!(exit_code, 0);
+/// fn main() -> Result<(), Box<dyn std::error::Error>> {
+///     let mut state = TCCState::new()?;
+///     state.set_output_type(OutputType::Memory)?;
+///     state.compile_string("int main() { return 0; }")?;
+///     let exit_code = state.run(&[])?;
+///     assert_eq!(exit_code, 0);
+///     Ok(())
+/// }
 /// ```
 #[allow(non_snake_case)]
 pub struct TCCState {

@@ -283,6 +283,7 @@ impl Default for SegmentCommand64 {
 /// Describes a section within a segment, including its location, size,
 /// alignment, and type-specific attributes.
 #[derive(Debug, Clone)]
+#[derive(Default)]
 pub struct Section64 {
     /// Section name (16-byte null-padded, e.g., `__text`, `__data`).
     pub sectname: [u8; 16],
@@ -310,24 +311,6 @@ pub struct Section64 {
     pub reserved3: u32,
 }
 
-impl Default for Section64 {
-    fn default() -> Self {
-        Section64 {
-            sectname: [0u8; 16],
-            segname: [0u8; 16],
-            addr: 0,
-            size: 0,
-            offset: 0,
-            align: 0,
-            reloff: 0,
-            nreloc: 0,
-            flags: 0,
-            reserved1: 0,
-            reserved2: 0,
-            reserved3: 0,
-        }
-    }
-}
 
 /// Mach-O symbol table load command.
 ///
@@ -608,12 +591,20 @@ struct TrieInfo {
 ///
 /// # Usage
 ///
-/// ```ignore
-/// let mut writer = MachoWriter::new(state);
-/// writer.add_segment("__TEXT", vm_prot);
-/// writer.add_section(seg_idx, sect);
-/// writer.add_dylib("/usr/lib/libSystem.B.dylib");
-/// writer.add_lc(lc_data);
+/// ```no_run
+/// use tcc_core::TCCState;
+/// use tcc_core::macho::{MachoWriter, Section64};
+///
+/// fn main() -> Result<(), Box<dyn std::error::Error>> {
+///     let mut state = TCCState::new()?;
+///     let mut writer = MachoWriter::new(&mut state);
+///     let seg_idx = writer.add_segment("__TEXT", 0x1000, 5, 0);
+///     let sect = Section64::default();
+///     writer.add_section(seg_idx, sect);
+///     writer.add_dylib("/usr/lib/libSystem.B.dylib", 2, 0x10000, 0x10000);
+///     writer.add_lc(vec![0u8; 16]);
+///     Ok(())
+/// }
 /// ```
 pub struct MachoWriter<'a> {
     /// Reference to the central compiler state.
@@ -992,7 +983,7 @@ pub fn tcc_macho_add_destructor(state: &mut TCCState) -> TccResult<()> {
         None => return Ok(()), // No destructors to register
     };
 
-    let num_dtors = state.sections[fini_idx].data_offset / PTR_SIZE as usize;
+    let num_dtors = state.sections[fini_idx].data_offset / PTR_SIZE;
     if num_dtors == 0 {
         return Ok(());
     }
@@ -1106,7 +1097,7 @@ pub fn tcc_macho_add_destructor(state: &mut TCCState) -> TccResult<()> {
                 lea_off as u64,
                 elf::R_DATA_PTR,
                 fini_idx,
-                (i * PTR_SIZE as usize) as i64,
+                (i * PTR_SIZE) as i64,
             );
 
             // Relocation for CALL: reference to atexit
@@ -1146,9 +1137,9 @@ pub fn tcc_macho_add_destructor(state: &mut TCCState) -> TccResult<()> {
         };
 
         // Add a pointer to our wrapper in .init_array
-        let ptr_off = elf::section_ptr_add(&mut state.sections[init_idx], PTR_SIZE as usize);
+        let ptr_off = elf::section_ptr_add(&mut state.sections[init_idx], PTR_SIZE);
         // Zero-initialize (relocation will fill it)
-        for b in state.sections[init_idx].data[ptr_off..ptr_off + PTR_SIZE as usize].iter_mut() {
+        for b in state.sections[init_idx].data[ptr_off..ptr_off + PTR_SIZE].iter_mut() {
             *b = 0;
         }
 
@@ -1327,9 +1318,9 @@ fn check_relocs(writer: &mut MachoWriter<'_>) -> TccResult<()> {
                 if !got_syms.contains(&sym_idx) {
                     // Create GOT entry
                     if let Some(got_idx) = writer.state.got {
-                        let got_off = elf::section_ptr_add(&mut writer.state.sections[got_idx], PTR_SIZE as usize);
+                        let got_off = elf::section_ptr_add(&mut writer.state.sections[got_idx], PTR_SIZE);
                         // Zero-fill the GOT entry
-                        for b in writer.state.sections[got_idx].data[got_off..got_off + PTR_SIZE as usize].iter_mut() {
+                        for b in writer.state.sections[got_idx].data[got_off..got_off + PTR_SIZE].iter_mut() {
                             *b = 0;
                         }
                         got_syms.insert(sym_idx);
@@ -1432,7 +1423,7 @@ fn convert_symbols(writer: &mut MachoWriter<'_>) -> TccResult<()> {
         }
 
         // Add name to Mach-O string table
-        let name = get_strtab_str(&writer.state, strtab_idx, name_off as usize);
+        let name = get_strtab_str(writer.state, strtab_idx, name_off as usize);
         if name.is_empty() {
             continue;
         }
@@ -1505,7 +1496,7 @@ fn convert_symbols(writer: &mut MachoWriter<'_>) -> TccResult<()> {
     let sort_by_name = |a: &(Nlist64, usize), b: &(Nlist64, usize)| -> std::cmp::Ordering {
         let name_a = get_nlist_name(&writer.strtab_data, a.0.n_strx);
         let name_b = get_nlist_name(&writer.strtab_data, b.0.n_strx);
-        name_a.cmp(&name_b)
+        name_a.cmp(name_b)
     };
     ext_defs.sort_by(sort_by_name);
     undefs.sort_by(sort_by_name);
@@ -1852,7 +1843,7 @@ fn collect_sections(writer: &mut MachoWriter<'_>) -> TccResult<()> {
     // Step 8: Compute file layout (virtual addresses and file offsets)
     let header_size = 32usize; // sizeof(mach_header_64)
     let total_lc_size: usize = writer.load_commands.iter().map(|lc| lc.len()).sum();
-    let first_section_offset = align_up64((header_size + total_lc_size) as u64, MACHO_PAGE_SIZE as u64);
+    let first_section_offset = align_up64((header_size + total_lc_size) as u64, MACHO_PAGE_SIZE);
 
     // Update the header
     writer.header.ncmds = writer.load_commands.len() as u32;
@@ -1899,8 +1890,8 @@ fn collect_sections(writer: &mut MachoWriter<'_>) -> TccResult<()> {
         }
 
         // Page-align the end of each segment
-        cur_fileoff = align_up64(cur_fileoff, MACHO_PAGE_SIZE as u64);
-        cur_vmaddr = align_up64(cur_vmaddr, MACHO_PAGE_SIZE as u64);
+        cur_fileoff = align_up64(cur_fileoff, MACHO_PAGE_SIZE);
+        cur_vmaddr = align_up64(cur_vmaddr, MACHO_PAGE_SIZE);
 
         seg.filesize = cur_fileoff - seg.fileoff;
         seg.vmsize = cur_vmaddr - (seg.vmaddr);
@@ -2146,7 +2137,7 @@ fn trie_emit(node: &TrieNode) -> Vec<u8> {
     let mut _running_offset = 0usize;
 
     // First pass: estimate sizes (may need refinement)
-    for (_i, child) in node.children.iter().enumerate() {
+    for child in node.children.iter() {
         let label_size = child.prefix.len() + 1; // +1 for NUL
         // Offset ULEB128: estimate 3 bytes (enough for most cases)
         let offset_uleb_size = 3;
@@ -2198,9 +2189,9 @@ fn bind_rebase_import(writer: &mut MachoWriter<'_>) -> TccResult<()> {
     // dyld_chained_fixups_header
     let fixups_version = 0u32;
     let starts_offset = 32u32; // offset to dyld_chained_starts_in_image
-    let imports_offset: u32; // will be computed
-    let symbols_offset: u32; // will be computed
-    let imports_count: u32;
+     // will be computed
+     // will be computed
+    
     let imports_format = DYLD_CHAINED_IMPORT; // basic import format
     let symbols_format = 0u32; // uncompressed
 
@@ -2211,7 +2202,7 @@ fn bind_rebase_import(writer: &mut MachoWriter<'_>) -> TccResult<()> {
             bind_syms.push(entry.sym_index);
         }
     }
-    imports_count = bind_syms.len() as u32;
+    let imports_count: u32 = bind_syms.len() as u32;
 
     // Build the imports table
     let mut import_entries: Vec<u32> = Vec::new();
@@ -2242,8 +2233,8 @@ fn bind_rebase_import(writer: &mut MachoWriter<'_>) -> TccResult<()> {
     // After header (32 bytes) comes starts_in_image
     // For simplicity, we create a minimal chained fixup structure
     let starts_in_image_size = 4 + 4; // seg_count + seg_info_offset[0]
-    imports_offset = starts_offset + align_up(starts_in_image_size as u32, 4);
-    symbols_offset = imports_offset + imports_count * 4;
+    let imports_offset: u32 = starts_offset + align_up(starts_in_image_size as u32, 4);
+    let symbols_offset: u32 = imports_offset + imports_count * 4;
 
     // Write the header
     data.resize(32, 0);
@@ -2324,7 +2315,7 @@ fn macho_write(writer: &MachoWriter<'_>, file: &mut std::io::BufWriter<File>) ->
     // Step 4: Pad to first section offset
     let header_size = 32 + writer.header.sizeofcmds as usize
         + writer.section_headers.len() * 80;
-    let first_sect_off = align_up64(header_size as u64, MACHO_PAGE_SIZE as u64) as usize;
+    let first_sect_off = align_up64(header_size as u64, MACHO_PAGE_SIZE) as usize;
     if first_sect_off > header_size {
         let padding = vec![0u8; first_sect_off - header_size];
         file.write_all(&padding).map_err(TccError::IoError)?;
@@ -2399,7 +2390,7 @@ fn macho_write(writer: &MachoWriter<'_>, file: &mut std::io::BufWriter<File>) ->
     }
 
     // Final padding to page boundary
-    let final_size = align_up64(cur_off as u64, MACHO_PAGE_SIZE as u64) as usize;
+    let final_size = align_up64(cur_off as u64, MACHO_PAGE_SIZE) as usize;
     if final_size > cur_off {
         let padding = vec![0u8; final_size - cur_off];
         file.write_all(&padding).map_err(TccError::IoError)?;
@@ -2544,7 +2535,7 @@ pub fn macho_output_file(state: &mut TCCState, filename: &str) -> TccResult<()> 
 
     // Update __LINKEDIT segment's filesize
     if let Some(seg) = writer.segments.last_mut() {
-        seg.filesize = align_up64(linkedit_size as u64, MACHO_PAGE_SIZE as u64);
+        seg.filesize = align_up64(linkedit_size as u64, MACHO_PAGE_SIZE);
         seg.vmsize = seg.filesize;
         let lc_idx = seg.lc_index;
         if let Some(lc) = writer.load_commands.get_mut(lc_idx) {
@@ -2671,7 +2662,7 @@ pub fn macho_load_dll(state: &mut TCCState, filename: &str) -> TccResult<i32> {
 
     // Check for valid Mach-O magic
     if magic != MH_MAGIC_64 && magic != FAT_MAGIC && magic != FAT_CIGAM {
-        return Err(TccError::linker(&format!(
+        return Err(TccError::linker(format!(
             "{}: not a valid Mach-O file (magic: 0x{:08x})",
             filename, magic
         )));
@@ -2796,11 +2787,7 @@ pub fn macho_load_tbd(state: &mut TCCState, filename: &str) -> TccResult<i32> {
 
     for sym_name in &exports {
         // Strip leading underscore if present (Mach-O convention)
-        let elf_name = if sym_name.starts_with('_') {
-            &sym_name[1..]
-        } else {
-            sym_name
-        };
+        let elf_name = sym_name.strip_prefix('_').unwrap_or(sym_name);
 
         // Check if symbol already exists
         let existing = elf::find_elf_sym(state, symtab_idx, elf_name);
@@ -2973,4 +2960,542 @@ pub fn macho_tbd_soname(filename: &str) -> String {
     }
 
     String::new()
+}
+
+// ===========================================================================
+// Unit tests
+// ===========================================================================
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // -----------------------------------------------------------------------
+    // MachHeader64 tests
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_mach_header64_default() {
+        let hdr = MachHeader64::default();
+        assert_eq!(hdr.magic, 0);
+        assert_eq!(hdr.cputype, 0);
+        assert_eq!(hdr.cpusubtype, 0);
+        assert_eq!(hdr.filetype, 0);
+        assert_eq!(hdr.ncmds, 0);
+        assert_eq!(hdr.sizeofcmds, 0);
+        assert_eq!(hdr.flags, 0);
+        assert_eq!(hdr.reserved, 0);
+    }
+
+    #[test]
+    fn test_mach_header64_custom_construction() {
+        let hdr = MachHeader64 {
+            magic: MH_MAGIC_64,
+            cputype: CPU_TYPE_X86_64,
+            cpusubtype: CPU_SUBTYPE_X86_ALL,
+            filetype: MH_EXECUTE,
+            ncmds: 5,
+            sizeofcmds: 200,
+            flags: MH_PIE | MH_DYLDLINK,
+            reserved: 0,
+        };
+        assert_eq!(hdr.magic, 0xfeed_facf);
+        assert_eq!(hdr.cputype, 0x0100_0007);
+        assert_eq!(hdr.cpusubtype, 3);
+        assert_eq!(hdr.filetype, 2);
+        assert_eq!(hdr.ncmds, 5);
+        assert_eq!(hdr.sizeofcmds, 200);
+        assert_eq!(hdr.flags, MH_PIE | MH_DYLDLINK);
+    }
+
+    #[test]
+    fn test_mach_header64_arm64() {
+        let hdr = MachHeader64 {
+            magic: MH_MAGIC_64,
+            cputype: CPU_TYPE_ARM64,
+            cpusubtype: CPU_SUBTYPE_ARM64_ALL,
+            filetype: MH_DYLIB,
+            ..Default::default()
+        };
+        assert_eq!(hdr.cputype, 0x0100_000c);
+        assert_eq!(hdr.cpusubtype, 0);
+        assert_eq!(hdr.filetype, MH_DYLIB);
+    }
+
+    #[test]
+    fn test_mach_header64_clone() {
+        let hdr = MachHeader64 {
+            magic: MH_MAGIC_64,
+            cputype: CPU_TYPE_X86_64,
+            ..Default::default()
+        };
+        let cloned = hdr.clone();
+        assert_eq!(cloned.magic, MH_MAGIC_64);
+        assert_eq!(cloned.cputype, CPU_TYPE_X86_64);
+    }
+
+    // -----------------------------------------------------------------------
+    // SegmentCommand64 tests
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_segment_command64_default() {
+        let seg = SegmentCommand64::default();
+        assert_eq!(seg.cmd, LC_SEGMENT_64, "default cmd should be LC_SEGMENT_64");
+        assert_eq!(seg.cmdsize, 72, "base cmdsize without sections is 72");
+        assert_eq!(seg.segname, [0u8; 16]);
+        assert_eq!(seg.vmaddr, 0);
+        assert_eq!(seg.vmsize, 0);
+        assert_eq!(seg.fileoff, 0);
+        assert_eq!(seg.filesize, 0);
+        assert_eq!(seg.maxprot, 0);
+        assert_eq!(seg.initprot, 0);
+        assert_eq!(seg.nsects, 0);
+        assert_eq!(seg.flags, 0);
+    }
+
+    #[test]
+    fn test_segment_command64_custom() {
+        let mut segname = [0u8; 16];
+        segname[..6].copy_from_slice(b"__TEXT");
+        let seg = SegmentCommand64 {
+            segname,
+            vmaddr: 0x1000,
+            vmsize: 0x4000,
+            maxprot: VM_PROT_ALL,
+            initprot: VM_PROT_READ | VM_PROT_EXECUTE,
+            nsects: 2,
+            ..Default::default()
+        };
+        assert_eq!(&seg.segname[..6], b"__TEXT");
+        assert_eq!(seg.vmaddr, 0x1000);
+        assert_eq!(seg.vmsize, 0x4000);
+        assert_eq!(seg.maxprot, 7); // R|W|X
+        assert_eq!(seg.initprot, 5); // R|X
+        assert_eq!(seg.nsects, 2);
+    }
+
+    // -----------------------------------------------------------------------
+    // Section64 tests
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_section64_default() {
+        let sect = Section64::default();
+        assert_eq!(sect.sectname, [0u8; 16]);
+        assert_eq!(sect.segname, [0u8; 16]);
+        assert_eq!(sect.addr, 0);
+        assert_eq!(sect.size, 0);
+        assert_eq!(sect.offset, 0);
+        assert_eq!(sect.align, 0);
+        assert_eq!(sect.reloff, 0);
+        assert_eq!(sect.nreloc, 0);
+        assert_eq!(sect.flags, 0);
+        assert_eq!(sect.reserved1, 0);
+        assert_eq!(sect.reserved2, 0);
+        assert_eq!(sect.reserved3, 0);
+    }
+
+    #[test]
+    fn test_section64_text_section() {
+        let mut sect = Section64::default();
+        sect.sectname[..6].copy_from_slice(b"__text");
+        sect.segname[..6].copy_from_slice(b"__TEXT");
+        sect.addr = 0x1000;
+        sect.size = 512;
+        sect.align = 4; // 16-byte aligned
+        sect.flags = S_REGULAR | S_ATTR_PURE_INSTRUCTIONS | S_ATTR_SOME_INSTRUCTIONS;
+        assert_eq!(&sect.sectname[..6], b"__text");
+        assert_eq!(&sect.segname[..6], b"__TEXT");
+        assert_eq!(sect.addr, 0x1000);
+        assert_eq!(sect.size, 512);
+        assert_eq!(sect.align, 4);
+        assert!(sect.flags & S_ATTR_PURE_INSTRUCTIONS != 0);
+        assert!(sect.flags & S_ATTR_SOME_INSTRUCTIONS != 0);
+    }
+
+    #[test]
+    fn test_section64_clone() {
+        let mut sect = Section64::default();
+        sect.addr = 0x2000;
+        sect.size = 1024;
+        let cloned = sect.clone();
+        assert_eq!(cloned.addr, 0x2000);
+        assert_eq!(cloned.size, 1024);
+    }
+
+    // -----------------------------------------------------------------------
+    // SymtabCommand tests
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_symtab_command_default() {
+        let sc = SymtabCommand::default();
+        assert_eq!(sc.cmd, 0);
+        assert_eq!(sc.cmdsize, 0);
+        assert_eq!(sc.symoff, 0);
+        assert_eq!(sc.nsyms, 0);
+        assert_eq!(sc.stroff, 0);
+        assert_eq!(sc.strsize, 0);
+    }
+
+    #[test]
+    fn test_symtab_command_custom() {
+        let sc = SymtabCommand {
+            cmd: LC_SYMTAB,
+            cmdsize: 24,
+            symoff: 4096,
+            nsyms: 10,
+            stroff: 8192,
+            strsize: 256,
+        };
+        assert_eq!(sc.cmd, 2);
+        assert_eq!(sc.cmdsize, 24);
+        assert_eq!(sc.nsyms, 10);
+    }
+
+    // -----------------------------------------------------------------------
+    // DysymtabCommand tests
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_dysymtab_command_default() {
+        let ds = DysymtabCommand::default();
+        assert_eq!(ds.cmd, 0);
+        assert_eq!(ds.cmdsize, 0);
+        assert_eq!(ds.ilocalsym, 0);
+        assert_eq!(ds.nlocalsym, 0);
+        assert_eq!(ds.iextdefsym, 0);
+        assert_eq!(ds.nextdefsym, 0);
+        assert_eq!(ds.iundefsym, 0);
+        assert_eq!(ds.nundefsym, 0);
+        assert_eq!(ds.indirectsymoff, 0);
+        assert_eq!(ds.nindirectsyms, 0);
+    }
+
+    #[test]
+    fn test_dysymtab_command_partitioned() {
+        let ds = DysymtabCommand {
+            cmd: LC_DYSYMTAB,
+            cmdsize: 80,
+            ilocalsym: 0,
+            nlocalsym: 5,
+            iextdefsym: 5,
+            nextdefsym: 10,
+            iundefsym: 15,
+            nundefsym: 3,
+            indirectsymoff: 0x1000,
+            nindirectsyms: 8,
+        };
+        assert_eq!(ds.nlocalsym + ds.nextdefsym + ds.nundefsym, 18);
+        assert_eq!(ds.iextdefsym, ds.ilocalsym + ds.nlocalsym);
+        assert_eq!(ds.iundefsym, ds.iextdefsym + ds.nextdefsym);
+    }
+
+    // -----------------------------------------------------------------------
+    // Nlist64 tests
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_nlist64_default() {
+        let nl = Nlist64::default();
+        assert_eq!(nl.n_strx, 0);
+        assert_eq!(nl.n_type, 0);
+        assert_eq!(nl.n_sect, 0);
+        assert_eq!(nl.n_desc, 0);
+        assert_eq!(nl.n_value, 0);
+    }
+
+    #[test]
+    fn test_nlist64_defined_symbol() {
+        let nl = Nlist64 {
+            n_strx: 1,
+            n_type: N_SECT | N_EXT,
+            n_sect: 1,
+            n_desc: 0,
+            n_value: 0x1000,
+        };
+        assert_eq!(nl.n_type & N_EXT, N_EXT, "symbol should be external");
+        assert_eq!(nl.n_type & 0x0e, N_SECT, "symbol should be in a section");
+        assert_eq!(nl.n_sect, 1);
+        assert_eq!(nl.n_value, 0x1000);
+    }
+
+    #[test]
+    fn test_nlist64_undefined_symbol() {
+        let nl = Nlist64 {
+            n_strx: 5,
+            n_type: N_UNDF | N_EXT,
+            n_sect: 0,
+            n_desc: N_WEAK_REF,
+            n_value: 0,
+        };
+        assert_eq!(nl.n_type & 0x0e, N_UNDF);
+        assert_eq!(nl.n_desc, N_WEAK_REF);
+    }
+
+    // -----------------------------------------------------------------------
+    // Constants tests
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_mach_o_magic_constants() {
+        assert_eq!(MH_MAGIC_64, 0xfeed_facf);
+        assert_eq!(MH_CIGAM_64, 0xcffa_edfe);
+        // Verify byte-swap relationship
+        assert_eq!(MH_MAGIC_64.swap_bytes(), MH_CIGAM_64);
+    }
+
+    #[test]
+    fn test_file_type_constants() {
+        assert_eq!(MH_OBJECT, 1);
+        assert_eq!(MH_EXECUTE, 2);
+        assert_eq!(MH_DYLIB, 6);
+        assert_eq!(MH_BUNDLE, 8);
+        assert_eq!(MH_DSYM, 10);
+    }
+
+    #[test]
+    fn test_cpu_type_constants() {
+        assert_eq!(CPU_TYPE_X86_64, 0x0100_0007);
+        assert_eq!(CPU_TYPE_ARM64, 0x0100_000c);
+        assert_eq!(CPU_SUBTYPE_X86_ALL, 3);
+        assert_eq!(CPU_SUBTYPE_ARM64_ALL, 0);
+        assert_eq!(CPU_SUBTYPE_ARM64E, 2);
+    }
+
+    #[test]
+    fn test_load_command_constants() {
+        assert_eq!(LC_SEGMENT_64, 0x19);
+        assert_eq!(LC_SYMTAB, 2);
+        assert_eq!(LC_DYSYMTAB, 11);
+        assert_eq!(LC_LOAD_DYLINKER, 0x0e);
+        assert_eq!(LC_MAIN, 0x8000_0028);
+        assert_eq!(LC_LOAD_DYLIB, 0x0c);
+        assert_eq!(LC_ID_DYLIB, 0x0d);
+        assert_eq!(LC_UUID, 0x1b);
+        assert_eq!(LC_BUILD_VERSION, 0x32);
+        assert_eq!(LC_SOURCE_VERSION, 0x2a);
+    }
+
+    #[test]
+    fn test_vm_prot_constants() {
+        assert_eq!(VM_PROT_READ, 1);
+        assert_eq!(VM_PROT_WRITE, 2);
+        assert_eq!(VM_PROT_EXECUTE, 4);
+        assert_eq!(VM_PROT_ALL, 7);
+    }
+
+    #[test]
+    fn test_section_attr_constants() {
+        assert_eq!(S_REGULAR, 0);
+        assert_eq!(S_ZEROFILL, 1);
+        assert_eq!(S_ATTR_PURE_INSTRUCTIONS, 1 << 31);
+        assert_eq!(S_ATTR_SOME_INSTRUCTIONS, 1 << 10);
+    }
+
+    // -----------------------------------------------------------------------
+    // MachoWriter tests
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_macho_writer_new() {
+        let mut state = TCCState::new().expect("TCCState::new failed");
+        let writer = MachoWriter::new(&mut state);
+        assert_eq!(writer.header.magic, MH_MAGIC_64);
+        assert_eq!(writer.header.cputype, CPU_TYPE_X86_64);
+        assert_eq!(writer.header.filetype, MH_EXECUTE);
+        assert!(writer.segments.is_empty());
+        assert!(writer.load_commands.is_empty());
+        assert!(writer.section_headers.is_empty());
+        assert!(writer.nlist_entries.is_empty());
+        // strtab starts with null byte
+        assert_eq!(writer.strtab_data.len(), 1);
+        assert_eq!(writer.strtab_data[0], 0);
+    }
+
+    #[test]
+    fn test_macho_writer_add_segment() {
+        let mut state = TCCState::new().expect("TCCState::new failed");
+        let mut writer = MachoWriter::new(&mut state);
+        let idx = writer.add_segment("__TEXT", 0x1000, VM_PROT_READ | VM_PROT_EXECUTE, 0);
+        assert_eq!(idx, 0);
+        assert_eq!(writer.segments.len(), 1);
+        let seg = writer.get_segment(0);
+        assert!(seg.is_some());
+        assert_eq!(seg.unwrap().vmaddr, 0x1000);
+    }
+
+    #[test]
+    fn test_macho_writer_add_multiple_segments() {
+        let mut state = TCCState::new().expect("TCCState::new failed");
+        let mut writer = MachoWriter::new(&mut state);
+        let text_idx = writer.add_segment("__TEXT", 0x1000, VM_PROT_READ | VM_PROT_EXECUTE, 0);
+        let data_idx = writer.add_segment("__DATA", 0x5000, VM_PROT_READ | VM_PROT_WRITE, 0);
+        let link_idx = writer.add_segment("__LINKEDIT", 0x9000, VM_PROT_READ, 0);
+        assert_eq!(text_idx, 0);
+        assert_eq!(data_idx, 1);
+        assert_eq!(link_idx, 2);
+        assert_eq!(writer.segments.len(), 3);
+    }
+
+    #[test]
+    fn test_macho_writer_get_segment_out_of_bounds() {
+        let mut state = TCCState::new().expect("TCCState::new failed");
+        let writer = MachoWriter::new(&mut state);
+        assert!(writer.get_segment(0).is_none());
+        assert!(writer.get_segment(99).is_none());
+    }
+
+    #[test]
+    fn test_macho_writer_add_section() {
+        let mut state = TCCState::new().expect("TCCState::new failed");
+        let mut writer = MachoWriter::new(&mut state);
+        let seg_idx = writer.add_segment("__TEXT", 0x1000, VM_PROT_READ | VM_PROT_EXECUTE, 0);
+        let mut sect = Section64::default();
+        sect.sectname[..6].copy_from_slice(b"__text");
+        sect.segname[..6].copy_from_slice(b"__TEXT");
+        // add_section returns 1-based ordinal (Mach-O section numbering)
+        let ordinal = writer.add_section(seg_idx, sect);
+        assert_eq!(ordinal, 1, "first section ordinal should be 1");
+        // get_section uses 0-based index into section_headers
+        let retrieved = writer.get_section(0);
+        assert!(retrieved.is_some());
+        assert_eq!(&retrieved.unwrap().sectname[..6], b"__text");
+    }
+
+    #[test]
+    fn test_macho_writer_get_section_out_of_bounds() {
+        let mut state = TCCState::new().expect("TCCState::new failed");
+        let writer = MachoWriter::new(&mut state);
+        assert!(writer.get_section(0).is_none());
+        assert!(writer.get_section(42).is_none());
+    }
+
+    #[test]
+    fn test_macho_writer_add_lc() {
+        let mut state = TCCState::new().expect("TCCState::new failed");
+        let mut writer = MachoWriter::new(&mut state);
+        let lc_data = vec![0x19, 0x00, 0x00, 0x00, 72, 0, 0, 0]; // LC_SEGMENT_64 minimal
+        let idx = writer.add_lc(lc_data.clone());
+        assert_eq!(idx, 0);
+        assert_eq!(writer.load_commands.len(), 1);
+        assert_eq!(writer.load_commands[0], lc_data);
+    }
+
+    #[test]
+    fn test_macho_writer_add_dylib() {
+        let mut state = TCCState::new().expect("TCCState::new failed");
+        let mut writer = MachoWriter::new(&mut state);
+        let idx = writer.add_dylib("/usr/lib/libSystem.B.dylib", 2, 0x10000, 0x10000);
+        assert_eq!(idx, 0);
+        assert_eq!(writer.load_commands.len(), 1);
+        // Dylib load command should contain the path
+        let lc = &writer.load_commands[0];
+        assert!(!lc.is_empty());
+    }
+
+    // -----------------------------------------------------------------------
+    // macho_tbd_soname tests
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_macho_tbd_soname_nonexistent_file() {
+        let result = macho_tbd_soname("/nonexistent/path/libfoo.tbd");
+        assert_eq!(result, "");
+    }
+
+    #[test]
+    fn test_macho_tbd_soname_with_temp_file() {
+        use std::io::Write;
+        let dir = std::env::temp_dir();
+        let path = dir.join("test_tbd_soname.tbd");
+        {
+            let mut f = File::create(&path).expect("create temp file");
+            writeln!(f, "--- !tapi-tbd-v3").unwrap();
+            writeln!(f, "archs: [ x86_64 ]").unwrap();
+            writeln!(f, "install-name: /usr/lib/libSystem.B.dylib").unwrap();
+            writeln!(f, "exports:").unwrap();
+        }
+        let result = macho_tbd_soname(path.to_str().unwrap());
+        assert_eq!(result, "/usr/lib/libSystem.B.dylib");
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn test_macho_tbd_soname_quoted_name() {
+        use std::io::Write;
+        let dir = std::env::temp_dir();
+        let path = dir.join("test_tbd_soname_quoted.tbd");
+        {
+            let mut f = File::create(&path).expect("create temp file");
+            writeln!(f, "--- !tapi-tbd-v3").unwrap();
+            writeln!(f, "install-name: '/usr/lib/libfoo.dylib'").unwrap();
+        }
+        let result = macho_tbd_soname(path.to_str().unwrap());
+        assert_eq!(result, "/usr/lib/libfoo.dylib");
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn test_macho_tbd_soname_no_install_name() {
+        use std::io::Write;
+        let dir = std::env::temp_dir();
+        let path = dir.join("test_tbd_soname_none.tbd");
+        {
+            let mut f = File::create(&path).expect("create temp file");
+            writeln!(f, "--- !tapi-tbd-v3").unwrap();
+            writeln!(f, "archs: [ x86_64 ]").unwrap();
+            writeln!(f, "exports:").unwrap();
+        }
+        let result = macho_tbd_soname(path.to_str().unwrap());
+        assert_eq!(result, "");
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn test_macho_tbd_soname_double_quoted() {
+        use std::io::Write;
+        let dir = std::env::temp_dir();
+        let path = dir.join("test_tbd_soname_dq.tbd");
+        {
+            let mut f = File::create(&path).expect("create temp file");
+            writeln!(f, "install-name: \"/usr/lib/libbar.dylib\"").unwrap();
+        }
+        let result = macho_tbd_soname(path.to_str().unwrap());
+        assert_eq!(result, "/usr/lib/libbar.dylib");
+        let _ = std::fs::remove_file(&path);
+    }
+
+    // -----------------------------------------------------------------------
+    // SectionKind classification tests
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_classify_section_text() {
+        // SHT_PROGBITS = 1, SHF_ALLOC = 2, SHF_EXECINSTR = 4
+        let sk = classify_section(".text", 1, 2 | 4);
+        assert_eq!(sk as u8, SectionKind::Text as u8);
+    }
+
+    #[test]
+    fn test_classify_section_data() {
+        // SHT_PROGBITS = 1, SHF_ALLOC = 2, SHF_WRITE = 1
+        let sk = classify_section(".data", 1, 2 | 1);
+        assert_eq!(sk as u8, SectionKind::RwData as u8);
+    }
+
+    #[test]
+    fn test_classify_section_bss() {
+        // SHT_NOBITS = 8, SHF_ALLOC = 2, SHF_WRITE = 1
+        let sk = classify_section(".bss", 8, 2 | 1);
+        assert_eq!(sk as u8, SectionKind::Bss as u8);
+    }
+
+    #[test]
+    fn test_classify_section_debug() {
+        // SHT_PROGBITS = 1, no flags
+        let sk = classify_section(".debug_info", 1, 0);
+        assert_eq!(sk as u8, SectionKind::DebugInfo as u8);
+    }
 }

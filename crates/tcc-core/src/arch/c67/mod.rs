@@ -88,3 +88,99 @@ impl CodegenBackend for C67Backend {
     fn pcrelative_dllplt(&self) -> bool { false }
     fn relocate_dllplt(&self) -> bool { false }
 }
+
+// ===========================================================================
+// Unit tests
+// ===========================================================================
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_c67_backend_new() {
+        let backend = C67Backend::new();
+        // Should construct without panic
+        let _ = backend;
+    }
+
+    #[test]
+    fn test_c67_backend_default() {
+        let backend = C67Backend::default();
+        let _ = backend;
+    }
+
+    #[test]
+    fn test_c67_backend_nb_regs() {
+        let backend = C67Backend::new();
+        assert_eq!(backend.nb_regs(), 16);
+    }
+
+    #[test]
+    fn test_c67_backend_ptr_size() {
+        let backend = C67Backend::new();
+        assert_eq!(backend.ptr_size(), 4);
+    }
+
+    #[test]
+    fn test_c67_backend_target_defs() {
+        let backend = C67Backend::new();
+        assert!(backend.target_machine_defs().contains("__C67__"));
+    }
+
+    #[test]
+    fn test_c67_backend_reg_classes() {
+        let backend = C67Backend::new();
+        assert_eq!(backend.reg_classes().len(), 16);
+    }
+
+    #[test]
+    fn test_c67_backend_elf_machine() {
+        let backend = C67Backend::new();
+        assert_eq!(backend.elf_machine(), 140); // EM_TI_C6000
+    }
+
+    #[test]
+    fn test_c67_backend_elf_start_addr() {
+        let backend = C67Backend::new();
+        assert_eq!(backend.elf_start_addr(), 0x00000000);
+    }
+
+    #[test]
+    fn test_c67_backend_elf_page_size() {
+        let backend = C67Backend::new();
+        assert_eq!(backend.elf_page_size(), 0x1000);
+    }
+
+    #[test]
+    fn test_c67_backend_stub_operations() {
+        let mut backend = C67Backend::new();
+        // Stub operations should succeed (return Ok)
+        assert!(backend.gsym_addr(0, 0).is_ok());
+        assert!(backend.gsym(0).is_ok());
+        assert!(backend.gfunc_call(0).is_ok());
+        assert!(backend.gfunc_epilog().is_ok());
+        assert!(backend.gen_fill_nops(4).is_ok());
+        assert!(backend.gen_opi(0).is_ok());
+        assert!(backend.gen_opf(0).is_ok());
+        assert!(backend.ggoto().is_ok());
+    }
+
+    #[test]
+    fn test_c67_backend_gjmp_passthrough() {
+        let mut backend = C67Backend::new();
+        // gjmp should return the input value (passthrough)
+        assert_eq!(backend.gjmp(42).unwrap(), 42);
+        assert_eq!(backend.gjmp_cond(0, 99).unwrap(), 99);
+        assert_eq!(backend.gjmp_append(0, 123).unwrap(), 123);
+    }
+
+    #[test]
+    fn test_c67_backend_reloc_defaults() {
+        let backend = C67Backend::new();
+        assert_eq!(backend.code_reloc(0), -1);
+        assert_eq!(backend.gotplt_entry_type(0), 0);
+        assert!(!backend.pcrelative_dllplt());
+        assert!(!backend.relocate_dllplt());
+    }
+}
