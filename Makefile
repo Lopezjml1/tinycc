@@ -492,7 +492,30 @@ distclean: clean
 	@rm -vf config.h config.mak config.texi
 	@rm -vf $(TCCDOCS)
 
-.PHONY: all clean test tar tags ETAGS doc distclean install uninstall FORCE
+.PHONY: all clean test tar tags ETAGS doc distclean install uninstall FORCE \
+	rust-build rust-build-debug rust-test rust-clean rust-install
+
+# --------------------------------------------------------------------------
+# Rust build targets (C→Rust migration)
+# These targets invoke Cargo for the Rust implementation.
+# Existing C build targets above are retained for reference.
+
+rust-build:
+	cargo build --release
+
+rust-build-debug:
+	cargo build
+
+rust-test:
+	cargo test --all
+
+rust-clean:
+	cargo clean
+
+rust-install: rust-build
+	@echo "Install the Rust-built tcc binary from target/release/tcc"
+	@echo "Copy to a location in your PATH, e.g.:"
+	@echo "  cp target/release/tcc /usr/local/bin/tcc"
 
 help:
 	@echo "make"
@@ -532,6 +555,13 @@ help:
 	@echo "   Or also, for the cross platform files in /usr/<triplet>"
 	@echo "      TRIPLET-i386 = i686-linux-gnu"
 	@echo "   (*) tcc replaces {B} by 'tccdir' and {R} by 'CONFIG_SYSROOT'"
+	@echo ""
+	@echo "Rust build targets (C→Rust migration):"
+	@echo "make rust-build       - build Rust compiler (release mode)"
+	@echo "make rust-build-debug - build Rust compiler (debug mode)"
+	@echo "make rust-test        - run all Rust tests"
+	@echo "make rust-clean       - clean Rust build artifacts"
+	@echo "make rust-install     - build and show install instructions"
 
 # --------------------------------------------------------------------------
 endif # ($(INCLUDED),no)
