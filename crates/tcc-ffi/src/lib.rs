@@ -39,6 +39,7 @@
 
 use std::ffi::{c_char, c_int, c_void, CStr};
 use std::os::raw::c_ulong;
+use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::ptr;
 
 use tcc_core::{OutputType, TCCState, TccResult};
@@ -221,11 +222,13 @@ static CUSTOM_REALLOC: std::sync::atomic::AtomicPtr<()> =
 pub unsafe extern "C" fn tcc_set_realloc(
     my_realloc: Option<TCCReallocFunc>,
 ) {
-    let ptr = match my_realloc {
-        Some(f) => f as *mut (),
-        None => ptr::null_mut(),
-    };
-    CUSTOM_REALLOC.store(ptr, std::sync::atomic::Ordering::SeqCst);
+    let _ = catch_unwind(AssertUnwindSafe(|| {
+        let ptr = match my_realloc {
+            Some(f) => f as *mut (),
+            None => ptr::null_mut(),
+        };
+        CUSTOM_REALLOC.store(ptr, std::sync::atomic::Ordering::SeqCst);
+    }));
 }
 
 // ===========================================================================
@@ -250,10 +253,13 @@ pub unsafe extern "C" fn tcc_set_realloc(
 /// ensures all internal resources are cleaned up by `Drop`.
 #[no_mangle]
 pub unsafe extern "C" fn tcc_new() -> *mut TCCState {
-    match TCCState::new() {
-        Ok(state) => Box::into_raw(Box::new(state)),
-        Err(_) => ptr::null_mut(),
-    }
+    catch_unwind(AssertUnwindSafe(|| {
+        match TCCState::new() {
+            Ok(state) => Box::into_raw(Box::new(state)),
+            Err(_) => ptr::null_mut(),
+        }
+    }))
+    .unwrap_or(ptr::null_mut())
 }
 
 /// Frees a TCC compilation context and all associated resources.
@@ -273,11 +279,13 @@ pub unsafe extern "C" fn tcc_new() -> *mut TCCState {
 /// Strings, Boxes) are deallocated deterministically.
 #[no_mangle]
 pub unsafe extern "C" fn tcc_delete(s: *mut TCCState) {
-    if s.is_null() {
-        return;
-    }
-    // Reclaim ownership and drop. The Drop impl releases all resources.
-    let _ = Box::from_raw(s);
+    let _ = catch_unwind(AssertUnwindSafe(|| {
+        if s.is_null() {
+            return;
+        }
+        // Reclaim ownership and drop. The Drop impl releases all resources.
+        let _ = Box::from_raw(s);
+    }));
 }
 
 // ===========================================================================
@@ -294,15 +302,17 @@ pub unsafe extern "C" fn tcc_delete(s: *mut TCCState) {
 /// ```
 #[no_mangle]
 pub unsafe extern "C" fn tcc_set_lib_path(s: *mut TCCState, path: *const c_char) {
-    let state = match state_from_ptr(s) {
-        Some(s) => s,
-        None => return,
-    };
-    let path_str = match cstr_to_str(path) {
-        Some(p) => p,
-        None => return,
-    };
-    state.set_lib_path(path_str);
+    let _ = catch_unwind(AssertUnwindSafe(|| {
+        let state = match state_from_ptr(s) {
+            Some(s) => s,
+            None => return,
+        };
+        let path_str = match cstr_to_str(path) {
+            Some(p) => p,
+            None => return,
+        };
+        state.set_lib_path(path_str);
+    }));
 }
 
 /// Sets an error/warning callback function (optional).
@@ -324,23 +334,25 @@ pub unsafe extern "C" fn tcc_set_error_func(
     error_opaque: *mut c_void,
     error_func: Option<TCCErrorFunc>,
 ) {
-    let state = match state_from_ptr(s) {
-        Some(s) => s,
-        None => return,
-    };
-    // Convert the C-side error_opaque (raw pointer) to Option for the
-    // Rust method. When a callback is provided, we wrap the opaque ptr
-    // (even if NULL — C callers may pass NULL intentionally). When no
-    // callback is provided, we clear the opaque pointer too.
-    let opaque_opt = if error_func.is_some() {
-        Some(error_opaque)
-    } else {
-        None
-    };
-    // Delegate to the tcc-core method. On all supported platforms,
-    // c_char == i8, so TCCErrorFunc (using *const c_char) and the
-    // tcc-core signature (using *const i8) are type-identical.
-    state.set_error_func(opaque_opt, error_func);
+    let _ = catch_unwind(AssertUnwindSafe(|| {
+        let state = match state_from_ptr(s) {
+            Some(s) => s,
+            None => return,
+        };
+        // Convert the C-side error_opaque (raw pointer) to Option for the
+        // Rust method. When a callback is provided, we wrap the opaque ptr
+        // (even if NULL — C callers may pass NULL intentionally). When no
+        // callback is provided, we clear the opaque pointer too.
+        let opaque_opt = if error_func.is_some() {
+            Some(error_opaque)
+        } else {
+            None
+        };
+        // Delegate to the tcc-core method. On all supported platforms,
+        // c_char == i8, so TCCErrorFunc (using *const c_char) and the
+        // tcc-core signature (using *const i8) are type-identical.
+        state.set_error_func(opaque_opt, error_func);
+    }));
 }
 
 /// Parses a string of space-separated compiler options.
@@ -359,15 +371,18 @@ pub unsafe extern "C" fn tcc_set_options(
     s: *mut TCCState,
     str_: *const c_char,
 ) -> c_int {
-    let state = match state_from_ptr(s) {
-        Some(s) => s,
-        None => return -1,
-    };
-    let opts = match cstr_to_str(str_) {
-        Some(o) => o,
-        None => return -1,
-    };
-    result_to_int(state.set_options(opts))
+    catch_unwind(AssertUnwindSafe(|| {
+        let state = match state_from_ptr(s) {
+            Some(s) => s,
+            None => return -1,
+        };
+        let opts = match cstr_to_str(str_) {
+            Some(o) => o,
+            None => return -1,
+        };
+        result_to_int(state.set_options(opts))
+    }))
+    .unwrap_or(-1)
 }
 
 // ===========================================================================
@@ -387,15 +402,18 @@ pub unsafe extern "C" fn tcc_add_include_path(
     s: *mut TCCState,
     pathname: *const c_char,
 ) -> c_int {
-    let state = match state_from_ptr(s) {
-        Some(s) => s,
-        None => return -1,
-    };
-    let path = match cstr_to_str(pathname) {
-        Some(p) => p,
-        None => return -1,
-    };
-    result_to_int(state.add_include_path(path))
+    catch_unwind(AssertUnwindSafe(|| {
+        let state = match state_from_ptr(s) {
+            Some(s) => s,
+            None => return -1,
+        };
+        let path = match cstr_to_str(pathname) {
+            Some(p) => p,
+            None => return -1,
+        };
+        result_to_int(state.add_include_path(path))
+    }))
+    .unwrap_or(-1)
 }
 
 /// Adds a directory to the system include search path.
@@ -411,15 +429,18 @@ pub unsafe extern "C" fn tcc_add_sysinclude_path(
     s: *mut TCCState,
     pathname: *const c_char,
 ) -> c_int {
-    let state = match state_from_ptr(s) {
-        Some(s) => s,
-        None => return -1,
-    };
-    let path = match cstr_to_str(pathname) {
-        Some(p) => p,
-        None => return -1,
-    };
-    result_to_int(state.add_sysinclude_path(path))
+    catch_unwind(AssertUnwindSafe(|| {
+        let state = match state_from_ptr(s) {
+            Some(s) => s,
+            None => return -1,
+        };
+        let path = match cstr_to_str(pathname) {
+            Some(p) => p,
+            None => return -1,
+        };
+        result_to_int(state.add_sysinclude_path(path))
+    }))
+    .unwrap_or(-1)
 }
 
 /// Defines a preprocessor symbol (`-D` equivalent).
@@ -438,17 +459,19 @@ pub unsafe extern "C" fn tcc_define_symbol(
     sym: *const c_char,
     value: *const c_char,
 ) {
-    let state = match state_from_ptr(s) {
-        Some(s) => s,
-        None => return,
-    };
-    let sym_str = match cstr_to_str(sym) {
-        Some(s) => s,
-        None => return,
-    };
-    // value can be NULL — passing None triggers the default "1" in tcc-core
-    let val_str = cstr_to_str(value);
-    state.define_symbol(sym_str, val_str);
+    let _ = catch_unwind(AssertUnwindSafe(|| {
+        let state = match state_from_ptr(s) {
+            Some(s) => s,
+            None => return,
+        };
+        let sym_str = match cstr_to_str(sym) {
+            Some(s) => s,
+            None => return,
+        };
+        // value can be NULL — passing None triggers the default "1" in tcc-core
+        let val_str = cstr_to_str(value);
+        state.define_symbol(sym_str, val_str);
+    }));
 }
 
 /// Undefines a preprocessor symbol (`-U` equivalent).
@@ -464,15 +487,17 @@ pub unsafe extern "C" fn tcc_undefine_symbol(
     s: *mut TCCState,
     sym: *const c_char,
 ) {
-    let state = match state_from_ptr(s) {
-        Some(s) => s,
-        None => return,
-    };
-    let sym_str = match cstr_to_str(sym) {
-        Some(s) => s,
-        None => return,
-    };
-    state.undefine_symbol(sym_str);
+    let _ = catch_unwind(AssertUnwindSafe(|| {
+        let state = match state_from_ptr(s) {
+            Some(s) => s,
+            None => return,
+        };
+        let sym_str = match cstr_to_str(sym) {
+            Some(s) => s,
+            None => return,
+        };
+        state.undefine_symbol(sym_str);
+    }));
 }
 
 // ===========================================================================
@@ -492,15 +517,18 @@ pub unsafe extern "C" fn tcc_add_file(
     s: *mut TCCState,
     filename: *const c_char,
 ) -> c_int {
-    let state = match state_from_ptr(s) {
-        Some(s) => s,
-        None => return -1,
-    };
-    let fname = match cstr_to_str(filename) {
-        Some(f) => f,
-        None => return -1,
-    };
-    result_to_int(state.add_file(fname))
+    catch_unwind(AssertUnwindSafe(|| {
+        let state = match state_from_ptr(s) {
+            Some(s) => s,
+            None => return -1,
+        };
+        let fname = match cstr_to_str(filename) {
+            Some(f) => f,
+            None => return -1,
+        };
+        result_to_int(state.add_file(fname))
+    }))
+    .unwrap_or(-1)
 }
 
 /// Compiles a string containing C source code.
@@ -519,15 +547,18 @@ pub unsafe extern "C" fn tcc_compile_string(
     s: *mut TCCState,
     buf: *const c_char,
 ) -> c_int {
-    let state = match state_from_ptr(s) {
-        Some(s) => s,
-        None => return -1,
-    };
-    let src = match cstr_to_str(buf) {
-        Some(b) => b,
-        None => return -1,
-    };
-    result_to_int(state.compile_string(src))
+    catch_unwind(AssertUnwindSafe(|| {
+        let state = match state_from_ptr(s) {
+            Some(s) => s,
+            None => return -1,
+        };
+        let src = match cstr_to_str(buf) {
+            Some(b) => b,
+            None => return -1,
+        };
+        result_to_int(state.compile_string(src))
+    }))
+    .unwrap_or(-1)
 }
 
 // ===========================================================================
@@ -554,15 +585,18 @@ pub unsafe extern "C" fn tcc_set_output_type(
     s: *mut TCCState,
     output_type: c_int,
 ) -> c_int {
-    let state = match state_from_ptr(s) {
-        Some(s) => s,
-        None => return -1,
-    };
-    let ot = match output_type_from_int(output_type) {
-        Some(t) => t,
-        None => return -1,
-    };
-    result_to_int(state.set_output_type(ot))
+    catch_unwind(AssertUnwindSafe(|| {
+        let state = match state_from_ptr(s) {
+            Some(s) => s,
+            None => return -1,
+        };
+        let ot = match output_type_from_int(output_type) {
+            Some(t) => t,
+            None => return -1,
+        };
+        result_to_int(state.set_output_type(ot))
+    }))
+    .unwrap_or(-1)
 }
 
 /// Adds a directory to the library search path (`-L` equivalent).
@@ -578,15 +612,18 @@ pub unsafe extern "C" fn tcc_add_library_path(
     s: *mut TCCState,
     pathname: *const c_char,
 ) -> c_int {
-    let state = match state_from_ptr(s) {
-        Some(s) => s,
-        None => return -1,
-    };
-    let path = match cstr_to_str(pathname) {
-        Some(p) => p,
-        None => return -1,
-    };
-    result_to_int(state.add_library_path(path))
+    catch_unwind(AssertUnwindSafe(|| {
+        let state = match state_from_ptr(s) {
+            Some(s) => s,
+            None => return -1,
+        };
+        let path = match cstr_to_str(pathname) {
+            Some(p) => p,
+            None => return -1,
+        };
+        result_to_int(state.add_library_path(path))
+    }))
+    .unwrap_or(-1)
 }
 
 /// Adds a library to link against (`-l` equivalent).
@@ -605,15 +642,18 @@ pub unsafe extern "C" fn tcc_add_library(
     s: *mut TCCState,
     libraryname: *const c_char,
 ) -> c_int {
-    let state = match state_from_ptr(s) {
-        Some(s) => s,
-        None => return -1,
-    };
-    let name = match cstr_to_str(libraryname) {
-        Some(n) => n,
-        None => return -1,
-    };
-    result_to_int(state.add_library(name))
+    catch_unwind(AssertUnwindSafe(|| {
+        let state = match state_from_ptr(s) {
+            Some(s) => s,
+            None => return -1,
+        };
+        let name = match cstr_to_str(libraryname) {
+            Some(n) => n,
+            None => return -1,
+        };
+        result_to_int(state.add_library(name))
+    }))
+    .unwrap_or(-1)
 }
 
 /// Adds a named symbol to the compiled program.
@@ -634,15 +674,18 @@ pub unsafe extern "C" fn tcc_add_symbol(
     name: *const c_char,
     val: *const c_void,
 ) -> c_int {
-    let state = match state_from_ptr(s) {
-        Some(s) => s,
-        None => return -1,
-    };
-    let sym_name = match cstr_to_str(name) {
-        Some(n) => n,
-        None => return -1,
-    };
-    result_to_int(state.add_symbol(sym_name, val))
+    catch_unwind(AssertUnwindSafe(|| {
+        let state = match state_from_ptr(s) {
+            Some(s) => s,
+            None => return -1,
+        };
+        let sym_name = match cstr_to_str(name) {
+            Some(n) => n,
+            None => return -1,
+        };
+        result_to_int(state.add_symbol(sym_name, val))
+    }))
+    .unwrap_or(-1)
 }
 
 /// Writes compiled output to a file (executable, library, or object).
@@ -660,15 +703,18 @@ pub unsafe extern "C" fn tcc_output_file(
     s: *mut TCCState,
     filename: *const c_char,
 ) -> c_int {
-    let state = match state_from_ptr(s) {
-        Some(s) => s,
-        None => return -1,
-    };
-    let fname = match cstr_to_str(filename) {
-        Some(f) => f,
-        None => return -1,
-    };
-    result_to_int(state.output_file(fname))
+    catch_unwind(AssertUnwindSafe(|| {
+        let state = match state_from_ptr(s) {
+            Some(s) => s,
+            None => return -1,
+        };
+        let fname = match cstr_to_str(filename) {
+            Some(f) => f,
+            None => return -1,
+        };
+        result_to_int(state.output_file(fname))
+    }))
+    .unwrap_or(-1)
 }
 
 // ===========================================================================
@@ -692,29 +738,32 @@ pub unsafe extern "C" fn tcc_run(
     argc: c_int,
     argv: *mut *mut c_char,
 ) -> c_int {
-    let state = match state_from_ptr(s) {
-        Some(s) => s,
-        None => return -1,
-    };
-    // Convert C argc/argv to a Rust slice of string references.
-    // Handle edge cases: negative argc, null argv, null individual entries.
-    let mut args: Vec<&str> = Vec::new();
-    if !argv.is_null() && argc > 0 {
-        for i in 0..(argc as usize) {
-            let arg_ptr = *argv.add(i);
-            if arg_ptr.is_null() {
-                break;
-            }
-            match CStr::from_ptr(arg_ptr).to_str() {
-                Ok(s) => args.push(s),
-                Err(_) => {
-                    // Non-UTF8 argument — use lossy fallback by pushing empty
-                    args.push("");
+    catch_unwind(AssertUnwindSafe(|| {
+        let state = match state_from_ptr(s) {
+            Some(s) => s,
+            None => return -1,
+        };
+        // Convert C argc/argv to a Rust slice of string references.
+        // Handle edge cases: negative argc, null argv, null individual entries.
+        let mut args: Vec<&str> = Vec::new();
+        if !argv.is_null() && argc > 0 {
+            for i in 0..(argc as usize) {
+                let arg_ptr = *argv.add(i);
+                if arg_ptr.is_null() {
+                    break;
+                }
+                match CStr::from_ptr(arg_ptr).to_str() {
+                    Ok(s) => args.push(s),
+                    Err(_) => {
+                        // Non-UTF8 argument — use lossy fallback by pushing empty
+                        args.push("");
+                    }
                 }
             }
         }
-    }
-    state.run(&args).unwrap_or(-1)
+        state.run(&args).unwrap_or(-1)
+    }))
+    .unwrap_or(-1)
 }
 
 /// Performs all relocations (needed before using `tcc_get_symbol()`).
@@ -730,11 +779,14 @@ pub unsafe extern "C" fn tcc_run(
 /// for documentation fidelity.
 #[no_mangle]
 pub unsafe extern "C" fn tcc_relocate(s1: *mut TCCState) -> c_int {
-    let state = match state_from_ptr(s1) {
-        Some(s) => s,
-        None => return -1,
-    };
-    result_to_int(state.relocate())
+    catch_unwind(AssertUnwindSafe(|| {
+        let state = match state_from_ptr(s1) {
+            Some(s) => s,
+            None => return -1,
+        };
+        result_to_int(state.relocate())
+    }))
+    .unwrap_or(-1)
 }
 
 /// Returns the value of a symbol, or NULL if not found.
@@ -750,18 +802,21 @@ pub unsafe extern "C" fn tcc_get_symbol(
     s: *mut TCCState,
     name: *const c_char,
 ) -> *mut c_void {
-    let state = match state_from_ptr(s) {
-        Some(s) => s,
-        None => return ptr::null_mut(),
-    };
-    let sym_name = match cstr_to_str(name) {
-        Some(n) => n,
-        None => return ptr::null_mut(),
-    };
-    match state.get_symbol(sym_name) {
-        Some(addr) => addr,
-        None => ptr::null_mut(),
-    }
+    catch_unwind(AssertUnwindSafe(|| {
+        let state = match state_from_ptr(s) {
+            Some(s) => s,
+            None => return ptr::null_mut(),
+        };
+        let sym_name = match cstr_to_str(name) {
+            Some(n) => n,
+            None => return ptr::null_mut(),
+        };
+        match state.get_symbol(sym_name) {
+            Some(addr) => addr,
+            None => ptr::null_mut(),
+        }
+    }))
+    .unwrap_or(ptr::null_mut())
 }
 
 /// Lists all global symbols and their values via a callback.
@@ -784,13 +839,15 @@ pub unsafe extern "C" fn tcc_list_symbols(
     ctx: *mut c_void,
     symbol_cb: Option<unsafe extern "C" fn(*mut c_void, *const c_char, *const c_void)>,
 ) {
-    let state = match state_from_ptr(s) {
-        Some(s) => s,
-        None => return,
-    };
-    // Delegate to the tcc-core method. On all supported platforms,
-    // c_char == i8, so the callback function pointer types are identical.
-    state.list_symbols(ctx, symbol_cb);
+    let _ = catch_unwind(AssertUnwindSafe(|| {
+        let state = match state_from_ptr(s) {
+            Some(s) => s,
+            None => return,
+        };
+        // Delegate to the tcc-core method. On all supported platforms,
+        // c_char == i8, so the callback function pointer types are identical.
+        state.list_symbols(ctx, symbol_cb);
+    }));
 }
 
 // ===========================================================================
@@ -824,23 +881,26 @@ pub unsafe extern "C" fn _tcc_setjmp(
     top_func: *mut c_void,
     longjmp: *mut c_void,
 ) -> *mut c_void {
-    let state = match state_from_ptr(s1) {
-        Some(s) => s,
-        None => return ptr::null_mut(),
-    };
-    // Store the runtime exception handling pointers for API compatibility.
-    // In the Rust port, actual error recovery uses Result propagation, but
-    // C callers may depend on these pointers being stored.
-    let _ = top_func; // Stored implicitly via run_ptr state
-    let _ = longjmp; // Not needed — Rust uses Result-based error handling
+    catch_unwind(AssertUnwindSafe(|| {
+        let state = match state_from_ptr(s1) {
+            Some(s) => s,
+            None => return ptr::null_mut(),
+        };
+        // Store the runtime exception handling pointers for API compatibility.
+        // In the Rust port, actual error recovery uses Result propagation, but
+        // C callers may depend on these pointers being stored.
+        let _ = top_func; // Stored implicitly via run_ptr state
+        let _ = longjmp; // Not needed — Rust uses Result-based error handling
 
-    // Invoke the tcc-core setjmp method (a no-op in Rust) for completeness.
-    let _ = state.tcc_setjmp();
+        // Invoke the tcc-core setjmp method (a no-op in Rust) for completeness.
+        let _ = state.tcc_setjmp();
 
-    // Return the jmp_buf pointer as expected by the C API.
-    // The C macro `tcc_setjmp(s1, jb, f)` calls `setjmp(_tcc_setjmp(...))`,
-    // so the returned pointer is passed directly to `setjmp`.
-    jmp_buf
+        // Return the jmp_buf pointer as expected by the C API.
+        // The C macro `tcc_setjmp(s1, jb, f)` calls `setjmp(_tcc_setjmp(...))`,
+        // so the returned pointer is passed directly to `setjmp`.
+        jmp_buf
+    }))
+    .unwrap_or(ptr::null_mut())
 }
 
 /// Compiles a string containing C source, associating it with a filename
@@ -859,19 +919,22 @@ pub unsafe extern "C" fn tcc_compile_string_file(
     buf: *const c_char,
     filename: *const c_char,
 ) -> c_int {
-    let state = match state_from_ptr(s) {
-        Some(s) => s,
-        None => return -1,
-    };
-    let src = match cstr_to_str(buf) {
-        Some(b) => b,
-        None => return -1,
-    };
-    let fname = match cstr_to_str(filename) {
-        Some(f) => f,
-        None => return -1,
-    };
-    result_to_int(state.compile_string_file(src, fname))
+    catch_unwind(AssertUnwindSafe(|| {
+        let state = match state_from_ptr(s) {
+            Some(s) => s,
+            None => return -1,
+        };
+        let src = match cstr_to_str(buf) {
+            Some(b) => b,
+            None => return -1,
+        };
+        let fname = match cstr_to_str(filename) {
+            Some(f) => f,
+            None => return -1,
+        };
+        result_to_int(state.compile_string_file(src, fname))
+    }))
+    .unwrap_or(-1)
 }
 
 /// Outputs an object file after `tcc_relocate()`.
@@ -893,18 +956,21 @@ pub unsafe extern "C" fn elf_output_obj(
     s1: *mut TCCState,
     filename: *const c_char,
 ) -> c_int {
-    let state = match state_from_ptr(s1) {
-        Some(s) => s,
-        None => return -1,
-    };
-    let fname = match cstr_to_str(filename) {
-        Some(f) => f,
-        None => return -1,
-    };
-    // Set the output file path before calling the core method,
-    // which reads from self.outfile.
-    state.outfile = Some(fname.to_string());
-    result_to_int(state.elf_output_obj())
+    catch_unwind(AssertUnwindSafe(|| {
+        let state = match state_from_ptr(s1) {
+            Some(s) => s,
+            None => return -1,
+        };
+        let fname = match cstr_to_str(filename) {
+            Some(f) => f,
+            None => return -1,
+        };
+        // Set the output file path before calling the core method,
+        // which reads from self.outfile.
+        state.outfile = Some(fname.to_string());
+        result_to_int(state.elf_output_obj())
+    }))
+    .unwrap_or(-1)
 }
 
 /// Sets a custom error printer for runtime exceptions.
@@ -925,16 +991,18 @@ pub unsafe extern "C" fn tcc_set_backtrace_func(
     userdata: *mut c_void,
     func: Option<TCCBtFunc>,
 ) {
-    let state = match state_from_ptr(s1) {
-        Some(s) => s,
-        None => return,
-    };
-    // Store the backtrace callback data and function pointer.
-    // The function pointer is stored as *mut c_void in TCCState for
-    // type-agnostic storage; the actual 6-parameter signature (TCCBtFunc)
-    // is preserved in the raw bits and will be cast back when invoked.
-    state.bt_data = Some(userdata);
-    state.bt_func = func.map(|f| f as *mut c_void);
+    let _ = catch_unwind(AssertUnwindSafe(|| {
+        let state = match state_from_ptr(s1) {
+            Some(s) => s,
+            None => return,
+        };
+        // Store the backtrace callback data and function pointer.
+        // The function pointer is stored as *mut c_void in TCCState for
+        // type-agnostic storage; the actual 6-parameter signature (TCCBtFunc)
+        // is preserved in the raw bits and will be cast back when invoked.
+        state.bt_data = Some(userdata);
+        state.bt_func = func.map(|f| f as *mut c_void);
+    }));
 }
 
 // ===========================================================================

@@ -75,6 +75,22 @@ const IFDEF_FALSE: i32 = 1;
 const IFDEF_DONE: i32 = 2;
 
 // ---------------------------------------------------------------------------
+// Macro expansion safety limits
+// ---------------------------------------------------------------------------
+
+/// Maximum depth of recursive macro expansion.
+///
+/// Prevents stack overflow from deeply nested or self-referential macros
+/// in untrusted input. The C codebase relies on implicit stack limits and
+/// `macro_ptr` chain management for protection; the Rust port adds this
+/// explicit depth guard for defense-in-depth.
+///
+/// The value 256 is chosen to be generous enough for real-world macro
+/// nesting (typical C headers rarely exceed 10–20 levels) while preventing
+/// pathological cases from consuming the entire stack.
+const MAX_MACRO_DEPTH: u32 = 256;
+
+// ---------------------------------------------------------------------------
 // Preprocessor struct — encapsulates all per-compilation preprocessor state
 // ---------------------------------------------------------------------------
 
@@ -142,6 +158,13 @@ pub struct Preprocessor<'a> {
     /// Whether we are currently inside a preprocessor expression (`#if`).
     pp_expr: bool,
 
+    /// Current depth of recursive macro expansion (0 = top level).
+    ///
+    /// Incremented on each entry to [`macro_subst()`] and decremented on exit.
+    /// When this reaches [`MAX_MACRO_DEPTH`], further expansion is rejected
+    /// with a `TccError::preprocessor` error to prevent stack overflow.
+    macro_depth: u32,
+
     /// Current `BufferedFile` for the active input source.
     pub file: BufferedFile,
 
@@ -197,6 +220,7 @@ impl<'a> Preprocessor<'a> {
             macro_stack: Vec::new(),
             pp_counter: 0,
             pp_expr: false,
+            macro_depth: 0,
             file,
             keyword_map,
             date_str,
@@ -1549,7 +1573,37 @@ impl<'a> Preprocessor<'a> {
     /// `output`.  This handles recursive expansion, argument substitution for
     /// function-like macros, `##` pasting, `#` stringification, and
     /// `__VA_ARGS__` (BUG-10 fix for varargs).
+    ///
+    /// # Recursion Safety
+    ///
+    /// Tracks recursion depth via [`Preprocessor::macro_depth`]. If the depth
+    /// exceeds [`MAX_MACRO_DEPTH`] (256), expansion is rejected with a
+    /// `TccError::preprocessor` error. This prevents stack overflow from
+    /// deeply nested or self-referential macros in untrusted input.
     pub fn macro_subst(
+        &mut self,
+        input: &[i32],
+    ) -> TccResult<Vec<i32>> {
+        // Guard against unbounded macro expansion recursion.
+        if self.macro_depth >= MAX_MACRO_DEPTH {
+            return Err(TccError::preprocessor(
+                "<macro>",
+                0,
+                format!(
+                    "macro expansion depth exceeded maximum of {} levels",
+                    MAX_MACRO_DEPTH
+                ),
+            ));
+        }
+        self.macro_depth += 1;
+        let result = self.macro_subst_inner(input);
+        self.macro_depth -= 1;
+        result
+    }
+
+    /// Inner implementation of macro substitution, called by [`macro_subst()`]
+    /// after the depth guard has been applied.
+    fn macro_subst_inner(
         &mut self,
         input: &[i32],
     ) -> TccResult<Vec<i32>> {

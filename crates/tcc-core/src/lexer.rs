@@ -645,23 +645,18 @@ impl<'a> Lexer<'a> {
     }
 
     /// Internal implementation of handle_eob.
+    ///
+    /// Signals `CH_EOF` when the buffer is exhausted, regardless of whether
+    /// the input came from a file descriptor or an in-memory buffer.
+    ///
+    /// In the original C codebase (`tccpp.c` lines 519–565), the `fd >= 0`
+    /// branch would issue a `read()` syscall to refill the buffer. In the
+    /// Rust port, file contents are pre-loaded into [`BufferedFile::buffer`]
+    /// by the preprocessor/file-loader before lexing begins, so both code
+    /// paths converge to the same `CH_EOF` signal. No syscall-based buffer
+    /// refill is needed.
     fn handle_eob_internal(&mut self) {
-        if self.file.fd >= 0 {
-            // Attempt to refill the buffer from the file
-            // In TCC, this reads into file->buffer using a system read() call.
-            // For the Rust port, we use the buffer contents already loaded.
-            // If buf_ptr >= buf_end and fd >= 0, it means we've consumed
-            // all available data. In a real implementation the runtime would
-            // call read() on the fd. Here we signal EOF since the buffer
-            // was pre-loaded by the caller (preprocessor/file-loader).
-            //
-            // The preprocessor is responsible for loading file contents into
-            // BufferedFile.buffer before handing it to the lexer.
-            self.ch = CH_EOF;
-        } else {
-            // No file backing — pure in-memory buffer exhausted
-            self.ch = CH_EOF;
-        }
+        self.ch = CH_EOF;
     }
 
     /// Handle a stray backslash (line continuation or actual stray).
@@ -1292,21 +1287,6 @@ impl<'a> Lexer<'a> {
     /// * `flags` — Combination of `PARSE_FLAG_*` constants.
     pub fn set_parse_flags(&mut self, flags: i32) {
         self.parse_flags = flags;
-    }
-
-    /// Get the current token as a `Token` reference.
-    ///
-    /// Attempts to convert the integer token value to a `Token` enum.
-    /// Falls back to `Token::Eof` if the value cannot be mapped.
-    pub fn current_token(&self) -> &Token {
-        // For now, return a reference to a static token.
-        // The actual token is stored as self.tok (integer), which maps
-        // to Token enum values. The preprocessor/parser layers
-        // typically work with the integer values directly.
-        //
-        // This method provides a convenience accessor for callers that
-        // want the enum representation.
-        &Token::Eof // placeholder - actual usage works via self.tok integer
     }
 
     /// Get the current token value.
