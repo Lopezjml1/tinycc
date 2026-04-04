@@ -1070,9 +1070,10 @@ mod tests {
         {
             let result = create_backend(TargetArch::C67);
             assert!(result.is_err());
-            let err = result.unwrap_err();
-            let msg = format!("{}", err);
-            assert!(msg.contains("not compiled in"), "Error message: {}", msg);
+            if let Err(err) = result {
+                let msg = format!("{}", err);
+                assert!(msg.contains("not compiled in"), "Error message: {}", msg);
+            }
         }
 
         #[cfg(not(feature = "il"))]
