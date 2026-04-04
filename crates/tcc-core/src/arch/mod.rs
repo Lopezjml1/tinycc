@@ -3,3 +3,6 @@
 
 #[cfg(feature = "i386")]
 pub mod i386;
+
+#[cfg(feature = "x86_64")]
+pub mod x86_64;
