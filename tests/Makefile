@@ -338,12 +338,44 @@ cache: tcc_g
 	cachegrind ./tcc_g -o /tmp/linpack -lm bench/linpack.c
 	vg_annotate tcc.c > /tmp/linpack.cache.log
 
+# --------------------------------------------------------------------------
+# Rust test targets (C→Rust migration)
+# These targets invoke the Rust test harness for the migrated compiler.
+# Existing C test targets above are retained for reference and compatibility.
+# --------------------------------------------------------------------------
+
+# Run all Rust tests via Cargo from the workspace root
+rust-test:
+	@echo ------------ $@ ------------
+	cd $(TOP) && cargo test --all
+
+# Run Rust integration tests (tests2 + pp tests via Rust harness)
+rust-integration:
+	@echo ------------ $@ ------------
+	cd $(TOP) && cargo test --test integration_tests
+
+# Run Rust compatibility tests (tcctest.c + abitest.c via Rust harness)
+rust-compatibility:
+	@echo ------------ $@ ------------
+	cd $(TOP) && cargo test --test compatibility_tests
+
+# Run Rust regression tests (per-TODO-bug tests)
+rust-regression:
+	@echo ------------ $@ ------------
+	cd $(TOP) && cargo test --test regression_tests
+
+# Combined Rust test goal
+rust-all: rust-test
+
+.PHONY: rust-test rust-integration rust-compatibility rust-regression rust-all
+
 # clean
 clean:
 	rm -f *~ *.o *.a *.bin *.i *.ref *.out *.out? *.out?b *.cc *.gcc
 	rm -f *-cc *-gcc *-tcc *.exe hello libtcc_test vla_test tcctest[1234]
 	rm -f asm-c-connect asm-c-connect-sep
 	rm -f ex? tcc_g weaktest.*.txt *.def *.pdb *.obj libtcc_test_mt
+	@if command -v cargo >/dev/null 2>&1; then cd $(TOP) && cargo clean 2>/dev/null || true; fi
 	@$(MAKE) -C tests2 $@
 	@$(MAKE) -C pp $@
 
