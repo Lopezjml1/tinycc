@@ -8,7 +8,7 @@ ifndef TOP
  INCLUDED = no
 endif
 
-ifeq ($(findstring $(MAKECMDGOALS),clean distclean),)
+ifeq ($(findstring $(MAKECMDGOALS),clean distclean rust-build rust-build-debug rust-test rust-clean rust-install),)
  include $(TOP)/config.mak
 endif
 

@@ -405,7 +405,7 @@ impl X86Register {
 /// 2. First pass of `i386-asm.h`: 95 OP0 tokens (zero-operand instructions)
 /// 3. Second pass of `i386-asm.h`: 147 non-OP0 tokens (1-3 operand instructions)
 ///
-/// Total: 642 unique instruction variants.
+/// Total: 643 unique instruction variants.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[repr(u16)]
 #[allow(non_camel_case_types)]
@@ -1763,10 +1763,13 @@ impl X86Instruction {
         self as u16
     }
 
+    /// Total number of instruction variants in this enum.
+    pub const INSTRUCTION_COUNT: usize = 643;
+
     /// Attempts to construct from a raw u16 discriminant.
     pub fn from_u16(val: u16) -> Option<Self> {
-        if (val as usize) < 642 {
-            // SAFETY: val is within the range of valid discriminants
+        if (val as usize) < Self::INSTRUCTION_COUNT {
+            // SAFETY: val is within the range of valid discriminants (0..643)
             Some(unsafe { core::mem::transmute::<u16, Self>(val) })
         } else {
             None
@@ -2696,7 +2699,7 @@ mod tests {
     #[test]
     fn test_instruction_total_count() {
         // Verify total instruction count matches expectations
-        assert_eq!(INSTRUCTION_TABLE.len(), 642);
+        assert_eq!(INSTRUCTION_TABLE.len(), 643);
     }
 
     #[test]
