@@ -1,51 +1,57 @@
-//! RISC-V 64-bit architecture backend
+//! .NET IL (Intermediate Language) code generation backend.
 //!
-//! Rust port of the RISC-V 64-bit code generation, linking, and assembly
-//! support from TCC. Sources: `riscv64-gen.c`, `riscv64-link.c`,
-//! `riscv64-asm.c`, `riscv64-tok.h`.
+//! This module implements an experimental code generation backend that emits
+//! .NET Common Intermediate Language (CIL) bytecode instead of native machine
+//! code.
 //!
-//! Feature flag: `riscv64`
-
-pub mod tokens;
+//! This is a port of `il-gen.c` (657 lines) and `il-opcodes.h` (251 lines).
 
 use crate::arch::CodegenBackend;
 use crate::error::TccResult;
 use crate::types::{CType, SValue, Sym};
 
-/// RISC-V 64-bit code generation backend.
+/// .NET IL code generation backend (experimental).
 ///
-/// Implements the `CodegenBackend` trait for RISC-V 64-bit (RV64GC) targets.
-/// Port of `riscv64-gen.c` (1,434 lines) and `riscv64-link.c` (419 lines).
-pub struct Riscv64Backend {
+/// Implements the `CodegenBackend` trait for .NET IL bytecode emission.
+/// Port of `il-gen.c` (657 lines) and `il-opcodes.h` (251 lines).
+///
+/// Key characteristics:
+/// - Stack-based virtual machine (no general-purpose registers)
+/// - 4-byte pointer size (32-bit .NET runtime)
+/// - Experimental/incomplete backend
+pub struct IlBackend {
     _private: (),
 }
 
-impl Riscv64Backend {
-    /// Creates a new RISC-V 64-bit backend instance.
+impl IlBackend {
+    /// Creates a new IL backend instance.
     pub fn new() -> Self {
-        Riscv64Backend { _private: () }
+        IlBackend { _private: () }
     }
 }
 
-impl Default for Riscv64Backend {
+impl Default for IlBackend {
     fn default() -> Self {
         Self::new()
     }
 }
 
-const RISCV64_REG_CLASSES: [i32; 32] = [
-    1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-    2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2,
+/// IL backend register classes.
+/// The .NET IL backend uses a virtual register model.
+/// 8 virtual integer slots + 8 virtual float slots.
+const IL_REG_CLASSES: [i32; 16] = [
+    1, 1, 1, 1, 1, 1, 1, 1,
+    2, 2, 2, 2, 2, 2, 2, 2,
 ];
 
-impl CodegenBackend for Riscv64Backend {
+impl CodegenBackend for IlBackend {
     fn target_machine_defs(&self) -> &'static str {
-        "__riscv\0__riscv_xlen 64\0"
+        "__IL__\0"
     }
 
-    fn reg_classes(&self) -> &[i32] { &RISCV64_REG_CLASSES }
-    fn nb_regs(&self) -> usize { 32 }
-    fn ptr_size(&self) -> usize { 8 }
+    fn reg_classes(&self) -> &[i32] { &IL_REG_CLASSES }
+    fn nb_regs(&self) -> usize { 16 }
+    fn ptr_size(&self) -> usize { 4 }
 
     fn gsym_addr(&mut self, _t: i32, _a: i32) -> TccResult<()> { Ok(()) }
     fn gsym(&mut self, _t: i32) -> TccResult<()> { Ok(()) }
@@ -53,7 +59,7 @@ impl CodegenBackend for Riscv64Backend {
     fn store(&mut self, _r: i32, _sv: &SValue) -> TccResult<()> { Ok(()) }
 
     fn gfunc_sret(&self, _vt: &CType, _variadic: bool) -> (bool, CType, i32, i32) {
-        (false, CType { t: 0, ref_sym: None }, 8, 8)
+        (false, CType { t: 0, ref_sym: None }, 4, 4)
     }
 
     fn gfunc_call(&mut self, _nb_args: i32) -> TccResult<()> { Ok(()) }
@@ -79,9 +85,10 @@ impl CodegenBackend for Riscv64Backend {
     fn gotplt_entry_type(&self, _reloc_type: i32) -> i32 { 0 }
     fn relocate(&mut self, _rel_type: i32, _ptr: &mut [u8], _addr: u64, _val: u64) -> TccResult<()> { Ok(()) }
 
-    fn elf_machine(&self) -> u16 { 243 } // EM_RISCV
-    fn elf_start_addr(&self) -> u64 { 0x10000 }
+    /// IL backend does not have a standard ELF machine type; we use 0.
+    fn elf_machine(&self) -> u16 { 0 }
+    fn elf_start_addr(&self) -> u64 { 0 }
     fn elf_page_size(&self) -> u64 { 0x1000 }
-    fn pcrelative_dllplt(&self) -> bool { true }
+    fn pcrelative_dllplt(&self) -> bool { false }
     fn relocate_dllplt(&self) -> bool { false }
 }
