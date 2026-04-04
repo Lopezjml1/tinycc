@@ -9,3 +9,6 @@ pub mod x86_64;
 
 #[cfg(feature = "riscv64")]
 pub mod riscv64;
+
+#[cfg(feature = "arm")]
+pub mod arm;
