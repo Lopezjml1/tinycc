@@ -405,6 +405,9 @@ pub struct TCCState {
     pub outfile: Option<String>,
     /// Dependency output filename (`-MF`).
     pub deps_outfile: Option<String>,
+    /// Tracked dependency targets (included files) for `-MD`/`-MF` output.
+    /// Populated during preprocessing as files are included.
+    pub target_deps: Vec<String>,
 
     /// User include paths (`-I`). Searched before system paths.
     pub include_paths: Vec<String>,
@@ -785,6 +788,7 @@ impl Default for TCCState {
             mapfile: None,
             outfile: None,
             deps_outfile: None,
+            target_deps: Vec::new(),
             include_paths: Vec::new(),
             sysinclude_paths: Vec::new(),
             library_paths: Vec::new(),
