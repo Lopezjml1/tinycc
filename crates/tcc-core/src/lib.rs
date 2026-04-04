@@ -2,6 +2,7 @@
 pub mod alloc;
 pub mod config;
 pub mod error;
+pub mod token;
 pub mod types;
 
 pub mod arch;
