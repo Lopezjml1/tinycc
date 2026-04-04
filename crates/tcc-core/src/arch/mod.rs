@@ -12,3 +12,6 @@ pub mod riscv64;
 
 #[cfg(feature = "arm")]
 pub mod arm;
+
+#[cfg(feature = "c67")]
+pub mod c67;
