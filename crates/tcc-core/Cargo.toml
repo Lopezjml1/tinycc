@@ -5,25 +5,53 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
-description = "Core compiler pipeline for the Tiny C Compiler (Rust port)"
+description = "TCC compiler core library — Rust port of the Tiny C Compiler pipeline"
+
+[lib]
+name = "tcc_core"
+path = "src/lib.rs"
 
 [dependencies]
+# Typed error handling — replaces setjmp/longjmp error recovery (C's tcc_error/longjmp)
+# See AAP Section 0.4.3 and BUG-16 (memory leak after longjmp)
 thiserror = { workspace = true }
+# Memory-mapped file I/O — required for tccrun.c port (-run mode uses mmap for executable memory)
+# See AAP Section 0.6.1
 memmap2 = { workspace = true }
+# Raw FFI bindings to platform libc — dlopen/dlsym (runtime linking), mprotect (executable memory), signals
+# Matches TCC's direct libc usage in tccrun.c, tccelf.c
 libc = { workspace = true }
 
+[features]
+# Default features: enable the native host architecture and common options.
+# x86_64 is the default because AAP states "Linux-first target" and "x86_64 Linux is the primary target".
+default = ["x86_64", "asm", "bcheck"]
+
+# Architecture backend features (replaces TCC_TARGET_* compile-time guards from tcc.h lines 146-151)
+i386 = []       # i386 code generator (from i386-gen.c, i386-link.c, i386-asm.c)
+x86_64 = []     # x86-64 code generator (from x86_64-gen.c, x86_64-link.c)
+arm = []        # ARMv4 code generator (from arm-gen.c, arm-link.c, arm-asm.c)
+arm64 = []      # ARMv8/AArch64 code generator (from arm64-gen.c, arm64-link.c, arm64-asm.c)
+riscv64 = []    # RISC-V 64-bit code generator (from riscv64-gen.c, riscv64-link.c, riscv64-asm.c)
+c67 = []        # TMS320C67xx code generator (from c67-gen.c, c67-link.c)
+il = []         # .NET IL code generator (from il-gen.c)
+
+# Optional compiler subsystem features (from TODO FEAT-01: disable-asm and disable-bcheck options)
+asm = []        # Enable inline/standalone assembler support (from tccasm.c)
+bcheck = []     # Enable bounds checking support (from lib/bcheck.c integration)
+
+# Enable all backends at once (convenience for cross-compilation testing)
+all-backends = ["i386", "x86_64", "arm", "arm64", "riscv64", "c67", "il"]
+
 [dev-dependencies]
+# CLI binary integration testing — run tcc binary and assert stdout/stderr/exit code
+assert_cmd = { workspace = true }
+# Assertion predicates for test output matching (used with assert_cmd)
+predicates = { workspace = true }
+# Temporary file/directory creation for test isolation
 tempfile = { workspace = true }
+# Text diff comparison for regression test .expect file validation
 similar = { workspace = true }
 
-[features]
-default = ["x86_64", "i386", "arm", "arm64", "riscv64", "c67", "il", "asm", "bcheck"]
-x86_64 = []
-i386 = []
-arm = []
-arm64 = []
-riscv64 = []
-c67 = []
-il = []
-asm = []
-bcheck = []
+[package.metadata.docs.rs]
+all-features = true
