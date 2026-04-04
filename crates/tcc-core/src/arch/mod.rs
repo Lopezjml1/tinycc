@@ -6,3 +6,6 @@ pub mod i386;
 
 #[cfg(feature = "x86_64")]
 pub mod x86_64;
+
+#[cfg(feature = "riscv64")]
+pub mod riscv64;
