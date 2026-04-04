@@ -24,8 +24,40 @@
 //! - **PORT-01 / PORT-02**: All sizes and offsets use `usize`; no `int`-as-size assumptions.
 
 use std::mem;
+use std::ptr;
 
 use crate::types::Sym;
+
+// ===========================================================================
+// Drop registry entry — type-erased destructor for arena-allocated objects
+// ===========================================================================
+
+/// A type-erased destructor entry stored by the arena.
+///
+/// When `alloc_typed<T>()` is called for a type that implements `Drop`
+/// (detected via `std::mem::needs_drop::<T>()`), the arena records the
+/// pointer and a type-erased drop function. On `reset()` or `Drop`, the
+/// arena iterates the registry in reverse order and calls each destructor.
+///
+/// This solves the OPT-03 destructor leak: types like `Sym` (which contain
+/// `Option<Box<Sym>>`, `Option<Vec<i32>>`, etc.) have their owned heap data
+/// properly freed when the arena is reset or dropped.
+struct DropEntry {
+    /// Pointer to the object within the arena block.
+    ptr: *mut u8,
+    /// Type-erased destructor: calls `std::ptr::drop_in_place::<T>()`.
+    drop_fn: unsafe fn(*mut u8),
+}
+
+/// Type-erased drop function for a specific type `T`.
+///
+/// # Safety
+///
+/// `ptr` must point to a valid, initialized value of type `T` that has not
+/// yet been dropped. The caller must ensure proper alignment.
+unsafe fn drop_typed<T>(ptr: *mut u8) {
+    ptr::drop_in_place(ptr as *mut T);
+}
 
 // ===========================================================================
 // Constants
@@ -98,6 +130,13 @@ pub struct Arena {
     /// Running total of bytes handed out via `alloc` / `alloc_zeroed` / `alloc_typed`.
     /// Does not include alignment padding.
     total_allocated: usize,
+    /// Registry of destructors for arena-allocated objects that implement `Drop`.
+    ///
+    /// When `alloc_typed<T>()` allocates a type with `needs_drop::<T>() == true`,
+    /// a `DropEntry` is recorded so the destructor runs on `reset()` or arena `Drop`.
+    /// Entries are stored in allocation order and executed in **reverse** order
+    /// (matching Rust/C++ destruction semantics).
+    drop_registry: Vec<DropEntry>,
 }
 
 impl Arena {
@@ -124,6 +163,7 @@ impl Arena {
             offset: 0,
             block_size: size.max(MIN_BLOCK_SIZE),
             total_allocated: 0,
+            drop_registry: Vec::new(),
         }
     }
 
@@ -204,6 +244,11 @@ impl Arena {
     /// [`Default::default()`]. This is the primary mechanism for arena-allocating
     /// typed compiler structures (e.g., `Sym`, `CType`).
     ///
+    /// If `T` implements `Drop` (detected at compile time via `std::mem::needs_drop`),
+    /// the arena registers a destructor entry so that `T::drop()` is called when the
+    /// arena is reset or dropped. This prevents memory leaks for types with owned heap
+    /// data (e.g., `Sym` with `Option<Box<Sym>>` and `Option<Vec<i32>>` fields).
+    ///
     /// # Type Parameters
     ///
     /// * `T` — Must implement `Default`. Must be a sized, non-zero-size type.
@@ -212,14 +257,25 @@ impl Arena {
     ///
     /// Panics if `size_of::<T>() == 0` (zero-sized types cannot be arena-allocated).
     ///
-    /// # Safety Note
+    /// # Safety
     ///
-    /// Uses `unsafe` internally to produce a properly aligned `&mut T` from the
-    /// arena's byte storage. This is sound because:
-    /// - The pointer is computed to be correctly aligned for `T`.
-    /// - The memory region is exclusively owned (no aliasing).
-    /// - `T::default()` produces a valid initial value.
-    /// - The backing block is stable (never reallocated).
+    /// This function uses `unsafe` internally. The safety contract is:
+    ///
+    /// 1. **Lifetime invariant**: The returned `&mut T` borrows from the arena. The
+    ///    caller must ensure the arena outlives all references obtained from it.
+    ///    Calling `reset()` or dropping the arena invalidates ALL outstanding references.
+    ///
+    /// 2. **No mutable aliasing**: Each call returns a unique, non-overlapping region.
+    ///    The caller must not create additional `&mut` references to the same memory.
+    ///
+    /// 3. **Alignment**: The pointer is computed to satisfy `T`'s alignment requirement
+    ///    based on the absolute address within the block.
+    ///
+    /// 4. **Initialization**: `T::default()` is written to the region before the
+    ///    reference is returned, ensuring the value is fully initialized.
+    ///
+    /// 5. **Drop guarantee**: If `needs_drop::<T>()` is true, the destructor is
+    ///    registered and will be called exactly once (on reset or arena drop).
     pub fn alloc_typed<T: Default>(&mut self) -> &mut T {
         let align = mem::align_of::<T>();
         let size = mem::size_of::<T>();
@@ -265,9 +321,20 @@ impl Arena {
         // - The region `[actual_offset .. actual_offset + size)` is within the block.
         // - No other mutable reference to this region exists.
         // - We write a valid `T` via `Default::default()` before returning the reference.
+        // - If T needs dropping, we register a destructor before returning.
         unsafe {
             let ptr = block_base.add(actual_offset) as *mut T;
             ptr.write(T::default());
+
+            // Register destructor for types that implement Drop.
+            // This is checked at compile time — for Copy types, the branch is eliminated.
+            if mem::needs_drop::<T>() {
+                self.drop_registry.push(DropEntry {
+                    ptr: ptr as *mut u8,
+                    drop_fn: drop_typed::<T>,
+                });
+            }
+
             &mut *ptr
         }
     }
@@ -288,6 +355,11 @@ impl Arena {
     /// Using them is undefined behavior. Callers must ensure no outstanding
     /// references exist before calling this method.
     pub fn reset(&mut self) {
+        // Run registered destructors in reverse allocation order.
+        // This ensures that objects allocated later (which may reference objects
+        // allocated earlier) are dropped first, matching Rust/C++ destruction semantics.
+        self.run_destructors();
+
         if !self.blocks.is_empty() {
             self.current_block = 0;
             self.offset = 0;
@@ -308,6 +380,33 @@ impl Arena {
     // -----------------------------------------------------------------------
     // Private helpers
     // -----------------------------------------------------------------------
+
+    /// Run all registered destructors in reverse allocation order, then clear
+    /// the registry.
+    ///
+    /// This is called by both `reset()` and `Drop::drop()` to ensure that
+    /// arena-allocated objects with `Drop` implementations (e.g., `Sym` with
+    /// `Option<Box<Sym>>` and `Option<Vec<i32>>` fields) have their owned heap
+    /// data properly freed.
+    ///
+    /// # Safety
+    ///
+    /// Each registered destructor is called exactly once. After this method returns,
+    /// the underlying memory in the arena blocks is considered uninitialized for
+    /// the purposes of typed access — only the raw `Vec<u8>` block memory remains valid.
+    fn run_destructors(&mut self) {
+        // Iterate in reverse order so that later allocations are dropped first.
+        for entry in self.drop_registry.drain(..).rev() {
+            // SAFETY: Each DropEntry was registered by alloc_typed<T>() with a valid
+            // pointer into an arena block and the correct drop_fn for that type.
+            // The pointer remains valid because the arena blocks have not been freed
+            // (blocks.clear() has not been called yet). Each entry is processed
+            // exactly once due to drain().
+            unsafe {
+                (entry.drop_fn)(entry.ptr);
+            }
+        }
+    }
 
     /// Ensure the current block has at least `needed` bytes of free space.
     ///
@@ -336,6 +435,11 @@ impl Default for Arena {
 
 impl Drop for Arena {
     fn drop(&mut self) {
+        // Run all registered destructors before freeing the backing memory.
+        // This ensures that Drop types (e.g., Sym with Box/Vec fields) have their
+        // owned heap data properly freed — solving the OPT-03 destructor leak.
+        self.run_destructors();
+
         // All blocks are `Vec<u8>` and are freed automatically by `Vec::drop`.
         // This satisfies BUG-16: no memory leaked on error paths, because Rust's
         // RAII guarantees `drop` runs even during stack unwinding.
@@ -540,9 +644,12 @@ impl SymPool {
         self.arena.alloc_typed::<Sym>()
     }
 
-    /// Reset the pool, logically freeing all allocated `Sym` nodes.
+    /// Reset the pool, freeing all allocated `Sym` nodes.
     ///
-    /// After reset, all previously returned `&mut Sym` references are **invalid**.
+    /// This calls destructors for all allocated `Sym` objects (via the arena's
+    /// drop registry), properly freeing any owned heap data such as
+    /// `Option<Box<Sym>>` and `Option<Vec<i32>>` fields. After reset, all
+    /// previously returned `&mut Sym` references are **invalid**.
     /// The `allocated_count` is reset to zero. The underlying arena blocks are
     /// retained for reuse.
     pub fn reset(&mut self) {

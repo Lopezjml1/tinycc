@@ -875,6 +875,13 @@ pub enum X86Instruction {
     Wait_,
     Fwait,
     Aword,
+    /// Operand-size prefix (0x66) — alias for `data16`.
+    ///
+    /// From C source `i386-asm.h`: `ALT(DEF_ASM_OP0(word, 0x66))`.
+    /// This is the `word` instruction mnemonic, which emits the 0x66
+    /// operand-size prefix byte, overriding the default operand size
+    /// to 16 bits in 32-bit mode.
+    Word,
     Addr16,
     Data16,
     Lock,
@@ -1524,6 +1531,7 @@ static INSTRUCTION_TABLE: &[(X86Instruction, &str)] = &[
     (X86Instruction::Wait_, "wait"),
     (X86Instruction::Fwait, "fwait"),
     (X86Instruction::Aword, "aword"),
+    (X86Instruction::Word, "word"),
     (X86Instruction::Addr16, "addr16"),
     (X86Instruction::Data16, "data16"),
     (X86Instruction::Lock, "lock"),
@@ -1815,7 +1823,7 @@ pub struct OpcodeEntry {
 /// Operand types use `OPT_*` enum values (NOT `OP_*` bitmasks). `OPT_EA` (0x80)
 /// can be ORed with a base type to indicate "effective address or register".
 ///
-/// TOTAL: 307 entries (1 skipped: `int` is aliased to `TOK_INT`, not an ASM token).
+/// TOTAL: 308 entries (1 skipped: `int` is aliased to `TOK_INT`, not an ASM token).
 pub static OPCODE_TABLE: &[OpcodeEntry] = &[
     OpcodeEntry { token: X86Instruction::Endbr32, opcode: 0xf31e, instr_type: 0xe108, nb_ops: 0, op_type: [0, 0, 0] }, // endbr32
     OpcodeEntry { token: X86Instruction::CmpsB, opcode: 0xa6, instr_type: 0x3, nb_ops: 0, op_type: [0, 0, 0] }, // cmpsb [ALT]
@@ -2170,6 +2178,7 @@ pub static OP0_CODES: &[(X86Instruction, u32)] = &[
     (X86Instruction::Wait_, 0x009b), // wait
     (X86Instruction::Fwait, 0x009b), // fwait
     (X86Instruction::Aword, 0x0067), // aword
+    (X86Instruction::Word, 0x0066), // word (operand-size prefix, alias for data16)
     (X86Instruction::Addr16, 0x0067), // addr16
     (X86Instruction::Data16, 0x0066), // data16
     (X86Instruction::Lock, 0x00f0), // lock

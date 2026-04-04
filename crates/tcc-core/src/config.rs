@@ -113,6 +113,27 @@ pub const SYSROOT: &str = const_unwrap_option_str(option_env!("TCC_CONFIG_SYSROO
 /// operating system conventions.
 pub const LDDIR: &str = const_unwrap_option_str(option_env!("TCC_CONFIG_LDDIR"), "lib");
 
+/// GNU-style target triplet for multiarch directory layout.
+///
+/// Corresponds to `CONFIG_TRIPLET` in `tcc.h` (line 255) and is emitted
+/// by `build.rs` as `TCC_TRIPLET` via `cargo:rustc-env`.
+///
+/// The triplet is used by the compiler to locate architecture-specific
+/// system libraries and headers in multiarch directory layouts. For example,
+/// on Debian/Ubuntu x86_64 systems, system libraries are found under
+/// `/usr/lib/x86_64-linux-gnu/` where `x86_64-linux-gnu` is the triplet.
+///
+/// Values by platform:
+/// - Linux x86_64: `"x86_64-linux-gnu"`
+/// - Linux ARM64: `"aarch64-linux-gnu"`
+/// - Windows MSVC: `"x86_64-pc-windows-msvc"`
+/// - Windows MinGW: `"x86_64-w64-mingw32"`
+/// - macOS: `"x86_64-darwin-gnu"` or `"aarch64-darwin-gnu"`
+/// - GNU Hurd: `"{arch}-pc-gnu"`
+///
+/// Constructed by `build.rs` Phase 7 (ABI Detection and Triplet Construction).
+pub const TCC_TARGET_TRIPLET: &str = env!("TCC_TRIPLET");
+
 /// CRT (C Runtime) object file search paths.
 ///
 /// Corresponds to `CONFIG_TCC_CRTPREFIX` in `tcc.h` (line 266).
@@ -301,6 +322,35 @@ pub const DIRSEP: char = '/';
 /// - The `__TCC__` predefined macro value
 /// - The `tcc-core` Cargo package version metadata
 pub const TCC_VERSION: &str = "0.9.28rc";
+
+// ============================================================================
+// Compiler Feature Flags
+// ============================================================================
+
+/// Whether TCC predefined macros from `tccdefs.h` are auto-included.
+///
+/// Corresponds to `CONFIG_TCC_PREDEFS` in `tcc.h` (line 337).
+/// When `true`, the preprocessor automatically includes the built-in
+/// `tccdefs.h` header before processing user source files. This header
+/// provides compatibility definitions for GCC/MSVC builtins, type traits,
+/// and platform-specific macros.
+///
+/// Enabled by default in the C codebase and preserved in the Rust port.
+/// The preprocessor module should check this flag to determine whether
+/// to inject the predefined header.
+pub const CONFIG_TCC_PREDEFS: bool = true;
+
+/// Whether multiprocess compilation locking is enabled.
+///
+/// Corresponds to `CONFIG_TCC_SEMLOCK` in `tcc.h` (lines 241-243).
+/// When `true`, TCC uses semaphore-based locking to prevent concurrent
+/// writes to output files when multiple TCC instances run in parallel.
+///
+/// Mapped from the `tcc_config_semlock` cfg flag emitted by `build.rs`.
+/// In the Rust port, Rust's ownership model and `std::fs` file locking
+/// provide equivalent safety guarantees, but this flag is preserved for
+/// behavioral compatibility with the C implementation.
+pub const CONFIG_TCC_SEMLOCK: bool = cfg!(tcc_config_semlock);
 
 // ============================================================================
 // Helper Functions
@@ -552,6 +602,38 @@ mod tests {
     fn test_using_double_for_ldouble_is_bool() {
         // Just verify the constant is accessible and is a bool
         let _val: bool = USING_DOUBLE_FOR_LDOUBLE;
+    }
+
+    #[test]
+    fn test_tcc_target_triplet_is_nonempty() {
+        assert!(
+            !TCC_TARGET_TRIPLET.is_empty(),
+            "TCC_TARGET_TRIPLET must be a non-empty string set by build.rs"
+        );
+    }
+
+    #[test]
+    fn test_tcc_target_triplet_contains_arch() {
+        // The triplet must contain a recognized architecture component
+        let known_arches = ["x86_64", "i386", "aarch64", "arm", "riscv64", "unknown"];
+        let has_arch = known_arches.iter().any(|arch| TCC_TARGET_TRIPLET.starts_with(arch));
+        assert!(
+            has_arch,
+            "TCC_TARGET_TRIPLET '{}' should start with a known architecture",
+            TCC_TARGET_TRIPLET
+        );
+    }
+
+    #[test]
+    fn test_config_tcc_predefs_is_enabled() {
+        // CONFIG_TCC_PREDEFS should be true by default
+        assert!(CONFIG_TCC_PREDEFS, "CONFIG_TCC_PREDEFS should be enabled by default");
+    }
+
+    #[test]
+    fn test_config_tcc_semlock_is_bool() {
+        // Just verify the constant is accessible and is a bool
+        let _val: bool = CONFIG_TCC_SEMLOCK;
     }
 
     // --- Const helper tests ---

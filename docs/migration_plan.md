@@ -13,7 +13,7 @@
 1. **Language Migration**: Port every compiler module from C (ANSI C89/C90 with select C99) to idiomatic Rust using the stable toolchain, organized as a Cargo workspace with strong module boundaries.
 2. **Behavioral Preservation**: Maintain identical CLI invocation semantics and compiler output for all three core workflows — compile-only (`tcc -c`), link-to-executable (`tcc -o`), and direct execution (`tcc -run`) — with all documented flags preserved.
 3. **Safety & Maintainability**: Eliminate classes of memory bugs (buffer overflows, use-after-free, null dereferences) inherent in the C codebase by leveraging Rust's ownership model, typed error handling (`Result<T, TccError>` with `thiserror`), and module-level encapsulation.
-4. **TODO Resolution**: Address all 45 TODO items — 30 fixed, 7 partially fixed, 6 deferred, 1 blocked, 1 not reproducible. Zero items silently skipped; every deferred or blocked item has a documented rationale.
+4. **TODO Resolution**: Address all 45 TODO items — 31 fixed, 6 partially fixed, 6 deferred, 1 blocked, 1 not reproducible. Zero items silently skipped; every deferred or blocked item has a documented rationale.
 
 ---
 
@@ -582,15 +582,15 @@ All 45 items from the `TODO` file are triaged and addressed. See `docs/todo_bug_
 
 | Category | Total | Fixed | Partially Fixed | Deferred | Blocked | Not Reproducible |
 |----------|-------|-------|-----------------|----------|---------|-----------------|
-| Bugs | 16 | 14 | 1 | 0 | 0 | 0 |
+| Bugs | 16 | 16 | 0 | 0 | 0 | 0 |
 | Portability | 3 | 2 | 1 | 0 | 0 | 0 |
 | Linking | 1 | 0 | 1 | 0 | 0 | 0 |
 | Bound checking | 4 | 2 | 1 | 0 | 0 | 1 |
 | Missing features | 6 | 4 | 1 | 1 | 0 | 0 |
 | Optimizations | 5 | 4 | 1 | 0 | 0 | 0 |
-| Not critical | 8 | 4 | 1 | 3 | 1 | 0 |
+| Not critical | 8 | 3 | 1 | 3 | 1 | 0 |
 | Release/process | 2 | 0 | 0 | 2 | 0 | 0 |
-| **Totals** | **45** | **30** | **7** | **6** | **1** | **1** |
+| **Totals** | **45** | **31** | **6** | **6** | **1** | **1** |
 
 **Zero items silently skipped.** Every deferred or blocked item has a documented rationale and next-step recommendation.
 

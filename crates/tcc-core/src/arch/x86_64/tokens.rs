@@ -127,6 +127,15 @@ pub struct RegisterDef {
 
 // ---------------------------------------------------------------------------
 // Opcode flag constants (from tcc.h / i386-asm.c, x86_64 variant)
+//
+// NOTE ON TYPE CONVENTION: x86_64 uses `u32` for all OPC_* flag constants,
+// while i386 uses `u16`. This is intentional — x86_64 extends the flag space
+// with OPC_WLQ (0x1000) and OPC_BWLQ which, when combined with the group
+// encoding at OPC_GROUP_SHIFT=13, can produce values that approach or exceed
+// the u16 range. The `AsmOpDef.flags` field is `u32` accordingly.
+// If shared assembler code is introduced in the future, a common type alias
+// `type OpcodeFlags = u32` should be defined in `arch/mod.rs` and both
+// architectures should adopt it.
 // ---------------------------------------------------------------------------
 
 /// Byte suffix support — only meaningful combined with `OPC_WL`.
@@ -220,6 +229,13 @@ pub const OPT_DX: u32 = 20;
 pub const OPT_ADDR: u32 = 21;
 /// Indirect (memory-indirect) operand `*operand`.
 pub const OPT_INDIR: u32 = 22;
+/// Boundary marker: all operand types at or above this value are *composite*
+/// types (unions of simpler types), not directly encodable register/immediate
+/// classes. Shared assembler code uses this to distinguish simple vs composite
+/// operand matching. On x86_64 this is 23 (OPT_IM); on i386 it is 20 due to
+/// the absence of OPT_REG64, OPT_REG8_LOW, and OPT_IM64.
+pub const OPT_COMPOSITE_FIRST: u32 = 23;
+
 /// Any immediate operand (composite).
 pub const OPT_IM: u32 = 23;
 /// Any general-purpose register (composite).

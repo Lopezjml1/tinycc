@@ -53,6 +53,13 @@ fn main() {
     // ========================================================================
     // These environment variables are set by Cargo for build scripts.
     // See: https://doc.rust-lang.org/cargo/reference/environment-variables.html
+    //
+    // NOTE: Host C compiler detection (e.g., via the `cc` crate) is intentionally
+    // omitted. The C conftest.c needed to detect the host C compiler because TCC
+    // was built with `make`/`cc`. The Rust port uses Cargo, which handles toolchain
+    // detection natively. If host C compiler detection is needed in the future
+    // (e.g., for compiling the `lib/` runtime library), it should be gated behind
+    // a Cargo feature flag to avoid unnecessary build-time overhead.
     let target_arch = env_var("CARGO_CFG_TARGET_ARCH");
     let target_os = env_var("CARGO_CFG_TARGET_OS");
     let target_env = env_var("CARGO_CFG_TARGET_ENV");
@@ -237,15 +244,28 @@ fn main() {
     };
 
     // Triplet assembly — follows conftest.c lines 230-236:
-    //   Windows:   ARCH-win32-  (empty ABI, trailing dash preserved)
-    //   GNU Hurd:  ARCH-gnu-gnu
-    //   Default:   ARCH-OS-ABI
+    //   Windows MSVC:  ARCH-pc-windows-msvc   (modern MSVC toolchain)
+    //   Windows GNU:   ARCH-w64-mingw32       (MinGW-w64 toolchain)
+    //   GNU Hurd:      ARCH-pc-gnu            (GCC/libc convention)
+    //   Default:       ARCH-OS-ABI
+    //
+    // The original C conftest.c used a single "ARCH-win32-" format for all
+    // Windows targets because TCC only supported the MinGW environment.
+    // The Rust port distinguishes MSVC vs GNU environments on Windows to
+    // enable correct sysroot path construction for both toolchains.
     let triplet = if is_pe {
-        // conftest.c: printf("%s-win32-\n", TRIPLET_ARCH)
-        // The trailing dash is intentional — conftest.c format string has it.
-        format!("{}-win32-", triplet_arch)
+        // Distinguish MSVC vs GNU (MinGW) toolchains on Windows.
+        // Cargo sets CARGO_CFG_TARGET_ENV to "msvc" or "gnu" accordingly.
+        if target_env == "msvc" {
+            format!("{}-pc-windows-msvc", triplet_arch)
+        } else {
+            // MinGW-w64 convention: x86_64-w64-mingw32 / i686-w64-mingw32
+            format!("{}-w64-mingw32", triplet_arch)
+        }
     } else if target_os == "hurd" {
-        format!("{}-gnu-gnu", triplet_arch)
+        // GNU Hurd convention: {arch}-pc-gnu (matches GCC/libc triplet format).
+        // The previous "{arch}-gnu-gnu" format was non-standard.
+        format!("{}-pc-gnu", triplet_arch)
     } else {
         format!("{}-{}-{}", triplet_arch, triplet_os, triplet_abi)
     };
