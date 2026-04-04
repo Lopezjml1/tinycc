@@ -1,0 +1,15 @@
+[package]
+name = "tcc-ffi"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "C-compatible FFI bindings for the Tiny C Compiler (Rust port)"
+
+[lib]
+crate-type = ["cdylib", "staticlib"]
+
+[dependencies]
+tcc-core = { path = "../tcc-core" }
+libc = { workspace = true }

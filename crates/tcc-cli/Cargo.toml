@@ -1,0 +1,21 @@
+[package]
+name = "tcc-cli"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "CLI driver for the Tiny C Compiler (Rust port)"
+
+[[bin]]
+name = "tcc"
+path = "src/main.rs"
+
+[dependencies]
+tcc-core = { path = "../tcc-core" }
+clap = { workspace = true }
+
+[dev-dependencies]
+assert_cmd = { workspace = true }
+predicates = { workspace = true }
+tempfile = { workspace = true }

@@ -1,0 +1,29 @@
+[package]
+name = "tcc-core"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Core compiler pipeline for the Tiny C Compiler (Rust port)"
+
+[dependencies]
+thiserror = { workspace = true }
+memmap2 = { workspace = true }
+libc = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }
+similar = { workspace = true }
+
+[features]
+default = ["x86_64", "i386", "arm", "arm64", "riscv64", "c67", "il", "asm", "bcheck"]
+x86_64 = []
+i386 = []
+arm = []
+arm64 = []
+riscv64 = []
+c67 = []
+il = []
+asm = []
+bcheck = []

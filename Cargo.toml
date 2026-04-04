@@ -1,0 +1,39 @@
+[workspace]
+members = [
+    "crates/tcc-cli",
+    "crates/tcc-core",
+    "crates/tcc-ffi",
+]
+resolver = "2"
+
+[workspace.package]
+version = "0.9.28-rc1"
+edition = "2021"
+rust-version = "1.75"
+license = "LGPL-2.1-or-later"
+repository = "https://repo.or.cz/tinycc.git"
+description = "Tiny C Compiler — Rust port of the smallest ANSI C compiler"
+
+[workspace.dependencies]
+# CLI argument parsing — TCC has ~50+ flags with complex semantics
+clap = { version = "4.6", features = ["derive"] }
+# Typed error handling — replaces setjmp/longjmp error recovery
+thiserror = "2.0"
+# Memory-mapped file I/O — required for -run mode (mmap-based execution)
+memmap2 = "0.9"
+# Raw FFI bindings to platform libc — dlopen/dlsym, mprotect, signals
+libc = "0.2"
+
+# Dev dependencies (testing)
+assert_cmd = "2.0"
+predicates = "3.1"
+tempfile = "3.14"
+similar = "2.6"
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+
+[profile.dev]
+opt-level = 0
+debug = true
