@@ -542,6 +542,13 @@ pub struct Arm64Backend {
     ///
     /// Source: `arm64-gen.c` line 100 — `static int func_vc;`
     pub func_vc: bool,
+
+    /// Code generation context — holds instruction buffer, value stack,
+    /// pending relocations, and per-function state for the ARM64 backend.
+    /// This is the primary working state used by `gen.rs` during code
+    /// emission. Every `Arm64Backend` method that emits instructions
+    /// accesses this context.
+    pub ctx: gen::Arm64CodegenCtx,
 }
 
 impl Arm64Backend {
@@ -560,6 +567,7 @@ impl Arm64Backend {
             func_bound_add_epilog: false,
             func_sub_sp_offset: 0,
             func_vc: false,
+            ctx: gen::Arm64CodegenCtx::new(),
         }
     }
 }
