@@ -5,6 +5,7 @@
 //!
 //! Feature flag: `x86_64`
 
+pub mod link;
 pub mod tokens;
 
 use crate::arch::CodegenBackend;
@@ -81,15 +82,21 @@ impl CodegenBackend for X86_64Backend {
     fn gen_vla_sp_restore(&mut self, _addr: i32) -> TccResult<()> { Ok(()) }
     fn gen_vla_alloc(&mut self, _typ: &CType, _align: i32) -> TccResult<()> { Ok(()) }
 
-    fn code_reloc(&self, _reloc_type: i32) -> i32 { -1 }
-    fn gotplt_entry_type(&self, _reloc_type: i32) -> i32 { 0 }
-    fn relocate(&mut self, _rel_type: i32, _ptr: &mut [u8], _addr: u64, _val: u64) -> TccResult<()> { Ok(()) }
+    fn code_reloc(&self, reloc_type: i32) -> i32 {
+        link::code_reloc(reloc_type)
+    }
+    fn gotplt_entry_type(&self, reloc_type: i32) -> i32 {
+        link::gotplt_entry_type(reloc_type)
+    }
+    fn relocate(&mut self, rel_type: i32, ptr: &mut [u8], addr: u64, val: u64) -> TccResult<()> {
+        link::relocate(rel_type, ptr, addr, val)
+    }
 
     fn elf_machine(&self) -> u16 { 62 } // EM_X86_64
     fn elf_start_addr(&self) -> u64 { 0x400000 }
     fn elf_page_size(&self) -> u64 { 0x1000 }
     fn pcrelative_dllplt(&self) -> bool { true }
-    fn relocate_dllplt(&self) -> bool { false }
+    fn relocate_dllplt(&self) -> bool { true }
 }
 
 // ===========================================================================
@@ -178,10 +185,12 @@ mod tests {
     #[test]
     fn test_x86_64_backend_reloc_defaults() {
         let backend = X86_64Backend::new();
+        // R_X86_64_NONE (0) is not a valid relocation type for code_reloc/gotplt → returns -1
         assert_eq!(backend.code_reloc(0), -1);
-        assert_eq!(backend.gotplt_entry_type(0), 0);
-        assert!(backend.pcrelative_dllplt()); // x86_64 uses PC-relative PLT
-        assert!(!backend.relocate_dllplt());
+        assert_eq!(backend.gotplt_entry_type(0), -1);
+        // x86_64 uses PC-relative PLT and relocates DLL PLT entries
+        assert!(backend.pcrelative_dllplt());
+        assert!(backend.relocate_dllplt());
     }
 
     #[test]
