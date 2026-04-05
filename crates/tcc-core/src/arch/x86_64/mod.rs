@@ -5,6 +5,7 @@
 //!
 //! Feature flag: `x86_64`
 
+pub mod gen;
 pub mod link;
 pub mod tokens;
 
