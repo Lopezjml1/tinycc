@@ -164,7 +164,7 @@ pub struct PcrelHiTracker {
 }
 
 impl PcrelHiTracker {
-    fn new() -> Self {
+    pub fn new() -> Self {
         Self {
             entries: Vec::new(),
             last_hi: PcrelHiEntry::default(),

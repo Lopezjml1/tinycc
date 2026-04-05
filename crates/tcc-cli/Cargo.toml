@@ -18,12 +18,15 @@ path = "src/main.rs"
 
 [dependencies]
 # Core compiler library — provides TCCState, compilation pipeline, all compiler
-# functionality. The CLI crate is a thin driver that parses arguments manually
-# (matching TCC's original arg-by-arg parsing in tcc.c), creates and configures
-# a TCCState, adds source files, and produces output. This mirrors tcc.c's calls
-# to tcc_new(), tcc_parse_args(), tcc_set_output_type(), tcc_add_file(),
-# tcc_output_file(), tcc_run(), and tcc_delete().
+# functionality. The CLI crate creates and configures a TCCState, adds source
+# files, and produces output. This mirrors tcc.c's calls to tcc_new(),
+# tcc_parse_args(), tcc_set_output_type(), tcc_add_file(), tcc_output_file(),
+# tcc_run(), and tcc_delete().
 tcc-core = { path = "../tcc-core" }
+# CLI argument parsing with derive macros — AAP section 0.6.1 requires clap
+# for TCC's ~50+ CLI flags with complex semantics (flag grouping, -Wl,
+# passthrough, -f/-W prefix families).
+clap.workspace = true
 
 [package.metadata.docs.rs]
 all-features = true

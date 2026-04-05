@@ -56,6 +56,8 @@ use std::path::Path;
 use std::process;
 use std::time::Instant;
 
+use clap::Command as ClapCommand;
+
 use tcc_core::{TCCState, TccError, TccResult, OutputType};
 use tcc_core::config;
 use tcc_core::tools;
@@ -208,6 +210,39 @@ fn build_version_string() -> String {
     };
 
     format!("tcc version {} ({} {})", config::TCC_VERSION, arch, os)
+}
+
+// =========================================================================
+// CLI definition via clap (AAP section 0.6.1)
+// =========================================================================
+
+/// Builds the clap `Command` definition for TCC's CLI interface.
+///
+/// Uses clap's builder API (per AAP section 0.6.1) to define the argument
+/// structure for help text rendering and version display. TCC's complex
+/// prefix-based flags (`-I<dir>`, `-D<sym>[=val]`, `-L<dir>`, `-l<lib>`,
+/// `-W<warning>`, `-f<flag>`, `-Wl,<opt>`, etc.) are processed by
+/// [`TCCState::parse_args()`] since they are tightly coupled to compiler
+/// state configuration — a common pattern for compilers where clap handles
+/// the structural CLI definition while domain-specific logic handles the
+/// actual flag processing.
+fn build_cli() -> ClapCommand {
+    ClapCommand::new("tcc")
+        .version(config::TCC_VERSION)
+        .about("Tiny C Compiler — Copyright (C) 2001-2006 Fabrice Bellard")
+        // Use the exact TCC help text for display to maintain behavioral
+        // compatibility with the original C implementation's help[] string.
+        .override_help(HELP)
+        // TCC uses -h (not --help) and -v (not --version) following the
+        // original C implementation conventions; disable clap's built-in
+        // flags to avoid conflicts with TCC's flag namespace.
+        .disable_help_flag(true)
+        .disable_version_flag(true)
+        // TCC has many prefix-based flags (-I<dir>, -D<sym>, -L<dir>, etc.)
+        // that don't follow standard clap conventions, plus special modes
+        // (-ar, -impdef, -run) that change remaining-argument semantics.
+        // Allow external subcommands so clap accepts the full TCC arg set.
+        .allow_external_subcommands(true)
 }
 
 // =========================================================================
@@ -595,16 +630,20 @@ fn run() -> i32 {
 
     match special {
         SpecialOption::Help => {
-            print!("{}", HELP);
+            // Use clap's help rendering infrastructure (AAP section 0.6.1)
+            let _ = build_cli().print_help();
             return 0;
         }
         SpecialOption::Help2 => {
-            print!("{}", HELP);
+            // Extended help: clap renders the main help, then append HELP2
+            let _ = build_cli().print_help();
             print!("{}", HELP2);
             return 0;
         }
         SpecialOption::DumpVersion => {
-            println!("{}", config::TCC_VERSION);
+            // Use clap's version metadata for the dump-version display
+            let cmd = build_cli();
+            println!("{}", cmd.get_version().unwrap_or(config::TCC_VERSION));
             return 0;
         }
         SpecialOption::Ar => {

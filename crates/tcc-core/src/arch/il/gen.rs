@@ -1350,3 +1350,435 @@ pub fn gen_cvt_ftof(state: &mut IlGenState, t: i32) -> TccResult<()> {
     let _ = writeln!(state.il_output);
     Ok(())
 }
+
+// ===========================================================================
+// Unit tests for IL code generator
+// ===========================================================================
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::arch::il::IlBackend;
+
+    /// Helper: create a fresh IlGenState for testing.
+    fn new_state() -> IlGenState {
+        IlBackend::new()
+    }
+
+    // -----------------------------------------------------------------------
+    // IlOpcode enum tests
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_opcode_nop_value() {
+        assert_eq!(IlOpcode::Nop.opcode_value(), 0x00);
+    }
+
+    #[test]
+    fn test_opcode_nop_name() {
+        assert_eq!(IlOpcode::Nop.name(), "nop");
+    }
+
+    #[test]
+    fn test_opcode_add_value() {
+        assert_eq!(IlOpcode::Add.opcode_value(), 0x58);
+    }
+
+    #[test]
+    fn test_opcode_add_name() {
+        assert_eq!(IlOpcode::Add.name(), "add");
+    }
+
+    #[test]
+    fn test_opcode_ret_value() {
+        assert_eq!(IlOpcode::Ret.opcode_value(), 0x2A);
+    }
+
+    #[test]
+    fn test_opcode_ret_name() {
+        assert_eq!(IlOpcode::Ret.name(), "ret");
+    }
+
+    #[test]
+    fn test_opcode_ldarg_zero_name() {
+        assert_eq!(IlOpcode::LdargZero.name(), "ldarg.0");
+    }
+
+    #[test]
+    fn test_opcode_two_byte_prefix() {
+        // Two-byte opcodes have values >= 0x100 and require the 0xFE prefix
+        assert_eq!(IlOpcode::Ceq.opcode_value(), 0x0101);
+        assert_eq!(IlOpcode::Ceq.name(), "ceq");
+    }
+
+    #[test]
+    fn test_opcode_sizeof_two_byte() {
+        assert_eq!(IlOpcode::Sizeof.opcode_value(), 0x011C);
+        assert_eq!(IlOpcode::Sizeof.name(), "sizeof");
+    }
+
+    #[test]
+    fn test_opcode_stloc_zero_name() {
+        assert_eq!(IlOpcode::StlocZero.name(), "stloc.0");
+    }
+
+    // -----------------------------------------------------------------------
+    // Byte emission helper tests
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_out_byte_single() {
+        let mut s = new_state();
+        out_byte(&mut s, 0x42);
+        assert_eq!(s.code, vec![0x42]);
+        assert_eq!(s.ind, 1);
+    }
+
+    #[test]
+    fn test_out_byte_multiple() {
+        let mut s = new_state();
+        out_byte(&mut s, 0xAA);
+        out_byte(&mut s, 0xBB);
+        out_byte(&mut s, 0xCC);
+        assert_eq!(s.code, vec![0xAA, 0xBB, 0xCC]);
+        assert_eq!(s.ind, 3);
+    }
+
+    #[test]
+    fn test_out_le32_value() {
+        let mut s = new_state();
+        out_le32(&mut s, 0x04030201);
+        assert_eq!(s.code, vec![0x01, 0x02, 0x03, 0x04]);
+        assert_eq!(s.ind, 4);
+    }
+
+    #[test]
+    fn test_out_le32_negative() {
+        let mut s = new_state();
+        out_le32(&mut s, -1);
+        assert_eq!(s.code, vec![0xFF, 0xFF, 0xFF, 0xFF]);
+    }
+
+    #[test]
+    fn test_out_le32_zero() {
+        let mut s = new_state();
+        out_le32(&mut s, 0);
+        assert_eq!(s.code, vec![0x00, 0x00, 0x00, 0x00]);
+    }
+
+    // -----------------------------------------------------------------------
+    // Opcode emission tests
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_out_op1_single_byte() {
+        let mut s = new_state();
+        // Nop = 0x00, single-byte opcode
+        out_op1(&mut s, 0x00);
+        assert_eq!(s.code, vec![0x00]);
+        assert_eq!(s.ind, 1);
+    }
+
+    #[test]
+    fn test_out_op1_two_byte() {
+        let mut s = new_state();
+        // Ceq = 0x0101, two-byte opcode (0xFE prefix + 0x01)
+        out_op1(&mut s, 0x0101);
+        assert_eq!(s.code, vec![IL_OP_PREFIX, 0x01]);
+        assert_eq!(s.ind, 2);
+    }
+
+    #[test]
+    fn test_out_op_writes_mnemonic() {
+        let mut s = new_state();
+        out_op(&mut s, IlOpcode::Add);
+        assert!(s.il_output.contains("add"));
+        // Binary code buffer should contain the opcode byte
+        assert_eq!(s.code, vec![0x58]); // Add = 0x58
+    }
+
+    #[test]
+    fn test_out_opb_byte_operand() {
+        let mut s = new_state();
+        out_opb(&mut s, IlOpcode::LdcI4S, 42);
+        // Code: opcode byte (0x1F for ldc.i4.s) + operand byte (42)
+        assert_eq!(s.code[0], 0x1F); // LdcI4S
+        assert_eq!(s.code[1], 42);
+        assert!(s.il_output.contains("ldc.i4.s"));
+        assert!(s.il_output.contains("42"));
+    }
+
+    #[test]
+    fn test_out_opi_int_operand() {
+        let mut s = new_state();
+        out_opi(&mut s, IlOpcode::LdcI4, 1000);
+        // Code: opcode byte (0x20 for ldc.i4) + 4-byte LE integer
+        assert_eq!(s.code[0], 0x20); // LdcI4
+        let val = i32::from_le_bytes([s.code[1], s.code[2], s.code[3], s.code[4]]);
+        assert_eq!(val, 1000);
+        assert!(s.il_output.contains("ldc.i4"));
+        assert!(s.il_output.contains("1000"));
+    }
+
+    // -----------------------------------------------------------------------
+    // init_outfile tests
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_init_outfile_writes_header() {
+        let mut s = new_state();
+        assert!(!s.outfile_initialized);
+        init_outfile(&mut s);
+        assert!(s.outfile_initialized);
+        assert!(s.il_output.contains(".assembly extern mscorlib"));
+        assert!(s.il_output.contains(".ver 1:0:2411:0"));
+    }
+
+    #[test]
+    fn test_init_outfile_idempotent() {
+        let mut s = new_state();
+        init_outfile(&mut s);
+        let first_output = s.il_output.clone();
+        init_outfile(&mut s);
+        // Second call should not add anything
+        assert_eq!(s.il_output, first_output);
+    }
+
+    // -----------------------------------------------------------------------
+    // il_type_to_str tests
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_type_void() {
+        let result = il_type_to_str(VT_VOID, None).unwrap();
+        assert_eq!(result, "void");
+    }
+
+    #[test]
+    fn test_type_bool() {
+        let result = il_type_to_str(VT_BOOL, None).unwrap();
+        assert_eq!(result, "bool");
+    }
+
+    #[test]
+    fn test_type_int32() {
+        let result = il_type_to_str(VT_INT, None).unwrap();
+        assert_eq!(result, "int32");
+    }
+
+    #[test]
+    fn test_type_unsigned_int32() {
+        let result = il_type_to_str(VT_INT | VT_UNSIGNED, None).unwrap();
+        assert_eq!(result, "unsigned int32");
+    }
+
+    #[test]
+    fn test_type_int8() {
+        let result = il_type_to_str(VT_BYTE, None).unwrap();
+        assert_eq!(result, "int8");
+    }
+
+    #[test]
+    fn test_type_unsigned_int8() {
+        let result = il_type_to_str(VT_BYTE | VT_UNSIGNED, None).unwrap();
+        assert_eq!(result, "unsigned int8");
+    }
+
+    #[test]
+    fn test_type_int16() {
+        let result = il_type_to_str(VT_SHORT, None).unwrap();
+        assert_eq!(result, "int16");
+    }
+
+    #[test]
+    fn test_type_int64() {
+        let result = il_type_to_str(VT_LLONG, None).unwrap();
+        assert_eq!(result, "int64");
+    }
+
+    #[test]
+    fn test_type_unsigned_int64() {
+        let result = il_type_to_str(VT_LLONG | VT_UNSIGNED, None).unwrap();
+        assert_eq!(result, "unsigned int64");
+    }
+
+    #[test]
+    fn test_type_float32() {
+        let result = il_type_to_str(VT_FLOAT, None).unwrap();
+        assert_eq!(result, "float32");
+    }
+
+    #[test]
+    fn test_type_float64_double() {
+        let result = il_type_to_str(VT_DOUBLE, None).unwrap();
+        assert_eq!(result, "float64");
+    }
+
+    #[test]
+    fn test_type_float64_ldouble() {
+        let result = il_type_to_str(VT_LDOUBLE, None).unwrap();
+        assert_eq!(result, "float64");
+    }
+
+    #[test]
+    fn test_type_with_varstr() {
+        let result = il_type_to_str(VT_INT, Some("x")).unwrap();
+        assert!(result.contains("int32"));
+        assert!(result.contains("x"));
+    }
+
+    // -----------------------------------------------------------------------
+    // Type conversion tests
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_gen_cvt_itof_float32() {
+        let mut s = new_state();
+        gen_cvt_itof(&mut s, VT_FLOAT).unwrap();
+        assert!(s.il_output.contains("conv.r4"));
+    }
+
+    #[test]
+    fn test_gen_cvt_itof_float64() {
+        let mut s = new_state();
+        gen_cvt_itof(&mut s, VT_DOUBLE).unwrap();
+        assert!(s.il_output.contains("conv.r8"));
+    }
+
+    #[test]
+    fn test_gen_cvt_ftoi_int32() {
+        let mut s = new_state();
+        gen_cvt_ftoi(&mut s, VT_INT).unwrap();
+        assert!(s.il_output.contains("conv.i4"));
+    }
+
+    #[test]
+    fn test_gen_cvt_ftoi_uint32() {
+        let mut s = new_state();
+        gen_cvt_ftoi(&mut s, VT_INT | VT_UNSIGNED).unwrap();
+        assert!(s.il_output.contains("conv.u4"));
+    }
+
+    #[test]
+    fn test_gen_cvt_ftoi_int64() {
+        let mut s = new_state();
+        gen_cvt_ftoi(&mut s, VT_LLONG).unwrap();
+        assert!(s.il_output.contains("conv.i8"));
+    }
+
+    #[test]
+    fn test_gen_cvt_ftoi_uint64() {
+        let mut s = new_state();
+        gen_cvt_ftoi(&mut s, VT_LLONG | VT_UNSIGNED).unwrap();
+        assert!(s.il_output.contains("conv.u8"));
+    }
+
+    #[test]
+    fn test_gen_cvt_ftof_to_float32() {
+        let mut s = new_state();
+        gen_cvt_ftof(&mut s, VT_FLOAT).unwrap();
+        assert!(s.il_output.contains("conv.r4"));
+    }
+
+    #[test]
+    fn test_gen_cvt_ftof_to_float64() {
+        let mut s = new_state();
+        gen_cvt_ftof(&mut s, VT_DOUBLE).unwrap();
+        assert!(s.il_output.contains("conv.r8"));
+    }
+
+    // -----------------------------------------------------------------------
+    // IL_OP_PREFIX constant test
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_il_op_prefix() {
+        assert_eq!(IL_OP_PREFIX, 0xFE);
+    }
+
+    // -----------------------------------------------------------------------
+    // GFuncContext test
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_gfunc_context_creation() {
+        let ctx = GFuncContext { func_call: 0 };
+        assert_eq!(ctx.func_call, 0);
+    }
+
+    // -----------------------------------------------------------------------
+    // IlGenState (IlBackend) initialization test
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_ilgenstate_default() {
+        let s = new_state();
+        assert!(!s.outfile_initialized);
+        assert!(s.il_output.is_empty());
+        assert_eq!(s.ind, 0);
+        assert!(s.code.is_empty());
+        assert!(!s.is_indirect_call);
+        assert!(!s.is_entry_point);
+    }
+
+    // -----------------------------------------------------------------------
+    // Emission sequence tests (verify byte sequences for compound operations)
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_emit_ldc_add_ret_sequence() {
+        let mut s = new_state();
+        // Emit: ldc.i4 42; ldc.i4 58; add; ret
+        out_opi(&mut s, IlOpcode::LdcI4, 42);
+        out_opi(&mut s, IlOpcode::LdcI4, 58);
+        out_op(&mut s, IlOpcode::Add);
+        let _ = writeln!(s.il_output);
+        out_op(&mut s, IlOpcode::Ret);
+        let _ = writeln!(s.il_output);
+
+        // Verify code buffer contains expected opcodes
+        // ldc.i4 = 0x20 (1 byte) + 42 LE (4 bytes) = 5 bytes
+        // ldc.i4 = 0x20 (1 byte) + 58 LE (4 bytes) = 5 bytes
+        // add    = 0x58 (1 byte)
+        // ret    = 0x2A (1 byte)
+        assert_eq!(s.ind, 12); // 5 + 5 + 1 + 1
+        assert_eq!(s.code[0], 0x20); // ldc.i4
+        assert_eq!(s.code[5], 0x20); // ldc.i4
+        assert_eq!(s.code[10], 0x58); // add
+        assert_eq!(s.code[11], 0x2A); // ret
+
+        // Verify textual IL output contains all mnemonics
+        assert!(s.il_output.contains("ldc.i4"));
+        assert!(s.il_output.contains("add"));
+        assert!(s.il_output.contains("ret"));
+    }
+
+    #[test]
+    fn test_emit_two_byte_opcode_ceq() {
+        let mut s = new_state();
+        out_op(&mut s, IlOpcode::Ceq);
+        let _ = writeln!(s.il_output);
+        // Ceq = 0x0101 → emits 0xFE then 0x01
+        assert_eq!(s.code, vec![0xFE, 0x01]);
+        assert!(s.il_output.contains("ceq"));
+    }
+
+    #[test]
+    fn test_emit_two_byte_opcode_cgt() {
+        let mut s = new_state();
+        out_op(&mut s, IlOpcode::Cgt);
+        let _ = writeln!(s.il_output);
+        // Cgt = 0x0102 → emits 0xFE then 0x02
+        assert_eq!(s.code, vec![0xFE, 0x02]);
+        assert!(s.il_output.contains("cgt"));
+    }
+
+    #[test]
+    fn test_emit_two_byte_opcode_clt() {
+        let mut s = new_state();
+        out_op(&mut s, IlOpcode::Clt);
+        let _ = writeln!(s.il_output);
+        // Clt = 0x0104 → emits 0xFE then 0x04
+        assert_eq!(s.code, vec![0xFE, 0x04]);
+        assert!(s.il_output.contains("clt"));
+    }
+}

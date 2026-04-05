@@ -15,6 +15,10 @@ repository = "https://repo.or.cz/tinycc.git"
 description = "Tiny C Compiler — Rust port of the smallest ANSI C compiler"
 
 [workspace.dependencies]
+# CLI argument parsing — AAP section 0.6.1 requires clap 4.6.0 for TCC's
+# ~50+ CLI flags with complex semantics (flag grouping, -Wl, passthrough,
+# -f/-W prefix families)
+clap = { version = "4.6", features = ["derive"] }
 # Typed error handling — replaces setjmp/longjmp error recovery
 thiserror = "2.0"
 # Memory-mapped file I/O — required for -run mode (mmap-based execution)

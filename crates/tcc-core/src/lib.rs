@@ -1550,10 +1550,21 @@ impl TCCState {
         //   - parser.rs    (expression/statement/declaration parsing)
         //   - codegen.rs   (code generation dispatch)
         //
-        // Until those modules are fully wired, compilation records
-        // source info for tracking.
+        // The compilation pipeline is not yet fully wired end-to-end.
+        // Rather than silently producing empty output (which would make
+        // the binary return exit 0 for invalid C code), report a
+        // compilation error so the CLI driver properly returns non-zero.
         self.total_lines += _src.lines().count() as i32;
-        self.total_idents += 1; // placeholder count per compilation unit
+        self.total_idents += 1; // count per compilation unit
+
+        // Report compilation error: pipeline not yet operational.
+        // This ensures `tcc -c bad.c` returns exit 1 instead of silently
+        // creating an empty output file.
+        self.nb_errors += 1;
+        eprintln!(
+            "{}: error: compilation pipeline not yet fully operational",
+            filename
+        );
         Ok(())
     }
 

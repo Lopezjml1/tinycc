@@ -700,7 +700,7 @@ pub fn relocate(rel_type: i32, ptr: &mut [u8], addr: u64, val: u64) -> TccResult
             // 32-bit displacement at the relocation site with the TLS
             // offset value provided by the caller (sym_val + addend).
             let x = val.wrapping_neg() as i32;
-            write32le(ptr, x);
+            write32le(ptr, x as u32);
         }
 
         // =================================================================

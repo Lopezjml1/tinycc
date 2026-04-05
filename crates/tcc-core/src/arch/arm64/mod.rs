@@ -741,7 +741,7 @@ impl CodegenBackend for Arm64Backend {
     }
 
     fn relocate(&mut self, rel_type: i32, ptr: &mut [u8], addr: u64, val: u64) -> TccResult<()> {
-        link::relocate(rel_type, ptr, addr, val)
+        link::relocate(rel_type, ptr, addr, val, 0)
     }
 
     // =======================================================================
