@@ -53,5 +53,9 @@ tempfile = { workspace = true }
 # Text diff comparison for regression test .expect file validation
 similar = { workspace = true }
 
+[[test]]
+name = "regression_tests"
+path = "../../tests/rust/regression_tests.rs"
+
 [package.metadata.docs.rs]
 all-features = true
