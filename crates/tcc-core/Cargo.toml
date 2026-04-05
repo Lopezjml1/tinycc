@@ -61,5 +61,9 @@ path = "../../tests/rust/regression_tests.rs"
 name = "integration_tests"
 path = "../../tests/rust/integration_tests.rs"
 
+[[test]]
+name = "compatibility_tests"
+path = "../../tests/rust/compatibility_tests.rs"
+
 [package.metadata.docs.rs]
 all-features = true
