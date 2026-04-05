@@ -478,6 +478,11 @@ pub struct I386Backend {
     /// emit `fstp`/`ffree` instructions to clean the FPU stack.
     pub fpu_stack_depth: u8,
 
+    /// Code emission context — holds mutable state shared between
+    /// `gen.rs` functions and the `CodeGen` driver. CodeGen syncs this
+    /// context before/after each backend method call.
+    pub ctx: gen::I386CodegenCtx,
+
     /// Bounds checking: code section offset saved at function entry.
     ///
     /// Used to compute the function body range for bounds-checking
@@ -515,6 +520,7 @@ impl I386Backend {
             func_sub_sp_offset: 0,
             func_ret_sub: 0,
             fpu_stack_depth: 0,
+            ctx: gen::I386CodegenCtx::new(),
             #[cfg(feature = "bcheck")]
             func_bound_offset: 0,
             #[cfg(feature = "bcheck")]
@@ -638,7 +644,7 @@ impl CodegenBackend for I386Backend {
     }
 
     fn emit_opcode(&mut self, c: u32) -> TccResult<()> {
-        gen::emit_opcode(self, c)
+        gen::o(self, c)
     }
 
     fn gen_vla_sp_save(&mut self, addr: i32) -> TccResult<()> {
