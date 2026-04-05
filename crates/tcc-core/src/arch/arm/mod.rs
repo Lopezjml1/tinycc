@@ -593,6 +593,13 @@ pub struct ArmBackend {
     /// During bounds-checked code generation, this stores the register
     /// holding the pointer to the bounds-checking shadow data structure.
     pub bounds_ptr: i32,
+
+    /// ARM code generation context holding all mutable codegen state.
+    ///
+    /// Contains the code buffer, value stack snapshot, instruction pointer,
+    /// and other compilation state. Replaces C global variables with
+    /// explicit owned state, enabling full reentrancy (BUG-13 fix).
+    pub ctx: gen::ArmCodegenCtx,
 }
 
 impl ArmBackend {
@@ -617,6 +624,7 @@ impl ArmBackend {
             leaffunc: false,
             bounds_enabled: false,
             bounds_ptr: 0,
+            ctx: gen::ArmCodegenCtx::new(),
         }
     }
 
