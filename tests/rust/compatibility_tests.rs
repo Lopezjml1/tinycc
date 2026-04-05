@@ -48,7 +48,9 @@
 //! - **`tempfile`** for per-test directory isolation (auto-cleaned on drop).
 //! - **Platform-gated** assembly tests via `#[cfg(target_arch)]`.
 //! - **`#[ignore]`** for tests that depend on features not yet available
-//!   (e.g., libtcc shared library for abitest).
+//!   (e.g., libtcc shared library for abitest, full compiler pipeline).
+//!   CLI-only tests (version, help, no-args, missing file error) are
+//!   enabled and run at every milestone.
 
 // ---------------------------------------------------------------------------
 // Imports
@@ -741,7 +743,6 @@ fn assert_cmd_tcc() -> AssertCommand {
 ///
 /// Uses `assert_cmd` assertion DSL with `predicates` for output matching.
 #[test]
-#[ignore = "tcc compiler pipeline not yet fully operational"]
 fn test_version_flag() {
     // assert_cmd + predicates style: succinct and self-documenting
     assert_cmd_tcc()
@@ -776,7 +777,6 @@ fn test_version_flag() {
 ///
 /// Uses `assert_cmd` + `predicates` for concise assertions.
 #[test]
-#[ignore = "tcc compiler pipeline not yet fully operational"]
 fn test_help_flag() {
     assert_cmd_tcc()
         .arg("--help")
@@ -791,7 +791,6 @@ fn test_help_flag() {
 ///
 /// Uses `assert_cmd` + `predicates` to verify output is not empty.
 #[test]
-#[ignore = "tcc compiler pipeline not yet fully operational"]
 fn test_no_args() {
     let assert_result = assert_cmd_tcc().assert();
     // Running tcc with no input files should produce *some* output
@@ -1096,7 +1095,6 @@ fn test_compile_error_handling() {
 
 /// Verify that compiling a non-existent file produces an error.
 #[test]
-#[ignore = "tcc compiler pipeline not yet fully operational"]
 fn test_missing_file_error() {
     let tmp = TempDir::new().expect("create temp dir");
     let obj_out = tmp.path().join("nonexistent.o");

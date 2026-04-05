@@ -430,6 +430,15 @@ pub struct TCCState {
     /// Binary output format (ELF, binary, COFF).
     pub output_format: OutputFormat,
 
+    /// Preprocessing output buffer (for `-E` mode).
+    ///
+    /// When `output_type` is `Preprocess`, the preprocessing pipeline writes
+    /// token output into this buffer.  The CLI driver drains the buffer to
+    /// the final output destination (file or stdout) after compilation.
+    ///
+    /// Replaces C's `FILE *ppfp` member on `TCCState`.
+    pub ppfp_buffer: Vec<u8>,
+
     /// Test run number for `-run -bench` mode.
     pub run_test: i32,
 
@@ -798,6 +807,7 @@ impl Default for TCCState {
             crt_paths: Vec::new(),
             output_type: None,
             output_format: OutputFormat::Elf,
+            ppfp_buffer: Vec::new(),
             run_test: 0,
             loaded_dlls: Vec::new(),
             cmdline_defs: Vec::new(),

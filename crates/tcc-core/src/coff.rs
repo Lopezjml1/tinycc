@@ -283,8 +283,6 @@ pub const R_PCRLONG: u16 = 0o24;
 
 /// Maximum number of COFF sections (used for validation).
 pub const MAXNSCNS: usize = 255;
-/// Maximum size of string table.
-const MAX_STR_TABLE: usize = 1_000_000;
 /// Maximum function name length.
 const MAX_FUNC_NAME_LENGTH: usize = 128;
 
@@ -1136,8 +1134,8 @@ impl<'a> CoffWriter<'a> {
         }
 
         self.write_line_numbers(w, stext_idx)?;
-        self.write_symbol_table(w, coff_text_section_no)?;
-        self.write_string_table(w)?;
+        let coff_str_table = self.write_symbol_table(w, coff_text_section_no)?;
+        self.write_string_table(w, &coff_str_table)?;
 
         Ok(())
     }
@@ -1334,20 +1332,20 @@ impl<'a> CoffWriter<'a> {
         &self,
         w: &mut W,
         coff_text_section_no: i32,
-    ) -> TccResult<()> {
+    ) -> TccResult<Vec<u8>> {
         if !self.state.do_debug {
-            return Ok(());
+            return Ok(Vec::new());
         }
 
         let symtab_idx = match self.state.symtab_section {
             Some(idx) => idx,
-            None => return Ok(()),
+            None => return Ok(Vec::new()),
         };
 
         let symtab = &self.state.sections[symtab_idx];
         let strtab_idx = match symtab.link {
             Some(idx) => idx,
-            None => return Ok(()),
+            None => return Ok(Vec::new()),
         };
         let strtab = &self.state.sections[strtab_idx];
 
@@ -1506,67 +1504,33 @@ impl<'a> CoffWriter<'a> {
             }
         }
 
-        // Store string table data for write_string_table
-        // Since we cannot mutate self in write_string_table with an immutable borrow,
-        // we write the string table inline here if there is data.
-        // (The actual write is deferred to write_string_table with shared state.)
-
-        Ok(())
+        // Return the string table built during symbol writing so it can be
+        // passed directly to write_string_table — avoids rebuilding it from a
+        // second symbol scan that could diverge if symbols are modified.
+        Ok(coff_str_table)
     }
 
     /// Write the COFF string table.
     ///
     /// The string table begins with a 4-byte size field (including itself),
-    /// followed by null-terminated strings. This is called after write_symbol_table.
-    pub fn write_string_table<W: Write>(&self, w: &mut W) -> TccResult<()> {
+    /// followed by null-terminated strings. The `coff_str_table` parameter
+    /// is the string table previously built by `write_symbol_table()` — this
+    /// ensures the two are always consistent (single source of truth).
+    pub fn write_string_table<W: Write>(
+        &self,
+        w: &mut W,
+        coff_str_table: &[u8],
+    ) -> TccResult<()> {
         if !self.state.do_debug {
             return Ok(());
         }
 
-        // Rebuild string table by re-scanning symbols
-        // (This matches the C code's pattern of building the string table during
-        // symbol writing and then outputting it.)
-        let symtab_idx = match self.state.symtab_section {
-            Some(idx) => idx,
-            None => return Ok(()),
-        };
-        let symtab = &self.state.sections[symtab_idx];
-        let strtab_idx = match symtab.link {
-            Some(idx) => idx,
-            None => return Ok(()),
-        };
-        let strtab = &self.state.sections[strtab_idx];
-
-        let entry_size = if symtab.sh_entsize > 0 {
-            symtab.sh_entsize as usize
-        } else {
-            16
-        };
-
-        let mut coff_str_table: Vec<u8> = Vec::new();
-
-        for i in 0..self.nb_syms {
-            let offset = i * entry_size;
-            if offset + entry_size > symtab.data_offset {
-                break;
-            }
-            let p = read_elf32_sym(&symtab.data[offset..offset + entry_size]);
-            let name = read_stab_string(&strtab.data, p.st_name as usize);
-
-            if name.len() > 8 {
-                if coff_str_table.len() + name.len() + 1 > MAX_STR_TABLE {
-                    return Err(TccError::linker("String table too large"));
-                }
-                coff_str_table.extend_from_slice(name.as_bytes());
-                coff_str_table.push(0);
-            }
-        }
-
-        // Write size (4 bytes) then strings
-        let total_size = coff_str_table.len() as i32;
+        // Write size (4 bytes, includes itself) then strings.
+        // The size field counts itself, so total = string data length + 4.
+        let total_size = (coff_str_table.len() + 4) as i32;
         w.write_all(&total_size.to_le_bytes())?;
         if !coff_str_table.is_empty() {
-            w.write_all(&coff_str_table)?;
+            w.write_all(coff_str_table)?;
         }
 
         Ok(())

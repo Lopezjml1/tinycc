@@ -346,6 +346,16 @@ pub fn gotplt_entry_type(reloc_type: i32) -> i32 {
 ///
 /// Returns the PLT offset of the newly created entry.
 ///
+/// # Note on cross-architecture signature consistency
+/// The `create_plt_entry` signature varies across architecture backends
+/// because each backend has different section-access patterns:
+///   - x86_64 / arm: take `&mut TCCState` (need full state for section indexing)
+///   - i386: takes `&mut [Section]` slices + indices
+///   - arm64 / riscv64: take raw `&mut Vec<u8>` data + offset
+///   - c67: minimal stub (PLT not supported)
+///
+/// A future refactor may unify these behind a common trait method.
+///
 /// # Source
 /// Port of `x86_64-link.c` lines 112-151.
 pub fn create_plt_entry(s1: &mut TCCState, got_offset: u32) -> TccResult<u32> {
@@ -897,6 +907,17 @@ pub fn relocate_with_context(
         // -----------------------------------------------------------------
         // R_X86_64_GOTPCREL / GOTPCRELX / REX_GOTPCRELX (lines 289-292)
         // add32le(ptr, s1->got->sh_addr - addr + got_offset - 4)
+        //
+        // NOTE: GOTPCRELX/REX_GOTPCRELX *hint* that relaxation (converting
+        // a GOT-indirect load to a direct LEA) is possible when the target
+        // symbol is defined locally. Full linkers (GNU ld, lld) may rewrite
+        // the preceding MOV instruction to LEA by inspecting bytes before
+        // the relocation site (ptr[-2]). The C TCC code does NOT perform
+        // this relaxation — it treats GOTPCRELX identically to GOTPCREL
+        // (x86_64-link.c lines 295-299). We preserve that behaviour.
+        // If relaxation were added in the future, it would require access
+        // to instruction bytes before `ptr` (at least 2 bytes), with a
+        // bounds check: `if rel_offset >= 2 { ... }`.
         // -----------------------------------------------------------------
         R_X86_64_GOTPCREL | R_X86_64_GOTPCRELX | R_X86_64_REX_GOTPCRELX => {
             if ptr.len() < 4 {

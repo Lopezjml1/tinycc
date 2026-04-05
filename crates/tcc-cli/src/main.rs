@@ -416,19 +416,11 @@ fn default_outputfile(state: &TCCState, first_file: &str) -> String {
             }
         }
         Some(OutputType::Obj) => {
-            if !state.option_r && path.extension().is_some() {
-                let stem = path
-                    .file_stem()
-                    .map(|s| s.to_string_lossy().to_string())
-                    .unwrap_or_else(|| basename.clone());
-                format!("{}.o", stem)
-            } else {
-                let stem = path
-                    .file_stem()
-                    .map(|s| s.to_string_lossy().to_string())
-                    .unwrap_or_else(|| basename.clone());
-                format!("{}.o", stem)
-            }
+            let stem = path
+                .file_stem()
+                .map(|s| s.to_string_lossy().to_string())
+                .unwrap_or_else(|| basename.clone());
+            format!("{}.o", stem)
         }
         _ => {
             if is_pe {
@@ -961,9 +953,16 @@ fn run_compilation(
                 }
             }
             Some(OutputType::Preprocess) => {
-                // Preprocessor output already emitted during compilation.
-                // Flush the output buffer if we have one.
+                // Drain the preprocessing output buffer to the target writer.
+                //
+                // The preprocessing pipeline writes tokens into
+                // `state.ppfp_buffer` during compilation.  Here we write that
+                // buffer to the destination (file or stdout) that was set up
+                // earlier via the `-E`/`-o` flag combination.
                 if let Some(ref mut writer) = ppfp {
+                    if !state.ppfp_buffer.is_empty() {
+                        let _ = writer.write_all(&state.ppfp_buffer);
+                    }
                     let _ = writer.flush();
                 }
             }

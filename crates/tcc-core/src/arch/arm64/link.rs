@@ -533,6 +533,7 @@ pub fn relocate(
     ptr: &mut [u8],
     addr: u64,
     val: u64,
+    addend: i64,
 ) -> TccResult<()> {
     match rel_type {
         // =================================================================
@@ -813,18 +814,18 @@ pub fn relocate(
         // GLOB_DAT and JUMP_SLOT: Write the symbol address directly.
         //
         // These dynamic relocations set GOT entries to the resolved symbol
-        // address. The addend has already been incorporated into `val` by
-        // the caller, so we write `val` directly (the C code writes
-        // val - r_addend because its val already includes addend, but
-        // here the ELF module's calling convention means val = sym + addend
-        // and the GOT entry should hold just the symbol address. For typical
-        // GLOB_DAT/JUMP_SLOT, addend is 0, so val is the symbol address.)
+        // address. The caller passes `val = sym_value + addend`, but the GOT
+        // entry should store just the symbol address. The C code
+        // (`arm64-link.c` lines 299-308) computes `write64le(ptr, val -
+        // rel->r_addend)` to strip the addend. For typical GLOB_DAT/
+        // JUMP_SLOT the addend is 0, so `val - 0 = val`, but addend-bearing
+        // relocations require the subtraction.
         //
         // Source: arm64-link.c lines 299-308.
         // =================================================================
         R_AARCH64_GLOB_DAT | R_AARCH64_JUMP_SLOT => {
-            // Write the resolved address as 64-bit LE
-            write64le(ptr, val);
+            // Write `val - addend` = raw symbol address.
+            write64le(ptr, (val as i64 - addend) as u64);
             Ok(())
         }
 
@@ -1179,7 +1180,7 @@ mod tests {
     fn test_relocate_abs64() {
         let mut buf = [0u8; 8];
         write64le(&mut buf, 100);
-        relocate(R_AARCH64_ABS64, &mut buf, 0, 42).unwrap();
+        relocate(R_AARCH64_ABS64, &mut buf, 0, 42, 0).unwrap();
         assert_eq!(read64le(&buf), 142); // 100 + 42
     }
 
@@ -1187,7 +1188,7 @@ mod tests {
     fn test_relocate_abs64_wrapping() {
         let mut buf = [0u8; 8];
         write64le(&mut buf, u64::MAX);
-        relocate(R_AARCH64_ABS64, &mut buf, 0, 1).unwrap();
+        relocate(R_AARCH64_ABS64, &mut buf, 0, 1, 0).unwrap();
         assert_eq!(read64le(&buf), 0); // wrapping
     }
 
@@ -1195,7 +1196,7 @@ mod tests {
     fn test_relocate_abs32() {
         let mut buf = [0u8; 4];
         write32le(&mut buf, 100);
-        relocate(R_AARCH64_ABS32, &mut buf, 0, 42).unwrap();
+        relocate(R_AARCH64_ABS32, &mut buf, 0, 42, 0).unwrap();
         assert_eq!(read32le(&buf), 142);
     }
 
@@ -1204,7 +1205,7 @@ mod tests {
         let mut buf = [0u8; 4];
         write32le(&mut buf, 0);
         // val=0x2000, addr=0x1000 => offset = 0x1000
-        relocate(R_AARCH64_PREL32, &mut buf, 0x1000, 0x2000).unwrap();
+        relocate(R_AARCH64_PREL32, &mut buf, 0x1000, 0x2000, 0).unwrap();
         assert_eq!(read32le(&buf), 0x1000);
     }
 
@@ -1213,7 +1214,7 @@ mod tests {
         // NOP instruction (all zeros except valid encoding)
         let mut buf = [0u8; 4];
         write32le(&mut buf, 0xd280_0000); // movz x0, #0
-        relocate(R_AARCH64_MOVW_UABS_G0_NC, &mut buf, 0, 0xABCD).unwrap();
+        relocate(R_AARCH64_MOVW_UABS_G0_NC, &mut buf, 0, 0xABCD, 0).unwrap();
         let insn = read32le(&buf);
         // Check that imm16 field (bits[20:5]) = 0xABCD
         assert_eq!((insn >> 5) & 0xffff, 0xABCD);
@@ -1223,7 +1224,7 @@ mod tests {
     fn test_relocate_movw_g1() {
         let mut buf = [0u8; 4];
         write32le(&mut buf, 0xd2a0_0000); // movz x0, #0, lsl #16
-        relocate(R_AARCH64_MOVW_UABS_G1_NC, &mut buf, 0, 0xDEAD_0000).unwrap();
+        relocate(R_AARCH64_MOVW_UABS_G1_NC, &mut buf, 0, 0xDEAD_0000, 0).unwrap();
         let insn = read32le(&buf);
         assert_eq!((insn >> 5) & 0xffff, 0xDEAD);
     }
@@ -1232,7 +1233,7 @@ mod tests {
     fn test_relocate_movw_g2() {
         let mut buf = [0u8; 4];
         write32le(&mut buf, 0xd2c0_0000); // movz x0, #0, lsl #32
-        relocate(R_AARCH64_MOVW_UABS_G2_NC, &mut buf, 0, 0xBEEF_0000_0000).unwrap();
+        relocate(R_AARCH64_MOVW_UABS_G2_NC, &mut buf, 0, 0xBEEF_0000_0000, 0).unwrap();
         let insn = read32le(&buf);
         assert_eq!((insn >> 5) & 0xffff, 0xBEEF);
     }
@@ -1241,7 +1242,7 @@ mod tests {
     fn test_relocate_movw_g3() {
         let mut buf = [0u8; 4];
         write32le(&mut buf, 0xd2e0_0000); // movz x0, #0, lsl #48
-        relocate(R_AARCH64_MOVW_UABS_G3, &mut buf, 0, 0xCAFE_0000_0000_0000).unwrap();
+        relocate(R_AARCH64_MOVW_UABS_G3, &mut buf, 0, 0xCAFE_0000_0000_0000, 0).unwrap();
         let insn = read32le(&buf);
         assert_eq!((insn >> 5) & 0xffff, 0xCAFE);
     }
@@ -1256,6 +1257,7 @@ mod tests {
             &mut buf,
             0x1000, // addr on page 1
             0x1234, // val on page 1 -> same page, offset 0
+            0,
         )
         .unwrap();
         let insn = read32le(&buf);
@@ -1274,6 +1276,7 @@ mod tests {
             &mut buf,
             0x1000, // page 1
             0x2000, // page 2
+            0,
         )
         .unwrap();
         let insn = read32le(&buf);
@@ -1291,6 +1294,7 @@ mod tests {
             &mut buf,
             0x0000_0000,
             0x0001_0000_0000, // 4GB away -> page offset = 0x100000, exceeds 20-bit signed
+            0,
         );
         assert!(result.is_err());
     }
@@ -1299,7 +1303,7 @@ mod tests {
     fn test_relocate_add_lo12() {
         let mut buf = [0u8; 4];
         write32le(&mut buf, 0x9100_0000); // add x0, x0, #0
-        relocate(R_AARCH64_ADD_ABS_LO12_NC, &mut buf, 0, 0x123).unwrap();
+        relocate(R_AARCH64_ADD_ABS_LO12_NC, &mut buf, 0, 0x123, 0).unwrap();
         let insn = read32le(&buf);
         // imm12 at bits[21:10] should be 0x123
         assert_eq!((insn >> 10) & 0xfff, 0x123);
@@ -1309,7 +1313,7 @@ mod tests {
     fn test_relocate_ldst8_lo12() {
         let mut buf = [0u8; 4];
         write32le(&mut buf, 0x3940_0000); // ldrb w0, [x0]
-        relocate(R_AARCH64_LDST8_ABS_LO12_NC, &mut buf, 0, 0x55).unwrap();
+        relocate(R_AARCH64_LDST8_ABS_LO12_NC, &mut buf, 0, 0x55, 0).unwrap();
         let insn = read32le(&buf);
         assert_eq!((insn >> 10) & 0xfff, 0x55);
     }
@@ -1319,7 +1323,7 @@ mod tests {
         let mut buf = [0u8; 4];
         write32le(&mut buf, 0x7940_0000); // ldrh w0, [x0]
         // val=0x10 (16-byte offset, 2-byte aligned)
-        relocate(R_AARCH64_LDST16_ABS_LO12_NC, &mut buf, 0, 0x10).unwrap();
+        relocate(R_AARCH64_LDST16_ABS_LO12_NC, &mut buf, 0, 0x10, 0).unwrap();
         let insn = read32le(&buf);
         // (0x10 & 0xffe) << 9 = 0x10 << 9 = 0x2000, placed at bits[21:10]
         assert_eq!((insn >> 10) & 0xfff, 0x10 >> 1);
@@ -1330,7 +1334,7 @@ mod tests {
         let mut buf = [0u8; 4];
         write32le(&mut buf, 0xb940_0000); // ldr w0, [x0]
         // val=0x20 (32-byte offset, 4-byte aligned)
-        relocate(R_AARCH64_LDST32_ABS_LO12_NC, &mut buf, 0, 0x20).unwrap();
+        relocate(R_AARCH64_LDST32_ABS_LO12_NC, &mut buf, 0, 0x20, 0).unwrap();
         let insn = read32le(&buf);
         // (0x20 & 0xffc) << 8 = 0x20 << 8 = 0x2000
         assert_eq!((insn >> 10) & 0xfff, 0x20 >> 2);
@@ -1341,7 +1345,7 @@ mod tests {
         let mut buf = [0u8; 4];
         write32le(&mut buf, 0xf940_0000); // ldr x0, [x0]
         // val=0x40 (64-byte offset, 8-byte aligned)
-        relocate(R_AARCH64_LDST64_ABS_LO12_NC, &mut buf, 0, 0x40).unwrap();
+        relocate(R_AARCH64_LDST64_ABS_LO12_NC, &mut buf, 0, 0x40, 0).unwrap();
         let insn = read32le(&buf);
         assert_eq!((insn >> 10) & 0xfff, 0x40 >> 3);
     }
@@ -1351,7 +1355,7 @@ mod tests {
         let mut buf = [0u8; 4];
         write32le(&mut buf, 0x3dc0_0000); // ldr q0, [x0]
         // val=0x80 (128-byte offset, 16-byte aligned)
-        relocate(R_AARCH64_LDST128_ABS_LO12_NC, &mut buf, 0, 0x80).unwrap();
+        relocate(R_AARCH64_LDST128_ABS_LO12_NC, &mut buf, 0, 0x80, 0).unwrap();
         let insn = read32le(&buf);
         assert_eq!((insn >> 10) & 0xfff, 0x80 >> 4);
     }
@@ -1361,7 +1365,7 @@ mod tests {
         let mut buf = [0u8; 4];
         write32le(&mut buf, 0x1400_0000); // b #0
         // Branch forward by 16 bytes: offset = 16, word offset = 4
-        relocate(R_AARCH64_JUMP26, &mut buf, 0x1000, 0x1010).unwrap();
+        relocate(R_AARCH64_JUMP26, &mut buf, 0x1000, 0x1010, 0).unwrap();
         let insn = read32le(&buf);
         // bit[31] = 0 (B not BL), lower 26 bits = 4
         assert_eq!(insn >> 31, 0); // B instruction
@@ -1373,7 +1377,7 @@ mod tests {
         let mut buf = [0u8; 4];
         write32le(&mut buf, 0x9400_0000); // bl #0
         // BL forward by 8 bytes: offset = 8, word offset = 2
-        relocate(R_AARCH64_CALL26, &mut buf, 0x1000, 0x1008).unwrap();
+        relocate(R_AARCH64_CALL26, &mut buf, 0x1000, 0x1008, 0).unwrap();
         let insn = read32le(&buf);
         // bit[31] = 1 (BL), lower 26 bits = 2
         assert_eq!(insn >> 31, 1); // BL instruction
@@ -1385,7 +1389,7 @@ mod tests {
         let mut buf = [0u8; 4];
         write32le(&mut buf, 0x9400_0000); // bl #0
         // BL backward by 16 bytes
-        relocate(R_AARCH64_CALL26, &mut buf, 0x1010, 0x1000).unwrap();
+        relocate(R_AARCH64_CALL26, &mut buf, 0x1010, 0x1000, 0).unwrap();
         let insn = read32le(&buf);
         assert_eq!(insn >> 31, 1); // BL instruction
         // Offset = -16 / 4 = -4, in 26-bit signed = 0x03ff_fffc
@@ -1409,6 +1413,7 @@ mod tests {
             &mut buf,
             0x0000_0000,
             0x1000_0000, // 256MB
+            0,
         );
         assert!(result.is_err());
     }
@@ -1417,7 +1422,7 @@ mod tests {
     fn test_relocate_copy() {
         let mut buf = [0u8; 4];
         write32le(&mut buf, 0xDEAD_BEEF);
-        relocate(R_AARCH64_COPY, &mut buf, 0, 0).unwrap();
+        relocate(R_AARCH64_COPY, &mut buf, 0, 0, 0).unwrap();
         // COPY is a no-op: buffer unchanged
         assert_eq!(read32le(&buf), 0xDEAD_BEEF);
     }
@@ -1426,23 +1431,35 @@ mod tests {
     fn test_relocate_glob_dat() {
         let mut buf = [0u8; 8];
         write64le(&mut buf, 0);
-        relocate(R_AARCH64_GLOB_DAT, &mut buf, 0, 0xDEAD_BEEF_CAFE_BABE).unwrap();
+        relocate(R_AARCH64_GLOB_DAT, &mut buf, 0, 0xDEAD_BEEF_CAFE_BABE, 0).unwrap();
         assert_eq!(read64le(&buf), 0xDEAD_BEEF_CAFE_BABE);
+
+        // Test with non-zero addend: val - addend should be written
+        let mut buf2 = [0u8; 8];
+        write64le(&mut buf2, 0);
+        relocate(R_AARCH64_GLOB_DAT, &mut buf2, 0, 0x1000, 0x100).unwrap();
+        assert_eq!(read64le(&buf2), 0x1000_u64.wrapping_sub(0x100));
     }
 
     #[test]
     fn test_relocate_jump_slot() {
         let mut buf = [0u8; 8];
         write64le(&mut buf, 0);
-        relocate(R_AARCH64_JUMP_SLOT, &mut buf, 0, 0x1234_5678_9ABC_DEF0).unwrap();
+        relocate(R_AARCH64_JUMP_SLOT, &mut buf, 0, 0x1234_5678_9ABC_DEF0, 0).unwrap();
         assert_eq!(read64le(&buf), 0x1234_5678_9ABC_DEF0);
+
+        // Test with non-zero addend: val - addend should be written
+        let mut buf2 = [0u8; 8];
+        write64le(&mut buf2, 0);
+        relocate(R_AARCH64_JUMP_SLOT, &mut buf2, 0, 0x2000, 0x200).unwrap();
+        assert_eq!(read64le(&buf2), 0x2000_u64.wrapping_sub(0x200));
     }
 
     #[test]
     fn test_relocate_relative_noop() {
         let mut buf = [0u8; 8];
         write64le(&mut buf, 0xDEAD);
-        relocate(R_AARCH64_RELATIVE, &mut buf, 0, 42).unwrap();
+        relocate(R_AARCH64_RELATIVE, &mut buf, 0, 42, 0).unwrap();
         // ELF RELATIVE is a no-op at static link time
         assert_eq!(read64le(&buf), 0xDEAD);
     }
@@ -1452,7 +1469,7 @@ mod tests {
         let mut buf = [0u8; 4];
         write32le(&mut buf, 0xDEAD_BEEF);
         // Unknown type should succeed (non-fatal)
-        let result = relocate(9999, &mut buf, 0, 0);
+        let result = relocate(9999, &mut buf, 0, 0, 0);
         assert!(result.is_ok());
         // Buffer should be unchanged
         assert_eq!(read32le(&buf), 0xDEAD_BEEF);
@@ -1504,6 +1521,7 @@ mod tests {
             &mut buf,
             0x1000,
             0x2000,
+            0,
         )
         .unwrap();
         let insn = read32le(&buf);
@@ -1523,6 +1541,7 @@ mod tests {
             &mut buf,
             0,
             0x3018, // low 12 bits: 0x018
+            0,
         )
         .unwrap();
         let insn = read32le(&buf);

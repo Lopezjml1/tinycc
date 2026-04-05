@@ -667,50 +667,77 @@ pub fn relocate(rel_type: i32, ptr: &mut [u8], addr: u64, val: u64) -> TccResult
         //   Replaced:  65 a1 00 00 00 00 81 e8 XX XX XX XX
         //     (mov %gs:0,%eax ; sub TLS_offset,%eax)
         //
-        // This pattern rewriting requires access to bytes BEFORE the
-        // relocation site (ptr-3) and to subsequent relocation entries
-        // (rel[1]), which are beyond the scope of the simplified trait
-        // interface. The full TLS_GD optimization is handled by the ELF
-        // module's relocation processing when full section context is
-        // available.
+        // GD → IE → LE TLS relaxation.
+        //
+        // The C code (i386-link.c lines 255-282) performs instruction-level
+        // rewriting: it matches the `lea+call __tls_get_addr` pattern at
+        // `ptr-3` and replaces it with `mov %gs:0,%eax; sub offset,%eax`.
+        //
+        // Full pattern rewriting requires access to bytes BEFORE the
+        // relocation offset (`ptr-3` in C), which the current `relocate()`
+        // interface does not expose (ptr starts AT the relocation offset).
+        // The full GD→LE relaxation is therefore split:
+        //   • Instruction rewriting (bytes before ptr): handled by the
+        //     higher-level ELF relocation loop when full section context
+        //     is available.
+        //   • TLS offset patching (at and after ptr): handled here.
+        //
+        // We apply the TLS offset to the relocation site so that the
+        // relaxed `sub` instruction receives the correct displacement.
         //
         // Source: i386-link.c lines 255-282
         // =================================================================
         R_386_TLS_GD => {
-            // Simplified handling: add TLS offset to existing content.
-            // Full pattern rewriting (lea+call → mov %gs:0 + sub) is
-            // performed when the caller provides full section context.
-            if ptr.len() >= 4 {
-                add32le(ptr, val as i32);
+            if ptr.len() < 4 {
+                return Err(TccError::linker(format!(
+                    "R_386_TLS_GD: buffer too small ({} bytes, need 4)",
+                    ptr.len()
+                )));
             }
+            // In a GD→LE relaxation the generated `sub` instruction at
+            // ptr+5 (relative to the lea) needs the negated TLS offset.
+            // Since instruction rewriting is done upstream, we patch the
+            // 32-bit displacement at the relocation site with the TLS
+            // offset value provided by the caller (sym_val + addend).
+            let x = val.wrapping_neg() as i32;
+            write32le(ptr, x);
         }
 
         // =================================================================
         // R_386_TLS_LDM: Local-Dynamic TLS relocation
         //
-        // Similar to TLS_GD — the C code rewrites a lea+call sequence
-        // into mov %gs:0 + nop padding:
-        //   Expected:  8d 83 00 00 00 00 e8 fc ff ff ff
-        //   Replaced:  65 a1 00 00 00 00 90 8d 74 26 00
+        // Similar to TLS_GD — the C code (i386-link.c lines 284-305)
+        // rewrites a `lea+call __tls_get_addr` sequence into:
+        //   mov %gs:0,%eax; nop; lea 0(%esi,%eiz,1),%esi
         //
-        // Full pattern rewriting requires bytes before ptr (ptr-2) and
-        // subsequent relocation entries, handled at the ELF module level.
+        // The instruction rewriting portion (bytes before the relocation
+        // offset) is handled upstream.  Here we zero out the relocation
+        // site since the LDM offset is always module-relative zero after
+        // relaxation to LE.
         //
         // Source: i386-link.c lines 284-305
         // =================================================================
         R_386_TLS_LDM => {
-            // Simplified handling: add TLS offset.
-            if ptr.len() >= 4 {
-                add32le(ptr, val as i32);
+            if ptr.len() < 4 {
+                return Err(TccError::linker(format!(
+                    "R_386_TLS_LDM: buffer too small ({} bytes, need 4)",
+                    ptr.len()
+                )));
             }
+            // After LDM→LE relaxation, the TLS base is already in %eax
+            // via mov %gs:0.  The displacement is zero.
+            write32le(ptr, 0);
         }
 
         // =================================================================
         // R_386_TLS_LDO_32 / R_386_TLS_LE: TLS offset relocations
         //
-        // These compute the TLS offset relative to the TLS block:
-        //   x = val - section_addr - section_data_offset
-        // Here val is expected to be this pre-computed TLS offset.
+        // These compute a negative offset from the end of the TLS block:
+        //   offset = val - tls_section_addr - tls_data_offset
+        //
+        // The caller (elf.rs) provides val = sym_value + addend. For
+        // statically linked executables, TCC computes the final TLS
+        // offset before calling relocate.
         //
         // Source: i386-link.c lines 307-318
         // =================================================================
@@ -721,6 +748,9 @@ pub fn relocate(rel_type: i32, ptr: &mut [u8], addr: u64, val: u64) -> TccResult
                     ptr.len()
                 )));
             }
+            // Apply the pre-computed TLS offset.  For TLS_LE the value is
+            // the negative offset from the TLS base; for TLS_LDO_32 it is
+            // the offset within the TLS module.
             add32le(ptr, val as i32);
         }
 

@@ -417,12 +417,48 @@ int main(void) {
 
 /// BUG-10: Finish `varargs.h` support
 ///
-/// Ensure `<stdarg.h>` variadic macros (`va_start`, `va_arg`, `va_end`)
-/// work correctly.
+/// Ensure legacy pre-C89 `<varargs.h>` API (`va_alist`, `va_dcl`,
+/// `va_start`, `va_arg`, `va_end`) works correctly.  This is the specific
+/// API that BUG-10 targets — NOT the modern `<stdarg.h>`.
+///
+/// We also include a modern `<stdarg.h>` variant to verify both APIs work.
 /// Status: fixed
 #[test]
 fn test_bug10_varargs() {
-    let src = r#"
+    // Part 1: Test the legacy <varargs.h> API (the actual BUG-10 scenario).
+    // Note: varargs.h uses `va_alist` as the single parameter name and
+    // `va_dcl` as the declaration in the old K&R function style.
+    let src_legacy = r#"
+#include <stdio.h>
+#include <varargs.h>
+int sum(va_alist) va_dcl
+{
+    va_list ap;
+    int count, total, i;
+    va_start(ap);
+    count = va_arg(ap, int);
+    total = 0;
+    for (i = 0; i < count; i++) {
+        total += va_arg(ap, int);
+    }
+    va_end(ap);
+    return total;
+}
+int main(void) {
+    printf("%d\n", sum(3, 10, 20, 30));
+    return 0;
+}
+"#;
+    let output_legacy = compile_and_run(src_legacy, &[]);
+    assert!(
+        output_legacy.status.success(),
+        "BUG-10: legacy varargs.h test failed: {}",
+        stderr_str(&output_legacy),
+    );
+    assert_eq!(stdout_str(&output_legacy), "60");
+
+    // Part 2: Also verify modern <stdarg.h> (complementary coverage).
+    let src_modern = r#"
 #include <stdio.h>
 #include <stdarg.h>
 int sum(int count, ...) {
@@ -440,26 +476,31 @@ int main(void) {
     return 0;
 }
 "#;
-    let output = compile_and_run(src, &[]);
+    let output_modern = compile_and_run(src_modern, &[]);
     assert!(
-        output.status.success(),
-        "BUG-10: varargs test failed: {}",
-        stderr_str(&output),
+        output_modern.status.success(),
+        "BUG-10: modern stdarg test failed: {}",
+        stderr_str(&output_modern),
     );
-    assert_eq!(stdout_str(&output), "60");
+    assert_eq!(stdout_str(&output_modern), "60");
 }
 
 /// BUG-11: Fix static functions declared inside a block
 ///
-/// A `static` function declared inside a block scope should have file scope
-/// but restricted visibility.
+/// A `static` function declared INSIDE a compound statement (block scope)
+/// should have file scope but restricted visibility.  The bug is
+/// specifically about block-scoped static function declarations, NOT
+/// file-scope ones.
 /// Status: fixed
 #[test]
 fn test_bug11_static_func_in_block() {
+    // The critical test: declare a static function inside a compound
+    // statement (block scope).  Per C semantics, it should be callable
+    // from within that scope and have file-level linkage.
     let src = r#"
 #include <stdio.h>
-static int helper(int x) { return x * 2; }
 int main(void) {
+    static int helper(int x) { return x * 2; }
     int (*fp)(int) = helper;
     printf("%d\n", fp(21));
     return 0;
@@ -468,7 +509,7 @@ int main(void) {
     let output = compile_and_run(src, &[]);
     assert!(
         output.status.success(),
-        "BUG-11: static function test failed: {}",
+        "BUG-11: static function in block test failed: {}",
         stderr_str(&output),
     );
     assert_eq!(stdout_str(&output), "42");
@@ -504,6 +545,12 @@ int main(void) {
 ///
 /// In the Rust port all compilation state is encapsulated within
 /// `TCCState` with no module-level mutable statics.
+///
+/// This test exercises sequential reuse (two independent compilations in
+/// the same process).  Per the AAP, BUG-13 is scoped as "except for the
+/// compilation stage itself," so sequential independence is the
+/// verification requirement.  True concurrent (threaded) compilation
+/// would require additional synchronization and is not part of this fix.
 /// Status: fixed
 #[test]
 fn test_bug13_libtcc_reentrant() {
@@ -896,7 +943,11 @@ int main(void) {
     );
     let out = stdout_str(&output);
     assert!(out.contains("main"), "FEAT-03: main not printed");
-    // atexit handler should fire after main returns
+    // atexit handler should fire after main returns — verify its output
+    assert!(
+        out.contains("cleanup"),
+        "FEAT-03: atexit handler did not fire; expected 'cleanup' in output, got: {out}"
+    );
 }
 
 /// FEAT-04: C99 complex types
@@ -914,9 +965,15 @@ int main(void) {
     return 0;
 }
 "#;
-    // _Complex is partially implemented — just verify no crash.
-    let _output = compile_only(src, &[]);
-    // Whether this compiles depends on the level of _Complex support.
+    // _Complex is partially implemented — verify compilation succeeds at minimum.
+    let output = compile_only(src, &[]);
+    // For partially-implemented feature, assert at least compilation succeeds.
+    // If compilation fails, the assertion message will help diagnose the gap.
+    assert!(
+        output.status.success(),
+        "FEAT-04: _Complex type compilation failed: {}",
+        stderr_str(&output),
+    );
 }
 
 /// FEAT-05: Postfix compound literals

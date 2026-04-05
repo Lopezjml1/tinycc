@@ -633,6 +633,14 @@ pub struct Riscv64Backend {
     /// Set during function prolog generation when bounds checking is active;
     /// consulted during epilog generation.
     pub func_bound_add_epilog: bool,
+
+    /// Tracker for pairing RISC-V PCREL_HI20 and PCREL_LO12 relocations.
+    ///
+    /// Per BUG-13 (libtcc fully reentrant), this state is encapsulated here
+    /// instead of using `thread_local!` or module-level mutable statics.
+    /// Each `Riscv64Backend` instance owns its own tracker, ensuring that
+    /// concurrent `TCCState` instances do not share relocation pairing state.
+    pub pcrel_hi_tracker: link::PcrelHiTracker,
 }
 
 impl Riscv64Backend {
@@ -646,6 +654,7 @@ impl Riscv64Backend {
             func_bound_offset: 0,
             func_bound_ind: 0,
             func_bound_add_epilog: false,
+            pcrel_hi_tracker: link::PcrelHiTracker::new(),
         }
     }
 }

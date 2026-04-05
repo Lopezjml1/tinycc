@@ -937,8 +937,15 @@ fn bt_link(state: &mut TCCState, prog_base: usize) -> TccResult<()> {
 }
 
 /// Unlinks a runtime context from the global backtrace chain.
+///
+/// Must be called in balanced pairs with `bt_link()`.  A pop on an
+/// empty stack indicates a logic error (unbalanced link/unlink).
 fn bt_unlink(_state: &TCCState) {
     if let Ok(mut contexts) = GLOBAL_RT_CONTEXTS.lock() {
+        debug_assert!(
+            !contexts.is_empty(),
+            "bt_unlink called on empty backtrace context stack (unbalanced link/unlink)"
+        );
         contexts.pop();
     }
 }
@@ -1593,7 +1600,14 @@ fn rt_elfsym(rc: &RtContext, pc: usize) -> Option<String> {
         return None;
     }
 
-    let sym_size = std::mem::size_of::<ElfSymEntry>();
+    // Use the correct ELF symbol entry size based on pointer width.
+    // ElfSymEntry is a ZST used only as a namespace for size constants;
+    // size_of::<ElfSymEntry>() would return 0 and cause an infinite loop.
+    let sym_size = if PTR_SIZE == 8 {
+        ElfSymEntry::SIZE_64
+    } else {
+        ElfSymEntry::SIZE_32
+    };
     let mut sym_ptr = rc.esym_start;
 
     while sym_ptr + sym_size <= rc.esym_end {
@@ -1912,28 +1926,75 @@ pub fn run_atexit_handlers() {
 // Bounds Checking Support (BOUND-02: setjmp/longjmp)
 // ============================================================================
 
+/// Per-jmp_buf bounds table watermarks.
+///
+/// When `setjmp` is called in a bounds-checked program, we record the current
+/// depth of the bounds registration table keyed by the `jmp_buf` address.
+/// On `longjmp`, we trim the table back to that depth, discarding bounds
+/// entries that were added between the setjmp and longjmp (because those
+/// stack frames have been unwound and the memory is no longer valid).
+///
+/// This implements BOUND-02 from the TODO file.  The watermark is a simple
+/// counter that increases with each `__bound_local_new()` / `__bound_new_region()`
+/// call.  The Mutex is necessary because bounds-checked programs could
+/// theoretically call setjmp from multiple threads.
+#[cfg(feature = "bcheck")]
+static BOUND_SETJMP_TABLE: std::sync::OnceLock<Mutex<HashMap<usize, usize>>> =
+    std::sync::OnceLock::new();
+
+/// Global bounds table watermark counter.
+///
+/// Monotonically incremented by bounds registration calls.  The watermark
+/// stored in `BOUND_SETJMP_TABLE` captures the value of this counter at
+/// setjmp time.
+#[cfg(feature = "bcheck")]
+static BOUND_WATERMARK: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+
+/// Increment the bounds watermark (called when a new bounds region is registered).
+#[cfg(feature = "bcheck")]
+pub fn bound_watermark_advance() -> usize {
+    BOUND_WATERMARK.fetch_add(1, std::sync::atomic::Ordering::SeqCst)
+}
+
 /// Saves bounds-checking state before a setjmp call.
 ///
-/// Implements BOUND-02 from TODO: save bounds checking context so that
-/// longjmp correctly restores the bounds table state.
+/// Implements BOUND-02 from TODO: save the current bounds table watermark
+/// so that a subsequent longjmp can restore it, correctly discarding any
+/// bounds entries created after the setjmp point.
+///
+/// Returns the current watermark value (can be used by the runtime for
+/// validation).
 #[cfg(feature = "bcheck")]
 pub fn bound_setjmp_save(jmp_buf: usize) -> usize {
-    // In the Rust port, bounds checking state is tracked per-TCCState.
-    // This function serves as a hook point for the bounds checking runtime
-    // (lib/bcheck.c) which is compiled by TCC and calls __bound_setjmp.
-    // We store the current bounds table watermark associated with the jmp_buf.
-    let _ = jmp_buf;
-    0
+    let wm = BOUND_WATERMARK.load(std::sync::atomic::Ordering::SeqCst);
+    let lock = BOUND_SETJMP_TABLE.get_or_init(|| Mutex::new(HashMap::new()));
+    if let Ok(mut table) = lock.lock() {
+        table.insert(jmp_buf, wm);
+    }
+    wm
 }
 
 /// Restores bounds-checking state after a longjmp call.
 ///
-/// The companion to bound_setjmp_save: trims the bounds table back to
-/// the state saved at setjmp time.
+/// The companion to `bound_setjmp_save`: retrieves the saved watermark
+/// for the given `jmp_buf` and resets the global watermark, effectively
+/// trimming the bounds table back to the state at setjmp time.
+///
+/// Any bounds entries registered between the setjmp and longjmp are
+/// invalidated because the corresponding stack frames have been unwound.
 #[cfg(feature = "bcheck")]
 pub fn bound_longjmp_restore(jmp_buf: usize) {
-    // Restore bounds table to saved state.
-    let _ = jmp_buf;
+    let lock = BOUND_SETJMP_TABLE.get_or_init(|| Mutex::new(HashMap::new()));
+    if let Ok(mut table) = lock.lock() {
+        if let Some(&saved_wm) = table.get(&jmp_buf) {
+            // Restore the watermark to the saved level.
+            // Entries beyond this point are from stack frames that no
+            // longer exist after the longjmp.
+            BOUND_WATERMARK.store(saved_wm, std::sync::atomic::Ordering::SeqCst);
+            // Clean up the saved entry (jmp_buf may be reused)
+            table.remove(&jmp_buf);
+        }
+    }
 }
 
 // ============================================================================

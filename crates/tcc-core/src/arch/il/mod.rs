@@ -249,6 +249,25 @@ pub struct IlBackend {
     /// [`gen::out_op1`], etc. This parallels the native backends'
     /// `cur_text_section->data` buffer.
     pub code: Vec<u8>,
+
+    /// Flag indicating the next function call is indirect (via function pointer).
+    ///
+    /// Set by the codegen dispatch when the callee is a `VT_PTR` to `VT_FUNC`.
+    /// When true, [`gen::gfunc_call`] emits `calli` instead of `call`.
+    /// Reset to `false` after each call emission.
+    ///
+    /// Source context: il-gen.c lines 350-380 checks `vtop` for `VT_CONST`
+    /// to distinguish direct calls from indirect calls via function pointer.
+    pub is_indirect_call: bool,
+
+    /// Flag indicating the current function being generated is the program
+    /// entry point.
+    ///
+    /// Set by the higher-level codegen dispatch when it determines that the
+    /// current function is `main` (or its equivalent). When true,
+    /// [`gen::gfunc_prolog`] emits `.entrypoint` in the CIL output.
+    /// Reset to `false` after emission.
+    pub is_entry_point: bool,
 }
 
 impl IlBackend {
@@ -263,6 +282,8 @@ impl IlBackend {
             il_output: String::new(),
             ind: 0,
             code: Vec::new(),
+            is_indirect_call: false,
+            is_entry_point: false,
         }
     }
 }

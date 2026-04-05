@@ -1020,10 +1020,23 @@ pub fn gfunc_call(state: &mut IlGenState, nb_args: i32) -> TccResult<()> {
     sig.push(')');
 
     // Emit the call opcode with the signature.
-    // In the C source, this checks vtop for VT_CONST to decide between
-    // call and calli. Without vtop access, we emit a direct call.
-    out_op(state, IlOpcode::Call);
+    //
+    // In the C source (il-gen.c lines 350-380), the compiler checks vtop
+    // for VT_CONST to decide between `call` (direct/static) and `calli`
+    // (indirect / function pointer). When the callee is a VT_PTR to
+    // VT_FUNC (i.e., a function pointer), `calli` must be used — the
+    // pointer is already on the evaluation stack and `calli` consumes it.
+    //
+    // The higher-level codegen pipeline sets `state.is_indirect_call`
+    // when the call target is a function pointer (VT_PTR to VT_FUNC).
+    if state.is_indirect_call {
+        out_op(state, IlOpcode::Calli);
+    } else {
+        out_op(state, IlOpcode::Call);
+    }
     let _ = writeln!(state.il_output, " {}", sig);
+    // Reset indirect flag after emission.
+    state.is_indirect_call = false;
     Ok(())
 }
 
@@ -1093,14 +1106,25 @@ pub fn gfunc_prolog(state: &mut IlGenState, func_sym: &Sym) -> TccResult<()> {
     }
     let _ = writeln!(state.il_output, ")");
 
-    // Emit .entrypoint if function is named "main"
-    // In the C source, this checks `!strcmp(funcname, "main")`
-    // Here we check the last 4 hex digits as a heuristic;
-    // the full name resolution happens at a higher level.
-    // For safety, we check both numeric patterns and emit when indicated.
-    let is_main = func_name.ends_with("main") || func_name == "func_main";
+    // Emit .entrypoint for the program's entry function.
+    //
+    // In the C source (il-gen.c), this checks `!strcmp(funcname, "main")`.
+    // The Rust port checks two conditions:
+    //   1. Explicit flag: `state.is_entry_point` is set by the higher-level
+    //      codegen dispatch when it knows the current function is the program
+    //      entry point (e.g., from TCCState's main symbol index).
+    //   2. Name heuristic: the function name equals or ends with "main",
+    //      catching both C-level `main` and mangled variants.
+    //
+    // Both checks are needed because IL function names may be numeric
+    // (`func_{hex_addr}`) when generated from symbol addresses.
+    let is_main = state.is_entry_point
+        || func_name == "main"
+        || func_name.ends_with("main")
+        || func_name == "func_main";
     if is_main {
         let _ = writeln!(state.il_output, "  .entrypoint");
+        state.is_entry_point = false;
     }
 
     let _ = writeln!(state.il_output);

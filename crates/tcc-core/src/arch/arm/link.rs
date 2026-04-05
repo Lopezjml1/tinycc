@@ -825,9 +825,22 @@ fn relocate_arm_branch(
 /// the 25-bit signed offset, applies the relocation, handles Thumb→ARM
 /// transition (BL → BLX), and re-encodes the result.
 ///
-/// Note: Thumb-2 stub creation for non-call Thumb→ARM jumps requires
-/// full symbol table access and is handled at a higher level (elf.rs).
-/// This function handles the basic offset computation and encoding.
+/// # Interworking coverage
+///
+/// | Source → Target | Mechanism | Status |
+/// |-----------------|-----------|--------|
+/// | ARM → Thumb (call) | BL → BLX in `relocate_arm_branch` | ✅ |
+/// | Thumb → ARM (call) | BL → BLX (clear bit 12) | ✅ |
+/// | Thumb → ARM (jump) | Veneer stub (bx pc; nop; b $sym) | ⚠️ Requires higher-level orchestration |
+///
+/// The C code (`arm-link.c` lines 265-290) creates a Thumb→ARM veneer
+/// stub for non-call jumps (THM_JUMP24 where target is ARM) by
+/// manipulating the symbol table and emitting a stub function. This
+/// requires `TCCState` access (symbol table, section manipulation,
+/// relocation creation) which is not available at this level. The
+/// veneer creation must be handled by the higher-level ELF relocation
+/// loop in `elf.rs` before this function is called.  If no veneer was
+/// created, this function returns an error for the unsupported case.
 ///
 /// Source: arm-link.c lines 232-323.
 fn relocate_thumb_branch(
@@ -881,11 +894,22 @@ fn relocate_thumb_branch(
     // Range check: ±16 MiB for Thumb-2 branches
     // Source: arm-link.c lines 305-307
     if !to_thumb || !(-0x0100_0000..0x0100_0000).contains(&x) {
-        // If target is ARM and offset is valid, or if out of range
+        // Cases that reach here:
+        //  1. Target is ARM (!to_thumb) and it's NOT a call (!is_call)
+        //     → Needs a Thumb→ARM veneer stub (see doc comment above).
+        //  2. Offset out of range for any branch type.
+        //  3. Misaligned target (val & 2) with non-Thumb destination.
         if to_thumb || (val & 2) != 0 || (!is_call) {
             return Err(TccError::linker(format!(
-                "can't relocate value at {:#x}, type {}",
-                addr, rel_type
+                "can't relocate value at {:#x}, type {} — {}",
+                addr,
+                rel_type,
+                if !to_thumb && !is_call {
+                    "Thumb→ARM interwork jump requires a veneer stub \
+                     (must be created by the ELF linker before relocation)"
+                } else {
+                    "offset out of range or misaligned target"
+                }
             )));
         }
     }
@@ -985,6 +1009,18 @@ fn relocate_thumb_movw_movt_abs(rel_type: i32, ptr: &mut [u8], val: u64) {
     if rel_type == R_ARM_THM_MOVT_ABS {
         v >>= 16;
     }
+
+    // Validate the 16-bit immediate field.
+    // MOVW_ABS_NC ("no check") and MOVT_ABS both encode a 16-bit immediate.
+    // For MOVW, the C code (arm-link.c) relies on the NC (no-check) semantics
+    // and does not validate. For MOVT, after the >>16 shift the value is
+    // inherently ≤ 16 bits for 32-bit addresses. We add a debug assertion
+    // to catch unexpected overflows from 64-bit addresses on 32-bit targets.
+    debug_assert!(
+        (v as u32) <= 0xffff || rel_type == R_ARM_THM_MOVW_ABS_NC,
+        "Thumb MOVT immediate exceeds 16-bit field: {:#x}",
+        v
+    );
 
     // Extract fields for Thumb-2 MOVW/MOVT encoding
     // Source: arm-link.c lines 359-363

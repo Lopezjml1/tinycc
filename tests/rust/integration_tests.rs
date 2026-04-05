@@ -15,8 +15,9 @@
 //! binary produces equivalent results to the C-built TCC. It invokes the
 //! compiled `tcc` binary against the existing test suite inputs:
 //!
-//! - **`tests/tests2/*.c`** — 127 numbered C regression tests
-//! - **`tests/pp/*.c` / `*.S`** — 24 preprocessor regression tests
+//! - **`tests/tests2/*.c`** — 127+ numbered C regression tests (canonical count
+//!   is 127; the actual directory may contain additional companion files)
+//! - **`tests/pp/*.c` / `*.S`** — 24+ preprocessor regression tests
 //!
 //! Each test compiles/runs a C file with the `tcc` binary and compares the
 //! captured output (stdout + stderr) against the corresponding `.expect`
@@ -1479,7 +1480,7 @@ const TESTS2_COMPANION_FILES: &[&str] = &[
 #[test]
 fn test_discover_all_tests2() {
     let dir = tests2_dir();
-    let mut results: Vec<(String, Result<(), String>)> = Vec::new();
+    let mut results: Vec<(String, TestOutcome)> = Vec::new();
 
     let mut entries: Vec<_> = fs::read_dir(&dir)
         .expect("Could not read tests/tests2/ directory")
@@ -1501,16 +1502,22 @@ fn test_discover_all_tests2() {
             continue;
         }
 
-        // Skip known problematic tests
+        // Skip known problematic tests — tracked as Skipped, not Passed
         if TESTS2_SKIP.contains(&test_name) {
-            results.push((test_name.to_string(), Ok(())));
+            results.push((
+                test_name.to_string(),
+                TestOutcome::Skipped("in TESTS2_SKIP list".to_string()),
+            ));
             continue;
         }
 
         // Skip x86-only tests on non-x86 platforms
         #[cfg(not(any(target_arch = "x86", target_arch = "x86_64")))]
         if TESTS2_X86_ONLY.contains(&test_name) {
-            results.push((test_name.to_string(), Ok(())));
+            results.push((
+                test_name.to_string(),
+                TestOutcome::Skipped("x86-only test on non-x86 platform".to_string()),
+            ));
             continue;
         }
 
@@ -1584,13 +1591,17 @@ fn test_discover_all_tests2() {
             _ => run_tests2_case(test_name),
         };
 
-        results.push((test_name.to_string(), result));
+        let outcome = match result {
+            Ok(()) => TestOutcome::Passed,
+            Err(e) => TestOutcome::Failed(e),
+        };
+        results.push((test_name.to_string(), outcome));
     }
 
     let report = generate_test_report(&results);
     let failures: Vec<_> = results
         .iter()
-        .filter(|(_, r)| r.is_err())
+        .filter(|(_, r)| matches!(r, TestOutcome::Failed(_)))
         .collect();
 
     if !failures.is_empty() {
@@ -1599,8 +1610,10 @@ fn test_discover_all_tests2() {
             report,
             failures.len()
         );
-        for (name, err) in &failures {
-            let _ = write!(msg, "\n--- {} ---\n{}\n", name, err.as_ref().unwrap_err());
+        for (name, outcome) in &failures {
+            if let TestOutcome::Failed(e) = outcome {
+                let _ = write!(msg, "\n--- {} ---\n{}\n", name, e);
+            }
         }
         panic!("{}", msg);
     }
@@ -1616,7 +1629,7 @@ fn test_discover_all_tests2() {
 #[test]
 fn test_discover_all_pp() {
     let dir = pp_dir();
-    let mut results: Vec<(String, Result<(), String>)> = Vec::new();
+    let mut results: Vec<(String, TestOutcome)> = Vec::new();
 
     let mut entries: Vec<_> = fs::read_dir(&dir)
         .expect("Could not read tests/pp/ directory")
@@ -1649,13 +1662,17 @@ fn test_discover_all_pp() {
         };
 
         let result = run_pp_case_with_opts(&test_name, ext, &opts);
-        results.push((test_name, result));
+        let outcome = match result {
+            Ok(()) => TestOutcome::Passed,
+            Err(e) => TestOutcome::Failed(e),
+        };
+        results.push((test_name, outcome));
     }
 
     let report = generate_test_report(&results);
     let failures: Vec<_> = results
         .iter()
-        .filter(|(_, r)| r.is_err())
+        .filter(|(_, r)| matches!(r, TestOutcome::Failed(_)))
         .collect();
 
     if !failures.is_empty() {
@@ -1664,8 +1681,10 @@ fn test_discover_all_pp() {
             report,
             failures.len()
         );
-        for (name, err) in &failures {
-            let _ = write!(msg, "\n--- {} ---\n{}\n", name, err.as_ref().unwrap_err());
+        for (name, outcome) in &failures {
+            if let TestOutcome::Failed(e) = outcome {
+                let _ = write!(msg, "\n--- {} ---\n{}\n", name, e);
+            }
         }
         panic!("{}", msg);
     }
@@ -1681,9 +1700,27 @@ fn test_discover_all_pp() {
 ///
 /// Produces a human-readable line like:
 /// `Tests: 120 passed, 3 failed, 123 total`
-fn generate_test_report(results: &[(String, Result<(), String>)]) -> String {
+/// Result status for a single test case used by the discovery runner.
+///
+/// Distinguishes between passed, failed, and skipped tests so that the
+/// report accurately reflects the actual verification coverage.
+#[derive(Debug, Clone, PartialEq)]
+enum TestOutcome {
+    Passed,
+    Failed(String),
+    Skipped(String),
+}
+
+fn generate_test_report(results: &[(String, TestOutcome)]) -> String {
     let total = results.len();
-    let passed = results.iter().filter(|(_, r)| r.is_ok()).count();
-    let failed = total - passed;
-    format!("Tests: {} passed, {} failed, {} total", passed, failed, total)
+    let passed = results.iter().filter(|(_, r)| *r == TestOutcome::Passed).count();
+    let skipped = results
+        .iter()
+        .filter(|(_, r)| matches!(r, TestOutcome::Skipped(_)))
+        .count();
+    let failed = total - passed - skipped;
+    format!(
+        "Tests: {} passed, {} skipped, {} failed, {} total",
+        passed, skipped, failed, total
+    )
 }
