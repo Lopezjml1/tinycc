@@ -198,6 +198,7 @@ impl PcrelHiTracker {
         None
     }
 
+    #[allow(dead_code)]
     fn clear(&mut self) {
         self.entries.clear();
         self.last_hi_valid = false;
@@ -518,7 +519,7 @@ pub fn relocate(
         R_RISCV_BRANCH => {
             let off64 = val.wrapping_sub(addr);
             if (off64.wrapping_add(1 << 12)) & !(0x1ffe_u64) != 0 {
-                return Err(TccError::linker(&format!(
+                return Err(TccError::linker(format!(
                     "R_RISCV_BRANCH relocation failed (val={:#x}, addr={:#x})",
                     val, addr
                 )));
@@ -544,7 +545,7 @@ pub fn relocate(
         R_RISCV_JAL => {
             let off64 = val.wrapping_sub(addr);
             if (off64.wrapping_add(1 << 21)) & !((1u64 << 22) - 2) != 0 {
-                return Err(TccError::linker(&format!(
+                return Err(TccError::linker(format!(
                     "R_RISCV_JAL relocation failed (val={:#x}, addr={:#x})",
                     val, addr
                 )));
@@ -591,7 +592,7 @@ pub fn relocate(
         R_RISCV_PCREL_HI20 => {
             let off64 = ((val.wrapping_sub(addr) as i64).wrapping_add(0x800)) >> 12;
             if ((off64 as u64).wrapping_add(1u64 << 20)) >> 21 != 0 {
-                return Err(TccError::linker(&format!(
+                return Err(TccError::linker(format!(
                     "R_RISCV_PCREL_HI20 relocation failed: off={:#x}",
                     off64
                 )));
@@ -670,7 +671,7 @@ pub fn relocate(
         R_RISCV_RVC_BRANCH => {
             let off64 = val.wrapping_sub(addr);
             if (off64.wrapping_add(1 << 8)) & !(0x1fe_u64) != 0 {
-                return Err(TccError::linker(&format!(
+                return Err(TccError::linker(format!(
                     "R_RISCV_RVC_BRANCH relocation failed (val={:#x}, addr={:#x})",
                     val, addr
                 )));
@@ -695,7 +696,7 @@ pub fn relocate(
         R_RISCV_RVC_JUMP => {
             let off64 = val.wrapping_sub(addr);
             if (off64.wrapping_add(1 << 11)) & !(0xffe_u64) != 0 {
-                return Err(TccError::linker(&format!(
+                return Err(TccError::linker(format!(
                     "R_RISCV_RVC_JUMP relocation failed (val={:#x}, addr={:#x})",
                     val, addr
                 )));
@@ -789,7 +790,7 @@ pub fn relocate(
         R_RISCV_SET8 => {
             // *ptr = (*ptr & ~0xff) | (val & 0xff)
             if !ptr.is_empty() {
-                ptr[0] = (val as u8) & 0xff;
+                ptr[0] = val as u8;
             }
             Ok(())
         }

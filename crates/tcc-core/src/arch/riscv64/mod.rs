@@ -641,6 +641,18 @@ pub struct Riscv64Backend {
     /// Each `Riscv64Backend` instance owns its own tracker, ensuring that
     /// concurrent `TCCState` instances do not share relocation pairing state.
     pub pcrel_hi_tracker: link::PcrelHiTracker,
+
+    /// Code generation context holding mutable state for instruction emission.
+    pub ctx: gen::Riscv64CodegenCtx,
+
+    /// Stack pointer offset for the function frame — used for prolog patching.
+    pub func_sub_sp_offset: u64,
+
+    /// Number of variadic argument registers saved.
+    pub num_va_regs: i32,
+
+    /// Offset to the va_list register save area from the frame pointer.
+    pub func_va_list_ofs: i32,
 }
 
 impl Riscv64Backend {
@@ -655,6 +667,10 @@ impl Riscv64Backend {
             func_bound_ind: 0,
             func_bound_add_epilog: false,
             pcrel_hi_tracker: link::PcrelHiTracker::new(),
+            ctx: gen::Riscv64CodegenCtx::new(),
+            func_sub_sp_offset: 0,
+            num_va_regs: 0,
+            func_va_list_ofs: 0,
         }
     }
 }
