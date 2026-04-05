@@ -87,6 +87,16 @@ pub const VT_TYPEDEF: i32 = 0x0000_4000;
 /// `inline` function specifier.
 pub const VT_INLINE: i32 = 0x0000_8000;
 
+/// C99 `_Complex` type modifier (FEAT-04).
+///
+/// Applied in combination with `VT_FLOAT`, `VT_DOUBLE`, or `VT_LDOUBLE` to
+/// represent `_Complex float`, `_Complex double`, or `_Complex long double`.
+/// Bit 16 is chosen because bits 0–15 are occupied by base-type, sign,
+/// array, bitfield, const, volatile, VLA, long, extern, static, typedef,
+/// and inline flags, while bit 20+ is reserved for struct/union/enum
+/// encoding.  Bit 16 sits in the available gap.
+pub const VT_COMPLEX: i32 = 0x0001_0000;
+
 // ---------------------------------------------------------------------------
 // Struct/union/enum bitfield encoding in CType.t
 // From tcc.h lines 1078-1085
@@ -1028,6 +1038,12 @@ pub struct AttributeDef {
     pub asm_label: i32,
     /// Attribute mode (for `__attribute__((mode(...)))`) specifying type width.
     pub attr_mode: u8,
+    /// BUG-03: `__attribute__((transparent_union))` flag.
+    ///
+    /// When set on a union parameter, allows any union member type to be
+    /// passed directly in function call argument position without an explicit
+    /// cast.  This is required for POSIX `sys/socket.h` (e.g. `sendmsg`).
+    pub transparent_union: bool,
 }
 
 // ---------------------------------------------------------------------------

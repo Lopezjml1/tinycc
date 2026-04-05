@@ -1403,6 +1403,8 @@ pub fn subst_asm_operand(
         let val_mask = r & VT_VALMASK;
 
         if val_mask == VT_LOCAL {
+            // SAFETY: CValue.i is the canonical integer field of the union;
+            // for VT_LOCAL values, c.i holds the frame-pointer-relative offset.
             let offset = unsafe { sv.c.i as i64 };
             if offset >= 0 {
                 output.push_str(&format!("{}(%ebp)", offset));
@@ -1410,9 +1412,14 @@ pub fn subst_asm_operand(
                 output.push_str(&format!("-{}(%ebp)", -offset));
             }
         } else if val_mask == VT_CONST {
+            // SAFETY: CValue.i is the canonical integer field; for VT_CONST
+            // values, c.i holds the immediate constant value.
             output.push_str(&format!("${}", unsafe { sv.c.i as i64 }));
         } else if (val_mask as u32 as usize) < NB_ASM_REGS {
             let base_reg = val_mask as u32 as usize;
+            // SAFETY: CValue.i is the canonical integer field; for register-
+            // based addressing, c.i holds the displacement offset from the
+            // base register.
             let offset = unsafe { sv.c.i as i64 };
             let reg_name = dword_reg_name(base_reg);
             if offset == 0 {

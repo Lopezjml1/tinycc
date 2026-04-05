@@ -931,6 +931,9 @@ impl<'a> Assembler<'a> {
             t if t == TOK_CINT || t == TOK_CUINT || t == TOK_CLLONG
                 || t == TOK_CULLONG || t == TOK_CCHAR || t == TOK_LCHAR =>
             {
+                // SAFETY: CValue.i is the canonical integer field of the union;
+                // when tok is an integer constant token (TOK_CINT etc.), tokc.i
+                // holds the parsed integer literal value.
                 e.v = unsafe { self.tokc.i };
                 self.next()?;
             }
@@ -1843,6 +1846,8 @@ impl<'a> Assembler<'a> {
 
         // Parse relocation type (could be a number or identifier)
         let rtype = if self.tok == TOK_CINT || self.tok == TOK_CUINT {
+            // SAFETY: CValue.i is the canonical integer field; tok is an integer
+            // constant token so tokc.i holds the parsed relocation type number.
             let v = unsafe { self.tokc.i } as u32;
             self.next()?;
             v
@@ -1938,6 +1943,8 @@ impl<'a> Assembler<'a> {
 
         // Numeric local label definition (e.g., "1:")
         if self.tok == TOK_CINT {
+            // SAFETY: CValue.i is the canonical integer field; tok is TOK_CINT
+            // so tokc.i holds the parsed numeric label identifier.
             let num = unsafe { self.tokc.i } as i32;
             self.next()?;
             if self.tok == b':' as i32 {
@@ -2137,6 +2144,8 @@ impl<'a> Assembler<'a> {
 
             // Numeric label (e.g., `1:`)
             if self.tok == TOK_CINT {
+                // SAFETY: CValue.i is the canonical integer field; tok is TOK_CINT
+                // so tokc.i holds the parsed numeric label identifier.
                 let num = unsafe { self.tokc.i } as i32;
                 self.next()?;
                 if self.tok == b':' as i32 {
@@ -2511,9 +2520,13 @@ impl<'a> Assembler<'a> {
                 let r = sv.r;
                 if (r & vt_const) != 0 && (r & vt_sym) == 0 {
                     // Pure constant — suitable for immediate constraints ('i', 'n')
+                    // SAFETY: CValue.i is the canonical integer field of the union;
+                    // when SValue holds a pure constant, c.i is the constant value.
                     op.asm_str = format!("${}", unsafe { sv.c.i } as i64);
                 } else if (r & vt_local) == vt_local {
                     // Local variable — memory reference relative to frame pointer
+                    // SAFETY: CValue.i is the canonical integer field; for VT_LOCAL
+                    // values, c.i holds the frame-pointer-relative offset.
                     let local_offset = unsafe { sv.c.i } as i64;
                     op.asm_str = format!("{}(%ebp)", local_offset);
                     op.is_memory = true;
@@ -2654,6 +2667,9 @@ impl<'a> Assembler<'a> {
                                             'c' | 'n' => {
                                                 // Constant value
                                                 if let Some(ref vt) = op.vt {
+                                                    // SAFETY: CValue.i is the canonical integer
+                                                    // field; for constant operands, c.i holds the
+                                                    // immediate value to substitute.
                                                     let val = unsafe { vt.c.i };
                                                     if modifier == 'n' {
                                                         result.push_str(

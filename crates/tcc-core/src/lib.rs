@@ -1537,34 +1537,89 @@ impl TCCState {
     }
 
     /// Internal compilation entry point for source strings.
-    fn compile_source(&mut self, _src: &str, filename: &str) -> TccResult<()> {
+    ///
+    /// Orchestrates the full compilation pipeline:
+    ///
+    /// 1. **Setup** — create a [`BufferedFile`] from the source string and
+    ///    push it onto the include stack so the lexer can read from it.
+    /// 2. **Parse** — create a [`Parser`](crate::parser::Parser) that owns
+    ///    `&mut self` (the `TCCState`).  The parser internally instantiates
+    ///    the preprocessor and lexer on demand via `advance_token()`.
+    /// 3. **Top-level declarations** — call `parser.decl(0)` which parses
+    ///    all file-scope declarations, emitting code via the codegen layer.
+    /// 4. **Teardown** — pop the source file from the include stack and
+    ///    propagate any accumulated errors.
+    ///
+    /// This method replaces the stub that previously printed "compilation
+    /// pipeline not yet fully operational".
+    fn compile_source(&mut self, src: &str, filename: &str) -> TccResult<()> {
         self.current_filename = Some(filename.to_string());
         self.nb_errors = 0;
-        // The full compilation pipeline (lexer → preprocessor → parser →
-        // codegen) is orchestrated by the parser and codegen modules. This
-        // method sets up the compilation context and delegates.
-        //
-        // Each phase is implemented in its respective module:
-        //   - lexer.rs     (character scanning, token production)
-        //   - preprocessor.rs (macro expansion, #include handling)
-        //   - parser.rs    (expression/statement/declaration parsing)
-        //   - codegen.rs   (code generation dispatch)
-        //
-        // The compilation pipeline is not yet fully wired end-to-end.
-        // Rather than silently producing empty output (which would make
-        // the binary return exit 0 for invalid C code), report a
-        // compilation error so the CLI driver properly returns non-zero.
-        self.total_lines += _src.lines().count() as i32;
+
+        // Track lines and compilation units for statistics / `-bench`.
+        self.total_lines += src.lines().count() as i32;
         self.total_idents += 1; // count per compilation unit
 
-        // Report compilation error: pipeline not yet operational.
-        // This ensures `tcc -c bad.c` returns exit 1 instead of silently
-        // creating an empty output file.
-        self.nb_errors += 1;
-        eprintln!(
-            "{}: error: compilation pipeline not yet fully operational",
-            filename
-        );
+        // ---- Step 1: Create a BufferedFile from the source string ----
+        let mut bf = BufferedFile {
+            filename: filename.to_string(),
+            true_filename: filename.to_string(),
+            line_num: 1,
+            fd: -1, // string-based input, no file descriptor
+            ..BufferedFile::default()
+        };
+        // Copy the source bytes into the file buffer.  Append a sentinel
+        // NUL so the lexer can detect end-of-buffer without bounds checks
+        // (mirrors the C implementation's CH_EOB sentinel).
+        bf.buffer = src.as_bytes().to_vec();
+        bf.buffer.push(0); // CH_EOB sentinel
+        bf.buf_ptr = 0;
+        bf.buf_end = src.len();
+
+        // Push the file onto the include stack so nested `#include`
+        // processing can save/restore context correctly.
+        self.include_stack.push(bf);
+
+        // ---- Step 2-3: Parse top-level declarations ----
+        //
+        // The `Parser` borrows `&mut self` (TCCState) for its lifetime.
+        // Internally, `parser.next()` → `advance_token()` creates a
+        // transient `Preprocessor` which drives the `Lexer` — the full
+        // lexer → preprocessor → parser → codegen pipeline executes
+        // within the `decl()` call.
+        let parse_result = {
+            let mut parser = crate::parser::Parser::new(self);
+            // Prime the token stream — read the first token so
+            // `parser.current_token` is valid before `decl()` examines it.
+            parser.next()?;
+            // Parse all file-scope declarations (storage_mask = 0 means
+            // all storage classes allowed at file scope).
+            parser.decl(0)
+        };
+
+        // ---- Step 4: Teardown ----
+        // Pop the source file from the include stack.
+        self.include_stack.pop();
+
+        // Propagate parse errors.
+        if let Err(e) = parse_result {
+            self.nb_errors += 1;
+            return Err(e);
+        }
+
+        // If the parser accumulated errors (via self.nb_errors inside the
+        // parser), report a generic compilation failure.
+        if self.nb_errors > 0 {
+            return Err(ErrorKind::ParseError {
+                file: filename.to_string(),
+                line: 0,
+                message: format!(
+                    "{} error(s) during compilation of '{}'",
+                    self.nb_errors, filename
+                ),
+            });
+        }
+
         Ok(())
     }
 
@@ -2258,7 +2313,7 @@ mod tests {
         let mut state = TCCState::new().unwrap();
         state.set_output_type(OutputType::Memory).unwrap();
         let result = state.compile_string("int main() { return 0; }");
-        assert!(result.is_ok());
+        assert!(result.is_ok(), "compile_string failed: {:?}", result.err());
     }
 
     #[test]

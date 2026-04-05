@@ -2157,6 +2157,8 @@ pub fn subst_asm_operand(
     modifier: char,
 ) {
     let r = sv.r as i32;
+    // SAFETY: CValue.i is the canonical integer field of the union;
+    // c.i holds the constant value or address offset for this SValue.
     let val = unsafe { sv.c.i } as i64;
 
     if (r & VT_VALMASK) == VT_CONST {
@@ -2420,6 +2422,8 @@ pub fn asm_gen_code(
 
             if let Some(ref sv) = operands[i].vt {
                 let r = sv.r as i32;
+                // SAFETY: CValue.i is the canonical integer field of the union;
+                // c.i holds the immediate constant or offset for the operand.
                 let val = unsafe { sv.c.i } as i64 as i32;
 
                 if (r & VT_VALMASK) == VT_CONST && (r & VT_SYM) == 0 {
@@ -2480,6 +2484,9 @@ pub fn asm_gen_code(
 
             if let Some(ref sv) = operands[i].vt {
                 let r = sv.r as i32;
+                // SAFETY: CValue.i is the canonical integer field of the union;
+                // for output operands, c.i holds the frame-pointer-relative
+                // offset or constant for the store destination.
                 let val = unsafe { sv.c.i } as i64 as i32;
 
                 if (r & VT_VALMASK) == VT_LOCAL {

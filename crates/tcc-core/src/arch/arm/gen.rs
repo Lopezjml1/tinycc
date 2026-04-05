@@ -305,6 +305,7 @@ pub fn g(backend: &mut ArmBackend, c: i32) -> TccResult<()> {
     if backend.ctx.nocode_wanted != 0 {
         return Ok(());
     }
+    debug_assert!(backend.ctx.ind >= 0, "code emission index must be non-negative");
     let pos = backend.ctx.ind as usize;
     backend.ensure_code_buf(pos + 1);
     backend.ctx.code_buf[pos] = c as u8;
@@ -818,6 +819,9 @@ pub fn load(backend: &mut ArmBackend, r: i32, sv: &SValue) -> TccResult<()> {
     let fr = sv.r as i32;
     let v = fr & VT_VALMASK;
     let bt = sv.type_.t & VT_BTYPE;
+    // SAFETY: CValue.i is the canonical integer field holding the constant
+    // offset/immediate in SValue. All SValue entries produced by the parser
+    // and codegen populate this field for integer and address operands.
     let fc = (unsafe { sv.c.i } as i32);
 
     // Float register target
@@ -974,6 +978,8 @@ fn load_float(backend: &mut ArmBackend, r: i32, sv: &SValue) -> TccResult<()> {
     let fr = sv.r as i32;
     let v = fr & VT_VALMASK;
     let bt = sv.type_.t & VT_BTYPE;
+    // SAFETY: CValue.i is the canonical integer field holding the constant
+    // offset/immediate for this SValue operand.
     let fc = (unsafe { sv.c.i } as i32);
     let dr = vfpr(r);
     let cp = t2cpr(bt) as u32; // 0x100 for double, 0 for float
@@ -1029,6 +1035,8 @@ pub fn store(backend: &mut ArmBackend, r: i32, sv: &SValue) -> TccResult<()> {
     let fr = sv.r as i32;
     let v = fr & VT_VALMASK;
     let bt = sv.type_.t & VT_BTYPE;
+    // SAFETY: CValue.i is the canonical integer field holding the constant
+    // offset/immediate for this store target SValue.
     let fc = (unsafe { sv.c.i } as i32);
 
     // VFP float store
@@ -1090,6 +1098,8 @@ fn store_float(backend: &mut ArmBackend, r: i32, sv: &SValue) -> TccResult<()> {
     let fr = sv.r as i32;
     let v = fr & VT_VALMASK;
     let bt = sv.type_.t & VT_BTYPE;
+    // SAFETY: CValue.i is the canonical integer field holding the constant
+    // offset/immediate for this store target SValue.
     let fc = (unsafe { sv.c.i } as i32);
     let dr = vfpr(r);
     let cp = t2cpr(bt) as u32;
@@ -1491,11 +1501,56 @@ pub fn gfunc_call(backend: &mut ArmBackend, nb_args: i32) -> TccResult<()> {
                     | (13 << 16) | (r_hw << 12) | abs_off)?;
             }
             ParamClass::Core | ParamClass::CoreStruct => {
-                // Parameters already in core registers by convention
-                // (copy_params would handle this in the C version)
+                // Load argument value into core registers R0-R3.
+                // pp.start is the first core register number (0-3),
+                // pp.end is one past the last register used.
+                let sv_idx = pp.sval_idx as usize;
+                if sv_idx < svals.len() {
+                    let sv = &svals[sv_idx];
+                    let nregs = pp.end - pp.start;
+                    if nregs == 1 {
+                        // Single-word arg: load directly into target register.
+                        let target_r = pp.start as i32; // TREG_R0..R3 = 0..3
+                        load(backend, target_r, sv)?;
+                    } else {
+                        // Multi-word arg (e.g., 64-bit or small struct):
+                        // load the low word into the first register,
+                        // high word into the second.
+                        let target_lo = pp.start as i32;
+                        load(backend, target_lo, sv)?;
+                        if nregs >= 2 {
+                            // For 64-bit or struct, load second word.
+                            // Build an offset SValue for the high half.
+                            let mut sv_hi = sv.clone();
+                            // SAFETY: CValue.i is the canonical integer field
+                            // holding an offset/immediate value.
+                            let base_off = unsafe { sv_hi.c.i };
+                            sv_hi.c = CValue { i: base_off + 4 };
+                            let target_hi = (pp.start + 1) as i32;
+                            load(backend, target_hi, &sv_hi)?;
+                        }
+                    }
+                }
             }
             ParamClass::Vfp | ParamClass::VfpStruct => {
-                // VFP register parameters handled by convention
+                // Load argument value into VFP registers.
+                // pp.start is the first VFP register number (sN or dN index).
+                let sv_idx = pp.sval_idx as usize;
+                if sv_idx < svals.len() {
+                    let sv = &svals[sv_idx];
+                    let bt = sv.type_.t & VT_BTYPE;
+                    if bt == VT_FLOAT {
+                        // Single-precision: load into sN (float register).
+                        // Map VFP index to float reg (TREG_F0 + offset/2).
+                        let freg = TREG_F0 as i32 + pp.start / 2;
+                        load(backend, freg, sv)?;
+                    } else {
+                        // Double-precision (or VFP struct element):
+                        // load into dN (double register).
+                        let freg = TREG_F0 as i32 + pp.start / 2;
+                        load(backend, freg, sv)?;
+                    }
+                }
             }
         }
     }
@@ -1771,6 +1826,8 @@ pub fn gen_opi(backend: &mut ArmBackend, op: i32) -> TccResult<()> {
         let cc = mapcc(op);
 
         // Try constant CMP first
+        // SAFETY: CValue.i is the canonical integer field for
+        // constant values on the value stack.
         let vtop_c = (unsafe { backend.vtop().c.i } as i32);
         if (backend.vtop().r as i32 & VT_VALMASK) == VT_CONST {
             let enc = stuff_const(
@@ -1812,6 +1869,8 @@ pub fn gen_opi(backend: &mut ArmBackend, op: i32) -> TccResult<()> {
 
         if (backend.vtop().r as i32 & VT_VALMASK) == VT_CONST {
             // Immediate shift: MOV Rd, Rm, LSL/LSR/ASR #imm
+            // SAFETY: CValue.i is the canonical integer field for
+            // the immediate shift amount constant on the value stack.
             let imm = ((unsafe { backend.vtop().c.i } as i32) & 0x1F) as u32;
             o(backend, COND_AL | (0xD << 21) | (rd << 12) | (imm << 7) | shift_type | rm)?;
         } else {
@@ -1933,6 +1992,8 @@ pub fn gen_opi(backend: &mut ArmBackend, op: i32) -> TccResult<()> {
 
     // Try constant operand
     if (backend.vtop().r as i32 & VT_VALMASK) == VT_CONST {
+        // SAFETY: CValue.i is the canonical integer field for
+        // the constant operand on the value stack.
         let c = (unsafe { backend.vtop().c.i } as i32) as u32;
         let enc = stuff_const(
             COND_AL | (arm_opc << 20) | s_bit | (rn << 16) | (rd << 12),
@@ -1963,6 +2024,8 @@ pub fn gen_opi(backend: &mut ArmBackend, op: i32) -> TccResult<()> {
 fn is_zero(sv: &SValue) -> bool {
     let v = sv.r as i32 & VT_VALMASK;
     if v == VT_CONST {
+        // SAFETY: CValue.i is the canonical integer field; for a VT_CONST
+        // SValue it holds the constant's numeric value or zero.
         (unsafe { sv.c.i } as i32) == 0
     } else {
         false

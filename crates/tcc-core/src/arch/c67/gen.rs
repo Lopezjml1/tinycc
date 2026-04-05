@@ -1167,6 +1167,8 @@ fn emit_helper_call(b: &mut C67Backend, helper_name: &str, fr: i32, r: i32) {
 fn gcall_or_jmp(b: &mut C67Backend, is_jmp: bool) -> TccResult<()> {
     let vtop_idx = b.ctx.vtop_idx as usize;
     let vtop_r = b.ctx.vstack[vtop_idx].r as i32;
+    // SAFETY: CValue.i is the canonical integer field of the union,
+    // holding the constant value/offset for this vstack entry.
     let vtop_c_i = unsafe { b.ctx.vstack[vtop_idx].c.i } as i32;
 
     if (vtop_r & (VT_VALMASK | VT_LVAL)) == VT_CONST {
@@ -1261,6 +1263,8 @@ pub fn gsym_addr(backend: &mut C67Backend, mut t: i32, a: i32) -> TccResult<()> 
 pub fn load(backend: &mut C67Backend, r: i32, sv: &SValue) -> TccResult<()> {
     let sv_r = sv.r as i32;
     let v: i32 = sv_r & VT_VALMASK;
+    // SAFETY: CValue.i is the canonical integer field of the union,
+    // holding the constant value or address offset for this SValue.
     let fc: i32 = unsafe { sv.c.i } as i32;
     let fr: i32 = sv_r & VT_VALMASK;
 
@@ -1453,6 +1457,8 @@ pub fn load(backend: &mut C67Backend, r: i32, sv: &SValue) -> TccResult<()> {
 pub fn store(backend: &mut C67Backend, r: i32, sv: &SValue) -> TccResult<()> {
     let sv_r = sv.r as i32;
     let v = sv_r & VT_VALMASK;
+    // SAFETY: CValue.i is the canonical integer field of the union,
+    // holding the constant value or address offset for this SValue.
     let fc = unsafe { sv.c.i } as i32;
     let bt = sv.type_.t & VT_BTYPE;
 

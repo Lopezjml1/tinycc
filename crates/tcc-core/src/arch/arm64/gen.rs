@@ -125,14 +125,19 @@ pub trait SValueExt {
 impl SValueExt for SValue {
     #[inline]
     fn c_i32(&self) -> i32 {
+        // SAFETY: CValue.i is the canonical integer/unsigned field of the union.
+        // All SValue entries produced by the parser/codegen populate this field
+        // for integer, address, and offset operands.
         unsafe { self.c.i as i32 }
     }
     #[inline]
     fn c_u64(&self) -> u64 {
+        // SAFETY: CValue.i is the canonical integer/unsigned field of the union.
         unsafe { self.c.i }
     }
     #[inline]
     fn c_i64(&self) -> i64 {
+        // SAFETY: CValue.i is the canonical integer/unsigned field of the union.
         unsafe { self.c.i as i64 }
     }
 }
@@ -879,6 +884,8 @@ pub fn arm64_sym(backend: &mut Arm64Backend, r: u32, sym_idx: usize, addend: u64
 /// Compute sign-extended 64-bit constant value from SValue.
 /// Source: arm64-gen.c lines 494-495.
 fn svcul_from_sv(sv: &SValue) -> u64 {
+    // SAFETY: CValue.i is the canonical integer/unsigned field of the union,
+    // populated by the parser/codegen for all non-floating-point SValues.
     let raw = unsafe { sv.c.i } as u32;
     // Sign-extend if bit 31 set
     if raw & 0x8000_0000 != 0 {
@@ -1358,42 +1365,100 @@ pub fn gfunc_call(backend: &mut Arm64Backend, nb_args: i32) -> TccResult<()> {
     let vtop = backend.ctx.vtop_idx;
     let func_sv_idx = (vtop - nb_args) as usize;
 
-    // Phase 2: Move args into position (registers/stack)
-    // Process args from left to right
+    // Phase 2: Classify each argument to determine register vs. stack placement.
+    //
+    // Per AAPCS64:
+    //   - Integer/pointer args go to x0-x7 (ncrn)
+    //   - Float/double args go to v0-v7 (nsrn)
+    //   - Long double / excess args go to the stack (nsaa)
+    //   - Stack must be 16-byte aligned before CALL
+
+    struct ArgSlot {
+        idx: usize,       // index into vstack
+        is_float: bool,
+        reg: Option<i32>, // target register (TREG_R(n) or TREG_F(n))
+        stack_off: Option<u32>, // stack offset from SP for stack args
+    }
+
+    let mut slots: Vec<ArgSlot> = Vec::with_capacity(nb);
+
     for i in 0..nb {
         let arg_idx = func_sv_idx + 1 + i;
         if arg_idx >= backend.ctx.vstack.len() {
             break;
         }
-        let arg = backend.ctx.vstack[arg_idx].clone();
+        let arg = &backend.ctx.vstack[arg_idx];
         let bt = arg.type_.t & VT_BTYPE;
-        let is_float = bt == VT_FLOAT || bt == VT_DOUBLE || bt == VT_LDOUBLE;
+        let is_float = bt == VT_FLOAT || bt == VT_DOUBLE;
 
-        if is_float && bt != VT_LDOUBLE && nsrn < 8 {
+        if is_float && nsrn < 8 {
             // Float/double arg in SIMD register v(nsrn)
+            let target = TREG_F(nsrn as i32);
+            slots.push(ArgSlot { idx: arg_idx, is_float: true, reg: Some(target), stack_off: None });
             nsrn += 1;
-        } else if !is_float && ncrn < 8 {
-            // Integer arg in core register x(ncrn)
+        } else if !is_float && bt != VT_LDOUBLE && ncrn < 8 {
+            // Integer/pointer arg in core register x(ncrn)
+            let target = TREG_R(ncrn as i32);
+            slots.push(ArgSlot { idx: arg_idx, is_float: false, reg: Some(target), stack_off: None });
             ncrn += 1;
         } else {
-            // Stack arg
-            let arg_sz: u32 = 8; // Both float and int args are 8 bytes on AArch64
+            // Stack arg (long double, excess args, etc.)
+            let arg_sz: u32 = 8;
             nsaa = (nsaa + arg_sz - 1) & !(arg_sz - 1);
+            slots.push(ArgSlot { idx: arg_idx, is_float, reg: None, stack_off: Some(nsaa) });
             nsaa += arg_sz;
         }
     }
 
-    // Phase 3: Emit the call
+    // Phase 3: Allocate stack space (16-byte aligned)
+    let stack_space = if nsaa > 0 { (nsaa + 15) & !15 } else { 0 };
+    if stack_space > 0 {
+        // sub sp, sp, #stack_space
+        if stack_space < 4096 {
+            backend.o(0xd10003ff | ((stack_space & 0xfff) << 10));
+        } else {
+            arm64_movimm(backend, 30, stack_space as u64);
+            // sub sp, sp, x30
+            backend.o(0xcb1e03ff);
+        }
+    }
+
+    // Phase 4: Place stack arguments.
+    for slot in &slots {
+        if let Some(off) = slot.stack_off {
+            if slot.idx < backend.ctx.vstack.len() {
+                let sv = backend.ctx.vstack[slot.idx].clone();
+                // Load arg into a temporary register, then store to stack.
+                let tmp_r = TREG_R(30 - 19); // use x30 (TREG_R30 = 19) as temp
+                load(backend, tmp_r, &sv)?;
+                // str x30, [sp, #off]
+                let off12 = (off >> 3) & 0x1ff;
+                backend.o(0xf90003fe | (off12 << 10)); // STR x30, [sp, #off]
+            }
+        }
+    }
+
+    // Phase 5: Load register arguments.
+    // Process in reverse to avoid clobbering early registers.
+    for slot in slots.iter().rev() {
+        if let Some(target_r) = slot.reg {
+            if slot.idx < backend.ctx.vstack.len() {
+                let sv = backend.ctx.vstack[slot.idx].clone();
+                load(backend, target_r, &sv)?;
+            }
+        }
+    }
+
+    // Phase 6: Emit the BL (call) instruction.
     arm64_gen_bl_or_b(backend, false);
 
-    // Phase 4: Clean up stack if needed
-    if nsaa > 0 {
-        nsaa = (nsaa + 15) & !15; // 16-byte align
-        // add sp, sp, #nsaa
-        if nsaa < 4096 {
-            backend.o(0x910003ff | ((nsaa & 0xfff) << 10));
+    // Phase 7: Restore stack space.
+    if stack_space > 0 {
+        // add sp, sp, #stack_space
+        if stack_space < 4096 {
+            backend.o(0x910003ff | ((stack_space & 0xfff) << 10));
         } else {
-            arm64_movimm(backend, 30, nsaa as u64);
+            arm64_movimm(backend, 30, stack_space as u64);
             // add sp, sp, x30
             backend.o(0x8b1e03ff);
         }
@@ -1731,6 +1796,8 @@ pub fn arm64_gen_opil(backend: &mut Arm64Backend, op: i32, l: bool) -> TccResult
 
     // Determine if vtop is a constant
     let b_is_const = (b_sv.r as i32 & (VT_VALMASK | VT_LVAL | VT_SYM)) == VT_CONST;
+    // SAFETY: CValue.i is the canonical integer field for constant values
+    // on the value stack. Guarded by the b_is_const check above.
     let b_val = if b_is_const { unsafe { b_sv.c.i } } else { 0 };
     let a_reg = a_sv.r as i32 & VT_VALMASK;
     let b_reg = b_sv.r as i32 & VT_VALMASK;

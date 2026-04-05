@@ -275,6 +275,7 @@ pub fn set_idnum(table: &mut IsIdnumTableMut, c: u8, val: u8) -> u8 {
 /// This is the central data structure for identifier interning. Each unique
 /// identifier string gets exactly one `TokenSym` entry, assigned a unique
 /// token integer value starting from `TOK_IDENT`.
+#[derive(Clone)]
 pub struct TokenSymTable {
     /// Hash buckets: each entry is an index into `table_ident` or -1 (empty).
     pub hash_ident: Vec<i32>,

@@ -263,6 +263,7 @@ pub fn g(backend: &mut I386Backend, c: i32) -> TccResult<()> {
     if backend.ctx.nocode_wanted != 0 {
         return Ok(());
     }
+    debug_assert!(backend.ctx.ind >= 0, "code emission index must be non-negative");
     let ind1 = (backend.ctx.ind + 1) as usize;
     backend.ensure_code_buf(ind1);
     backend.ctx.code_buf[backend.ctx.ind as usize] = c as u8;

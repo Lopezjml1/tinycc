@@ -169,14 +169,19 @@ pub trait SValueExt {
 impl SValueExt for SValue {
     #[inline]
     fn c_i32(&self) -> i32 {
+        // SAFETY: CValue.i is the canonical integer/unsigned field of the union.
+        // All SValue entries produced by the parser/codegen populate this field
+        // for integer, address, and offset operands.
         unsafe { self.c.i as i32 }
     }
     #[inline]
     fn c_u64(&self) -> u64 {
+        // SAFETY: CValue.i is the canonical integer/unsigned field of the union.
         unsafe { self.c.i }
     }
     #[inline]
     fn c_i64(&self) -> i64 {
+        // SAFETY: CValue.i is the canonical integer/unsigned field of the union.
         unsafe { self.c.i as i64 }
     }
 }
@@ -567,6 +572,93 @@ impl Riscv64Backend {
         // Load vtop (was vtop-1) into rc1
         self.gv(rc1);
         self.vswap();
+    }
+
+    /// Load a value from an SValue into a target register.
+    ///
+    /// Delegates to the backend's code emission routines. For integer
+    /// regs (TREG 0-7 → a0-a7) and float regs (TREG 8-15 → fa0-fa7),
+    /// this emits the appropriate MV or FMV.D instruction sequence to
+    /// place the operand into the specified register.
+    fn load_reg(&mut self, r: i32, sv: &SValue) -> TccResult<()> {
+        let fr = sv.r as i32;
+        let v = fr & VT_VALMASK;
+
+        if v == VT_CONST {
+            // SAFETY: CValue.i is the canonical integer field for
+            // constant values on the value stack.
+            let imm = unsafe { sv.c.i } as i64;
+
+            if r < 8 {
+                // Integer register: emit LUI + ADDI sequence for large
+                // constants, or just ADDI for small constants.
+                let rd = ireg(r as usize);
+                if imm >= -2048 && imm < 2048 {
+                    // addi rd, zero, imm
+                    self.emit_i(0x13, 0, rd, 0, imm as i32);
+                } else {
+                    // lui + addi for larger immediates
+                    let upper = upper_i64(imm);
+                    let lower = sign11_i64(imm);
+                    self.o(0x37 | ((rd as u32) << 7) | upper);
+                    self.emit_i(0x13, 0, rd, rd, lower);
+                }
+            } else {
+                // Float register: load integer constant to temp, then
+                // fmv.d to the float reg.
+                let tmp = ireg(TREG_RA);
+                if imm >= -2048 && imm < 2048 {
+                    self.emit_i(0x13, 0, tmp, 0, imm as i32);
+                } else {
+                    let upper = upper_i64(imm);
+                    let lower = sign11_i64(imm);
+                    self.o(0x37 | ((tmp as u32) << 7) | upper);
+                    self.emit_i(0x13, 0, tmp, tmp, lower);
+                }
+                // fmv.d.x frd, tmp
+                let frd = freg(r as usize);
+                self.emit_r(0x53, 0, frd, tmp, 0, 0x79); // FMV.D.X
+            }
+        } else if v < VT_CONST {
+            // Value already in a register — emit MV or FMV.D
+            if r < 8 && (v as usize) < 8 {
+                // MV between integer regs: addi rd, rs, 0
+                let rd = ireg(r as usize);
+                let rs = ireg(v as usize);
+                self.emit_i(0x13, 0, rd, rs, 0);
+            } else if r >= 8 && is_ireg(v as usize) {
+                // FMV.D.X frd, int_rs
+                let frd = freg(r as usize);
+                let rs = ireg(v as usize);
+                self.emit_r(0x53, 0, frd, rs, 0, 0x79); // FMV.D.X
+            } else if r < 8 && !is_ireg(v as usize) {
+                // FMV.X.D int_rd, frs
+                let rd = ireg(r as usize);
+                let frs = freg(v as usize);
+                self.emit_r(0x53, 0, rd, frs, 0, 0x71); // FMV.X.D
+            } else {
+                // FMV.D between float regs: fsgnj.d frd, frs, frs
+                let frd = freg(r as usize);
+                let frs = freg(v as usize);
+                self.emit_r(0x53, 0, frd, frs, frs, 0x11); // FSGNJ.D
+            }
+        } else if (fr & VT_LVAL) != 0 {
+            // Memory reference: emit load instruction
+            let base = if v == VT_LOCAL { ireg(8) } else { ireg(v as usize) };
+            // SAFETY: CValue.i is the canonical integer field holding
+            // the memory offset for lvalue SValues.
+            let offset = unsafe { sv.c.i } as i32;
+            if r < 8 {
+                // ld rd, offset(base)
+                let rd = ireg(r as usize);
+                self.emit_i(0x03, 3, rd, base, offset);
+            } else {
+                // fld frd, offset(base)
+                let frd = freg(r as usize);
+                self.emit_i(0x07, 3, frd, base, offset);
+            }
+        }
+        Ok(())
     }
 
     /// Save all live registers on the vstack by emitting stores.
@@ -1113,7 +1205,11 @@ impl Riscv64Backend {
             let _ = align; // align not needed further
         }
         if bt == VT_STRUCT {
-            return Err(TccError::codegen("store: struct store not implemented"));
+            return Err(TccError::codegen(
+                "store: direct struct store (aggregate copy) is not yet \
+                 implemented on RISC-V64. Consider passing the struct \
+                 by pointer instead."
+            ));
         }
         if size > 8 {
             return Err(TccError::codegen("store: large sized store"));
@@ -1445,11 +1541,66 @@ impl Riscv64Backend {
             }
         }
 
-        // Phase 4: Load register arguments (process again in forward order)
-        // The above simplified pass handled stack args; now we handle register args.
-        // In practice, CodeGen dispatches register loading before calling us.
-        // The C code walks the info array and loads regs; our simplified version
-        // trusts CodeGen to have placed values in appropriate registers already.
+        // Phase 4: Load register arguments.
+        //
+        // Walk the info array in forward order and emit MV/FMV.D
+        // instructions to place vstack values into the appropriate
+        // RISC-V calling convention registers (a0-a7 for integers,
+        // fa0-fa7 for floats).
+        //
+        // `info[i]` bitmap encoding:
+        //   bits 0-2:   first register index (0-7)
+        //   bits 3-5:   second register index (0-7) for 2-reg args
+        //   bit 4:      split-reg flag
+        //   bit 5:      stack flag (=32, already handled above)
+        //   bits 12-13: number of extra regs beyond 1
+        //
+        // TREG mapping: integer regs 0-7 → a0-a7 (via ireg()),
+        //               float   regs 8-15 → fa0-fa7 (via freg()).
+        {
+            for i in 0..nb_args as usize {
+                let ri = info[i];
+                if (ri & 32) != 0 {
+                    continue; // Stack arg — already handled in Phase 3
+                }
+                let sv_idx = func_sv_idx + 1 + i;
+                if sv_idx >= self.ctx.vstack.len() {
+                    continue;
+                }
+                let sv = self.ctx.vstack[sv_idx].clone();
+
+                let nregs = ((ri >> 12) & 3) + 1;
+                let first_reg_idx = ri & 7;
+                let sv_type = &sv.type_;
+                let bt = sv_type.t & VT_BTYPE;
+                let is_float = bt == VT_FLOAT || bt == VT_DOUBLE;
+
+                if nregs == 1 {
+                    if is_float {
+                        // Float/double arg → fa(N): TREG index = 8 + N
+                        let target_treg = (8 + first_reg_idx) as i32;
+                        self.load_reg(target_treg, &sv)?;
+                    } else {
+                        // Integer/pointer arg → a(N): TREG index = N (0-7)
+                        let target_treg = first_reg_idx;
+                        self.load_reg(target_treg, &sv)?;
+                    }
+                } else if nregs == 2 {
+                    let second_reg_idx = (ri >> 3) & 7;
+                    // First half → a(first_reg_idx)
+                    let treg1 = first_reg_idx;
+                    self.load_reg(treg1, &sv)?;
+                    // Second half → a(second_reg_idx), offset by 8 bytes
+                    let mut sv_hi = sv.clone();
+                    // SAFETY: CValue.i is the canonical integer field holding
+                    // offset/immediate values for this SValue.
+                    let base_off = unsafe { sv_hi.c.i };
+                    sv_hi.c = CValue { i: base_off.wrapping_add(8) };
+                    let treg2 = second_reg_idx;
+                    self.load_reg(treg2, &sv_hi)?;
+                }
+            }
+        }
 
         // Phase 5: Emit the actual call
         self.save_regs(0);
@@ -2183,7 +2334,11 @@ impl Riscv64Backend {
                 x if x == TOK_LE => TOK___letf2,
                 x if x == TOK_GT => TOK___gttf2,
                 _ => {
-                    return Err(TccError::codegen("gen_opf: unsupported ldouble op"));
+                    return Err(TccError::codegen(
+                        "gen_opf: long double (128-bit) arithmetic is not \
+                         supported on RISC-V64. Use 'double' instead, or \
+                         implement soft-float __*tf2 helper calls."
+                    ));
                 }
             };
             // Call helper function
@@ -2365,7 +2520,10 @@ impl Riscv64Backend {
             } else if sbt == VT_LDOUBLE && dbt == VT_DOUBLE {
                 TOK___trunctfdf2
             } else {
-                return Err(TccError::codegen("gen_cvt_ftof: unsupported ldouble conversion"));
+                return Err(TccError::codegen(
+                    "gen_cvt_ftof: long double (128-bit) float conversion \
+                     is not supported on RISC-V64. Use 'double' instead."
+                ));
             };
 
             self.vpush_helper_func(tok);

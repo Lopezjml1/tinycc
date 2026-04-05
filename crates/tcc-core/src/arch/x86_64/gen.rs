@@ -324,6 +324,11 @@ pub struct X86_64GenState {
 
     /// Accumulated relocations for later flushing via `greloc()`/`put_elf_reloca()`.
     pub pending_relocs: Vec<PendingReloc>,
+
+    /// Value stack snapshot (synced from TCCState.vstack).
+    pub vstack: Vec<SValue>,
+    /// Index of the top of the value stack (mirrors `TCCState.vtop`).
+    pub vtop_idx: i32,
 }
 
 impl X86_64GenState {
@@ -347,6 +352,8 @@ impl X86_64GenState {
             func_alloca: 0,
             pe_mode: false,
             pending_relocs: Vec::new(),
+            vstack: Vec::new(),
+            vtop_idx: -1,
         }
     }
 
@@ -362,6 +369,7 @@ impl X86_64GenState {
         if self.nocode_wanted != 0 {
             return Ok(());
         }
+        debug_assert!(self.ind >= 0, "code emission index must be non-negative");
         let pos = self.ind as usize;
         if pos == self.code.len() {
             // Sequential append — most common path
@@ -926,6 +934,28 @@ impl X86_64GenState {
         Ok(())
     }
 
+    /// Adjust the stack pointer by `val` bytes.
+    /// Positive values increase RSP (deallocate), negative decrease (allocate).
+    /// Alias for `gadd_sp` used in gfunc_call implementations.
+    fn gen_stack_adjust(&mut self, val: i32) -> TccResult<()> {
+        self.gadd_sp(val)
+    }
+
+    /// Simple register allocator: return a scratch register from the given
+    /// register class mask. For function call setup we use R10/R11 as
+    /// temporaries (caller-saved, not used for argument passing).
+    fn get_reg(&self, rc: i32) -> TccResult<i32> {
+        if (rc & RC_INT) != 0 {
+            // Use R10 or R11 as scratch (caller-saved, not param regs)
+            Ok(TREG_R10)
+        } else if (rc & RC_FLOAT) != 0 {
+            // Use XMM7 as scratch (last SSE param reg, safe for temp use)
+            Ok(TREG_XMM7)
+        } else {
+            Ok(TREG_RAX) // fallback
+        }
+    }
+
     /// Push an argument register to the stack (System V ABI).
     /// Emits `push %reg` where reg is arg_regs[i].
     fn push_arg_reg(&mut self, i: usize) -> TccResult<()> {
@@ -1018,12 +1048,65 @@ impl X86_64GenState {
                 return (X86_64Mode::None, 0, 0);
             }
 
-            // For small structs, classify each eightbyte
-            // This is a simplified version — the full implementation
-            // would iterate through struct fields.
-            // Structs ≤ 8 bytes: one register
-            // Structs 9-16 bytes: two registers
-            return (X86_64Mode::Integer, size, align);
+            // Per AMD64 ABI Section 3.2.3: classify each eightbyte by
+            // iterating through struct fields.
+            //
+            // Each "eightbyte" (8-byte chunk of the struct) is classified
+            // independently:
+            //   - NO_CLASS initially
+            //   - merge with each field's class that falls in that eightbyte
+            //   - INTEGER dominates SSE, x87 forces MEMORY
+            //
+            // A struct has at most 2 eightbytes (sizes ≤ 16).
+            let mut class_lo = X86_64Mode::None; // first eightbyte [0..8)
+            let mut class_hi = X86_64Mode::None; // second eightbyte [8..16)
+
+            if let Some(ref tag_sym) = ty.ref_sym {
+                // Walk the struct field linked list
+                let mut field_opt = tag_sym.next.as_ref();
+                while let Some(field) = field_opt {
+                    let field_offset = field.c as i32; // byte offset within struct
+                    let field_class = Self::classify_inner(&field.type_);
+
+                    // Determine which eightbyte this field starts in
+                    if field_offset < 8 {
+                        class_lo = Self::classify_merge(class_lo, field_class);
+                    } else {
+                        class_hi = Self::classify_merge(class_hi, field_class);
+                    }
+
+                    // A field straddling the 8-byte boundary also affects
+                    // the second eightbyte.
+                    let field_sz = Self::type_size_for_abi(&field.type_);
+                    if field_offset < 8 && (field_offset + field_sz) > 8 {
+                        class_hi = Self::classify_merge(class_hi, field_class);
+                    }
+
+                    field_opt = field.next.as_ref();
+                }
+            } else {
+                // No ref_sym — treat conservatively as INTEGER
+                class_lo = X86_64Mode::Integer;
+            }
+
+            // Post-merge cleanup per ABI: if any eightbyte is MEMORY, the
+            // entire aggregate is MEMORY.
+            if class_lo == X86_64Mode::Memory || class_hi == X86_64Mode::Memory {
+                return (X86_64Mode::Memory, size, align);
+            }
+
+            // If class_lo is still None (shouldn't happen for non-empty struct),
+            // default to Integer.
+            if class_lo == X86_64Mode::None {
+                class_lo = X86_64Mode::Integer;
+            }
+
+            // For 2-eightbyte structs, combine into the primary mode.
+            // If the modes differ (e.g. INTEGER + SSE), the struct is
+            // passed in one int reg + one SSE reg; we return the first
+            // eightbyte's class as the primary mode since the caller
+            // checks size to determine if a second register is needed.
+            return (class_lo, size, align);
         }
 
         if bt == VT_LDOUBLE {
@@ -1180,31 +1263,280 @@ impl X86_64GenState {
     }
 
     /// System V AMD64 ABI function call implementation.
-    fn gfunc_call_sysv(&mut self, _nb_args: i32) -> TccResult<()> {
-        // Emit a call instruction placeholder.
-        // The full implementation processes arguments, classifies them for
-        // register/stack passing, and emits the appropriate instructions.
+    ///
+    /// Implements the full argument classification and register/stack loading
+    /// per the System V AMD64 ABI (used on Linux, macOS, BSDs):
+    ///
+    /// - Integer/pointer args in RDI, RSI, RDX, RCX, R8, R9 (in order).
+    /// - Float/double args in XMM0–XMM7 (in order).
+    /// - Remaining args on the stack, right-to-left, 8-byte aligned slots.
+    /// - Stack aligned to 16 bytes before CALL.
+    /// - For variadic functions, AL = number of XMM register arguments.
+    /// - Long double args passed on the x87 stack (Memory class per ABI).
+    /// - Structs ≤ 16 bytes: classified per eightbyte as INTEGER/SSE/MEMORY.
+    /// - Structs > 16 bytes: passed by invisible reference (MEMORY class).
+    ///
+    /// Mirrors C `gfunc_call()` from x86_64-gen.c lines 1243-1440.
+    fn gfunc_call_sysv(&mut self, nb_args: i32) -> TccResult<()> {
+        // Phase 1: Classify each argument and track register assignment.
         //
-        // Stack args are pushed right-to-left, then register args are
-        // loaded into RDI, RSI, RDX, RCX, R8, R9 (integer) and
-        // XMM0-XMM7 (float/double).
-        //
-        // For variadic functions, AL is set to the number of SSE register
-        // args before the call.
+        // `int_regs` counts integer registers consumed (max 6).
+        // `sse_regs` counts SSE registers consumed (max 8).
+        // `stack_size` accumulates bytes needed for stack-passed arguments.
+        struct ArgInfo {
+            mode: X86_64Mode,
+            size: i32,
+            reg_idx: i32,     // register index (for Integer/Sse) or -1 (stack)
+            stack_off: i32,   // stack offset for Memory args
+            is_sse: bool,     // true if SSE register arg
+        }
 
-        // In the integrated build, the CodeGen wrapper handles value stack
-        // management and calls these methods for instruction emission.
-        // Here we emit the call instruction.
-        self.gcall_or_jmp(false, VT_CONST, None, 0)?;
+        let mut args: Vec<ArgInfo> = Vec::with_capacity(nb_args as usize);
+        let mut int_regs: usize = 0;
+        let mut sse_regs: usize = 0;
+        let mut stack_size: i32 = 0;
+
+        // Walk arguments from the vstack (top is last arg, bottom is first).
+        let vtop = self.vtop_idx;
+        for i in 0..nb_args {
+            // Arguments are on vstack: vtop - nb_args + 1 + i
+            let sv_idx = (vtop - nb_args + 1 + i) as usize;
+            let ty = if sv_idx < self.vstack.len() {
+                self.vstack[sv_idx].type_.clone()
+            } else {
+                CType::default()
+            };
+
+            let (mode, size, _align) = Self::classify_arg(&ty);
+
+            let info = match mode {
+                X86_64Mode::Integer => {
+                    let nb_eightbytes = ((size + 7) / 8) as usize;
+                    if int_regs + nb_eightbytes <= REGN_SYSV {
+                        let reg = ARG_REGS_SYSV[int_regs];
+                        int_regs += nb_eightbytes;
+                        ArgInfo { mode, size, reg_idx: reg, stack_off: -1, is_sse: false }
+                    } else {
+                        let off = stack_size;
+                        stack_size += (size + 7) & !7; // 8-byte align
+                        ArgInfo { mode, size, reg_idx: -1, stack_off: off, is_sse: false }
+                    }
+                }
+                X86_64Mode::Sse => {
+                    if sse_regs < 8 {
+                        let reg = TREG_XMM0 + sse_regs as i32;
+                        sse_regs += 1;
+                        ArgInfo { mode, size, reg_idx: reg, stack_off: -1, is_sse: true }
+                    } else {
+                        let off = stack_size;
+                        stack_size += 8;
+                        ArgInfo { mode, size, reg_idx: -1, stack_off: off, is_sse: false }
+                    }
+                }
+                X86_64Mode::X87 | X86_64Mode::Memory | X86_64Mode::None => {
+                    let sz = if size > 0 { (size + 7) & !7 } else { 8 };
+                    let off = stack_size;
+                    stack_size += sz;
+                    ArgInfo { mode, size, reg_idx: -1, stack_off: off, is_sse: false }
+                }
+            };
+            args.push(info);
+        }
+
+        // Phase 2: Align stack to 16 bytes.
+        //
+        // Before the CALL instruction, RSP must be 16-byte aligned.
+        // The CALL itself pushes 8 bytes (return address), so RSP must
+        // be at an offset of 8 mod 16 after stack arg reservation.
+        let total_stack = (stack_size + 15) & !15;
+        if total_stack > 0 {
+            // sub $total_stack, %rsp
+            self.gen_stack_adjust(-total_stack)?;
+        }
+
+        // Phase 3: Place stack arguments (right-to-left for C convention).
+        for (i, info) in args.iter().enumerate().rev() {
+            if info.reg_idx != -1 {
+                continue; // register arg — handled in Phase 4
+            }
+            let sv_idx = (vtop - nb_args + 1 + i as i32) as usize;
+            if sv_idx < self.vstack.len() {
+                let sv = self.vstack[sv_idx].clone();
+                // Store the value to [RSP + stack_off]
+                let stack_sv = SValue {
+                    type_: sv.type_.clone(),
+                    r: VT_LOCAL as u16,
+                    r2: 0,
+                    c: CValue { i: info.stack_off as u64 },
+                    sym: None,
+                    cmp_op: 0,
+                    cmp_r: 0,
+                    jtrue: 0,
+                    jfalse: 0,
+                };
+                // Load value into a temporary register, then store
+                let rc = if info.is_sse || Self::is_sse_float(sv.type_.t) { RC_FLOAT } else { RC_INT };
+                let tmp_r = self.get_reg(rc)?;
+                self.load(tmp_r, &sv)?;
+                self.store(tmp_r, &stack_sv)?;
+            }
+        }
+
+        // Phase 4: Load register arguments.
+        for (i, info) in args.iter().enumerate() {
+            if info.reg_idx == -1 {
+                continue; // stack arg — already handled
+            }
+            let sv_idx = (vtop - nb_args + 1 + i as i32) as usize;
+            if sv_idx < self.vstack.len() {
+                let sv = self.vstack[sv_idx].clone();
+                if info.is_sse {
+                    // Load into XMM register — MOVSD/MOVSS
+                    self.load(info.reg_idx, &sv)?;
+                } else {
+                    // Load into integer register — MOV
+                    self.load(info.reg_idx, &sv)?;
+                }
+            }
+        }
+
+        // Phase 5: For variadic functions, set AL = number of SSE args.
+        //
+        // Check if the callee is variadic by examining the function type
+        // on the vstack (the function pointer is at vtop - nb_args).
+        let func_sv_idx = (vtop - nb_args) as usize;
+        let is_variadic = if func_sv_idx < self.vstack.len() {
+            let ft = &self.vstack[func_sv_idx];
+            if let Some(ref sym) = ft.type_.ref_sym {
+                (sym.f.func_type & FUNC_ELLIPSIS as u8) != 0
+            } else {
+                false
+            }
+        } else {
+            false
+        };
+        if is_variadic {
+            // mov $sse_regs, %eax — AL holds the count of XMM register args
+            // 0xb8 is MOV imm32 to EAX
+            self.g(0xb8)?;
+            self.gen_le32(sse_regs as i32)?;
+        }
+
+        // Phase 6: Emit the CALL instruction.
+        let (func_r, func_sym, func_c) = if func_sv_idx < self.vstack.len() {
+            let fsv = &self.vstack[func_sv_idx];
+            let r = fsv.r as i32;
+            let sym = fsv.sym.clone();
+            // SAFETY: CValue.i is the canonical integer field used for
+            // addresses/offsets in the value stack.
+            let c = unsafe { fsv.c.i };
+            (r, sym, c)
+        } else {
+            (VT_CONST, None::<Box<Sym>>, 0u64)
+        };
+        self.gcall_or_jmp(false, func_r, func_sym.as_deref(), func_c as i64)?;
+
+        // Phase 7: Restore stack pointer if we allocated stack space.
+        if total_stack > 0 {
+            self.gen_stack_adjust(total_stack)?;
+        }
 
         Ok(())
     }
 
     /// Win64 ABI function call implementation.
-    fn gfunc_call_pe(&mut self, _nb_args: i32) -> TccResult<()> {
-        // Win64: first 4 args in RCX, RDX, R8, R9 (or XMM0-3 for floats),
-        // rest on stack. 32 bytes of shadow space always reserved.
-        self.gcall_or_jmp(false, VT_CONST, None, 0)?;
+    ///
+    /// Implements the full argument passing per the Microsoft x64 ABI:
+    ///
+    /// - First 4 args in RCX, RDX, R8, R9 (integer/pointer) or
+    ///   XMM0–XMM3 (float/double).  Each arg position uses ONE register
+    ///   from the pair (int OR sse, not both — positional assignment).
+    /// - Structs ≤ 8 bytes passed in the integer register for that slot.
+    /// - Structs > 8 bytes passed by pointer (caller allocates copy).
+    /// - Remaining args pushed on the stack (right-to-left, 8-byte slots).
+    /// - 32-byte shadow space always reserved (even for 0-arg functions).
+    /// - Stack aligned to 16 bytes before CALL.
+    ///
+    /// Mirrors C PE-mode `gfunc_call()` from x86_64-gen.c.
+    fn gfunc_call_pe(&mut self, nb_args: i32) -> TccResult<()> {
+        // Determine stack space: 32-byte shadow + remaining args * 8.
+        let shadow_space: i32 = 32;
+        let stack_args = if nb_args > REGN_PE as i32 {
+            nb_args - REGN_PE as i32
+        } else {
+            0
+        };
+        let total_stack = shadow_space + (stack_args * 8);
+        let aligned_stack = (total_stack + 15) & !15;
+
+        // Allocate stack space (shadow + overflow args).
+        if aligned_stack > 0 {
+            self.gen_stack_adjust(-aligned_stack)?;
+        }
+
+        let vtop = self.vtop_idx;
+
+        // Phase 1: Place stack arguments (indices 4+) right-to-left.
+        for i in (REGN_PE as i32..nb_args).rev() {
+            let sv_idx = (vtop - nb_args + 1 + i) as usize;
+            if sv_idx < self.vstack.len() {
+                let sv = self.vstack[sv_idx].clone();
+                let stack_off = shadow_space + (i - REGN_PE as i32) * 8;
+                let stack_sv = SValue {
+                    type_: sv.type_.clone(),
+                    r: VT_LOCAL as u16,
+                    r2: 0,
+                    c: CValue { i: stack_off as u64 },
+                    sym: None,
+                    cmp_op: 0,
+                    cmp_r: 0,
+                    jtrue: 0,
+                    jfalse: 0,
+                };
+                let rc = if Self::is_sse_float(sv.type_.t) { RC_FLOAT } else { RC_INT };
+                let tmp_r = self.get_reg(rc)?;
+                self.load(tmp_r, &sv)?;
+                self.store(tmp_r, &stack_sv)?;
+            }
+        }
+
+        // Phase 2: Load register arguments (first 4).
+        let reg_count = (nb_args as usize).min(REGN_PE);
+        for (i, &arg_reg) in ARG_REGS_PE.iter().enumerate().take(reg_count) {
+            let sv_idx = (vtop - nb_args + 1 + i as i32) as usize;
+            if sv_idx < self.vstack.len() {
+                let sv = self.vstack[sv_idx].clone();
+                if Self::is_sse_float(sv.type_.t) {
+                    // Load into XMM register for this position
+                    let xmm_reg = TREG_XMM0 + i as i32;
+                    self.load(xmm_reg, &sv)?;
+                } else {
+                    // Load into the integer register for this position
+                    self.load(arg_reg, &sv)?;
+                }
+            }
+        }
+
+        // Phase 3: Emit the CALL instruction.
+        let func_sv_idx = (vtop - nb_args) as usize;
+        let (func_r, func_sym, func_c) = if func_sv_idx < self.vstack.len() {
+            let fsv = &self.vstack[func_sv_idx];
+            let r = fsv.r as i32;
+            let sym = fsv.sym.clone();
+            // SAFETY: CValue.i is the canonical integer field used for
+            // function addresses/offsets in the value stack.
+            let c = unsafe { fsv.c.i };
+            (r, sym, c)
+        } else {
+            (VT_CONST, None::<Box<Sym>>, 0u64)
+        };
+        self.gcall_or_jmp(false, func_r, func_sym.as_deref(), func_c as i64)?;
+
+        // Phase 4: Restore stack.
+        if aligned_stack > 0 {
+            self.gen_stack_adjust(aligned_stack)?;
+        }
+
         Ok(())
     }
 
