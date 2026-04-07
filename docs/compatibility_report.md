@@ -213,7 +213,7 @@ All public API functions defined in `libtcc.h` (128 lines) are preserved via the
 | `TCC_OUTPUT_DLL` | `4` | Dynamic library |
 | `TCC_OUTPUT_PREPROCESS` | `5` | Only preprocess |
 
-### 3.3 Primary API Functions (22 functions)
+### 3.3 Primary API Functions (21 functions)
 
 | # | C Signature | libtcc.h Line | Status |
 |---|-------------|---------------|--------|
@@ -714,15 +714,17 @@ The multi-platform matrix (Linux x86_64, macOS Intel/ARM, Windows) is retained.
 
 ### 8.6 Feature Flags (Replacing #ifdef Guards)
 
+Only `x86_64`, `asm`, and `bcheck` are enabled by default (matching the "Linux-first, x86_64 primary target" policy). Other architecture backends must be explicitly enabled at build time — for example: `cargo build --features "arm,arm64"`.
+
 | C Preprocessor Guard | Cargo Feature | Default |
 |---------------------|---------------|---------|
-| `TCC_TARGET_I386` | `i386` | Enabled |
+| `TCC_TARGET_I386` | `i386` | Disabled |
 | `TCC_TARGET_X86_64` | `x86_64` | Enabled |
-| `TCC_TARGET_ARM` | `arm` | Enabled |
-| `TCC_TARGET_ARM64` | `arm64` | Enabled |
-| `TCC_TARGET_RISCV64` | `riscv64` | Enabled |
-| `TCC_TARGET_C67` | `c67` | Enabled |
-| (IL backend) | `il` | Enabled |
+| `TCC_TARGET_ARM` | `arm` | Disabled |
+| `TCC_TARGET_ARM64` | `arm64` | Disabled |
+| `TCC_TARGET_RISCV64` | `riscv64` | Disabled |
+| `TCC_TARGET_C67` | `c67` | Disabled |
+| (IL backend) | `il` | Disabled |
 | `CONFIG_TCC_ASM` | `asm` | Enabled |
 | `CONFIG_TCC_BCHECK` | `bcheck` | Enabled |
 

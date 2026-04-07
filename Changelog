@@ -1,3 +1,45 @@
+version 0.9.28-rc1 (Rust port):
+
+Migration:
+- Full C-to-Rust migration of the TCC compiler codebase
+- New Cargo workspace with 3 crates: tcc-cli (binary), tcc-core (library),
+  tcc-ffi (C-compatible FFI)
+- Build via `cargo build --release`; test via `cargo test --all`
+- All 22+ libtcc public API functions preserved via FFI
+  (see crates/tcc-ffi/src/lib.rs)
+- All CLI flags and invocation patterns preserved
+  (see crates/tcc-cli/src/main.rs)
+- Rust stable toolchain 1.94.x; dependencies: clap, thiserror, memmap2, libc
+
+Architecture:
+- 7 architecture backends (i386, x86_64, ARM, ARM64, RISC-V64, C67, IL)
+  ported as Cargo feature flags in crates/tcc-core
+- Default features: x86_64, asm, bcheck (Linux-first target)
+- CodegenBackend trait replaces #ifdef TCC_TARGET_* conditional compilation
+- Global mutable state eliminated via Rust ownership model (TCCState is
+  self-contained and reentrant)
+- setjmp/longjmp error recovery replaced by Result<T, TccError> propagation
+
+TODO Bug Fixes:
+- 31 items fixed, 6 partially fixed, 6 deferred, 1 blocked, 1 not reproducible
+  (45 total items — zero silently skipped)
+- BUG-01: i386 fastcall ABI corrected
+- BUG-02: x87 FPU stack properly cleaned after operations
+- BUG-03: __attribute__((transparent_union)) supported
+- BUG-04: typeof preserves array types
+- BUG-05: Ternary/comma precedence fixed in initializers
+- BUG-06: Function parameter types auto-decay to function pointers
+- BUG-13: libtcc fully reentrant (inherent in Rust ownership model)
+- BUG-16: Memory leaks after errors eliminated (inherent in Rust RAII)
+- See docs/todo_bug_status.md for complete triage
+
+Documentation:
+- docs/migration_plan.md — C-to-Rust module mapping
+- docs/compatibility_report.md — behavioral equivalence documentation
+- docs/todo_bug_status.md — per-item TODO triage and fix tracking
+- docs/todo_full_coverage_matrix.md — row-per-item coverage matrix
+- README.bug-repros.md — bug reproduction and verification guide
+
 version 0.9.28:
 
 User interface:

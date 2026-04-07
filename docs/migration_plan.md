@@ -361,7 +361,7 @@ Architecture backends are enabled/disabled via Cargo features in `crates/tcc-cor
 
 ```toml
 [features]
-default = ["x86_64", "i386", "arm", "arm64", "riscv64", "c67", "il", "asm", "bcheck"]
+default = ["x86_64", "asm", "bcheck"]
 x86_64 = []
 i386 = []
 arm = []
@@ -372,6 +372,8 @@ il = []
 asm = []
 bcheck = []
 ```
+
+Only `x86_64`, `asm`, and `bcheck` are enabled by default because the AAP states "Linux-first target" and "x86_64 Linux is the primary target." Other architecture backends (`i386`, `arm`, `arm64`, `riscv64`, `c67`, `il`) must be explicitly enabled at build time — for example: `cargo build --features "arm,arm64"`.
 
 This replaces the C `#ifdef TCC_TARGET_*` guards and also addresses TODO FEAT-01 (disable-asm and disable-bcheck options) — these are now Cargo features that can be toggled at build time.
 

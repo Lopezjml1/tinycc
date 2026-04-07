@@ -156,9 +156,10 @@ tinycc/
 | [TODO Bug Status](docs/todo_bug_status.md) | Per-item triage and fix tracking for all TODO items |
 | [TODO Full Coverage Matrix](docs/todo_full_coverage_matrix.md) | Row-per-item coverage matrix |
 
-For full TCC documentation, see `tcc-doc.texi` (Texinfo source) and
-`tcc-doc.html` (rendered HTML). Additional information for the Windows port
-is in `tcc-win32.txt`.
+For full TCC documentation, see `tcc-doc.texi` (Texinfo source). To generate
+HTML documentation, run `makeinfo --html --no-split -o tcc-doc.html tcc-doc.texi`
+(requires `texinfo` package). Additional information for the Windows port
+is in `win32/tcc-win32.txt`.
 
 ## License
 
