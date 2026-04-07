@@ -46,7 +46,7 @@ use super::t2cpr;
 
 use crate::error::{TccError, TccResult};
 use crate::types::{
-    CType, SValue, Sym,
+    CType, CValue, SValue, Sym,
     VT_BTYPE, VT_FLOAT, VT_DOUBLE, VT_LDOUBLE,
     VT_INT, VT_LLONG, VT_PTR, VT_STRUCT,
     VT_BYTE, VT_SHORT, VT_BOOL, VT_UNSIGNED,

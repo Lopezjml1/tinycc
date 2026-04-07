@@ -3,6 +3,8 @@ name: build and test
 on:
   push:
     branches: [ mob ]
+  pull_request:
+    branches: [ mob ]
 
 jobs:
   test-x86_64-linux:

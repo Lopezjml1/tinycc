@@ -29,7 +29,7 @@ use crate::token::{
 };
 use super::{
     Arm64Backend,
-    TREG_R30, TREG_F,
+    TREG_R, TREG_R30, TREG_F,
 };
 use super::link::{
     R_AARCH64_ADR_GOT_PAGE, R_AARCH64_LD64_GOT_LO12_NC,
