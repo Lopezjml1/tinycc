@@ -54,7 +54,7 @@ use crate::token::{
     // Assignment operator token constants
     TOK_A_ADD, TOK_A_SUB, TOK_A_MUL, TOK_A_DIV, TOK_A_MOD, TOK_A_AND,
     TOK_A_OR, TOK_A_XOR, TOK_A_SHL, TOK_A_SAR,
-    // Token LT/GT (single char values)
+    TOK_LT, TOK_GT,
 };
 use crate::types::{
     BufferedFile, CString as TccCString, CValue, CStringValue, TokenSym,
@@ -91,6 +91,9 @@ pub const TOK_FLAG_BOL: i32 = 0x0001;
 pub const TOK_FLAG_BOF: i32 = 0x0002;
 /// An `#endif` was found matching the starting `#ifdef` guard.
 pub const TOK_FLAG_ENDIF: i32 = 0x0004;
+/// Whitespace (space/tab) preceded this token in the source text.
+/// Used by the `-E` preprocessor output to reproduce original spacing.
+pub const TOK_FLAG_SPC: i32 = 0x0008;
 
 // ===========================================================================
 // Character Classification Constants and Table
@@ -333,6 +336,28 @@ pub fn tok_alloc(table: &mut TokenSymTable, str_data: &[u8]) -> i32 {
     tok_alloc_new(table, str_data, h)
 }
 
+/// Find (or create) a token entry by text, returning the **position-based**
+/// ID (`entry_index + TOK_IDENT`) instead of `ts.tok`.
+///
+/// For regular identifiers the result equals `tok_alloc()`.  For keyword
+/// alias entries (e.g. `__noreturn__` whose `ts.tok = Token::Noreturn`),
+/// `tok_alloc()` returns the primary keyword value whereas this function
+/// returns the alias entry's own position — preserving the original
+/// spelling so that `get_tok_str(result)` produces `"__noreturn__"`.
+pub fn tok_find_entry_id(table: &mut TokenSymTable, str_data: &[u8]) -> i32 {
+    let h = tok_hash(str_data) & (TOK_HASH_SIZE - 1);
+    let mut idx = table.hash_ident[h];
+    while idx >= 0 {
+        let ts = &table.table_ident[idx as usize];
+        if ts.len == str_data.len() as i32 && ts.str_data.as_bytes() == str_data {
+            return idx + TOK_IDENT; // position-based ID (NOT ts.tok)
+        }
+        idx = ts.hash_next;
+    }
+    // Not found — create a new entry (returns position-based ID naturally)
+    tok_alloc_new(table, str_data, h)
+}
+
 /// Allocate a new token symbol entry in the hash table (internal helper).
 ///
 /// Port of `tok_alloc_new()` from `tccpp.c` lines 440-467.
@@ -374,6 +399,45 @@ fn tok_alloc_new(table: &mut TokenSymTable, str_data: &[u8], hash_bucket: usize)
 /// The token integer value for the identifier.
 pub fn tok_alloc_const(table: &mut TokenSymTable, s: &str) -> i32 {
     tok_alloc(table, s.as_bytes())
+}
+
+/// Register a keyword alias in the token table.
+///
+/// Adds a hash entry for `str_data` that returns `target_tok` when looked up.
+/// This allows multiple spellings (e.g. `__asm__`, `__asm`, `asm`) to resolve
+/// to the same `Token` enum value.
+///
+/// The entry is appended to `table_ident` with `tok = target_tok`, so hash
+/// lookups find it and return the correct keyword token.  `get_tok_str` is
+/// unaffected because it indexes by `(tok - TOK_IDENT)` which still points
+/// to the primary keyword entry.
+pub fn tok_register_alias(table: &mut TokenSymTable, str_data: &[u8], target_tok: i32) {
+    let h = tok_hash(str_data) & (TOK_HASH_SIZE - 1);
+
+    // Check if this string is already registered in the hash chain.
+    let mut idx = table.hash_ident[h];
+    while idx >= 0 {
+        let ts = &table.table_ident[idx as usize];
+        if ts.len == str_data.len() as i32 && ts.str_data.as_bytes() == str_data {
+            return; // Already exists — nothing to do.
+        }
+        idx = ts.hash_next;
+    }
+
+    // Create a new entry that carries the PRIMARY keyword's tok value.
+    let new_idx = table.table_ident.len() as i32;
+    let str_string = String::from_utf8_lossy(str_data).into_owned();
+    table.table_ident.push(TokenSym {
+        tok: target_tok,
+        len: str_data.len() as i32,
+        str_data: str_string,
+        hash_next: table.hash_ident[h],
+        sym_define: None,
+        sym_label: None,
+        sym_struct: None,
+        sym_identifier: None,
+    });
+    table.hash_ident[h] = new_idx;
 }
 
 /// Get the string representation of a token value.
@@ -449,11 +513,60 @@ pub fn get_tok_str(table: &TokenSymTable, tok: i32, cv: Option<&CValue>) -> Stri
             }
             return "<char>".to_string();
         }
-        t if t == TOK_STR || t == TOK_LSTR => {
-            return "<string>".to_string();
-        }
         t if t == TOK_PPNUM || t == TOK_PPSTR => {
+            // Return the raw text stored in cv.str_val — for pp-numbers
+            // this preserves hex/octal notation (e.g. "0x1E"), for
+            // pp-strings this preserves the quoted form ("pipapo").
+            if let Some(cv) = cv {
+                unsafe {
+                    let ptr = cv.str_val.data;
+                    let size = cv.str_val.size as usize;
+                    if !ptr.is_null() && size > 0 {
+                        let data = std::slice::from_raw_parts(ptr, size);
+                        // Exclude the null terminator if present
+                        let end = data.iter().position(|&b| b == 0).unwrap_or(size);
+                        if let Ok(s) = std::str::from_utf8(&data[..end]) {
+                            return s.to_string();
+                        }
+                    }
+                }
+            }
             return "<ppnum>".to_string();
+        }
+        t if t == TOK_STR || t == TOK_LSTR => {
+            // Re-escape the parsed string data back into a C string literal.
+            // Mirrors the C TCC's add_char()-based reconstruction.
+            if let Some(cv) = cv {
+                unsafe {
+                    let ptr = cv.str_val.data;
+                    let size = cv.str_val.size as usize;
+                    if !ptr.is_null() && size > 0 {
+                        let data = std::slice::from_raw_parts(ptr, size);
+                        // Exclude the null terminator
+                        let end = data.iter().position(|&b| b == 0).unwrap_or(size);
+                        let prefix = if tok == TOK_LSTR { "L" } else { "" };
+                        let mut result = format!("{}\"", prefix);
+                        for &byte in &data[..end] {
+                            match byte {
+                                b'\\' => result.push_str("\\\\"),
+                                b'"'  => result.push_str("\\\""),
+                                b'\n' => result.push_str("\\n"),
+                                b'\r' => result.push_str("\\r"),
+                                b'\t' => result.push_str("\\t"),
+                                b'\0' => result.push_str("\\0"),
+                                0x20..=0x7e => result.push(byte as char),
+                                _ => {
+                                    use std::fmt::Write;
+                                    let _ = write!(result, "\\{:03o}", byte);
+                                }
+                            }
+                        }
+                        result.push('"');
+                        return result;
+                    }
+                }
+            }
+            return "<string>".to_string();
         }
 
         // Multi-character operators
@@ -465,6 +578,8 @@ pub fn get_tok_str(table: &TokenSymTable, tok: i32, cv: Option<&CValue>) -> Stri
         t if t == TOK_LOR => return "||".to_string(),
         t if t == TOK_INC => return "++".to_string(),
         t if t == TOK_DEC => return "--".to_string(),
+        t if t == TOK_LT => return "<".to_string(),
+        t if t == TOK_GT => return ">".to_string(),
         t if t == TOK_SHL => return "<<".to_string(),
         t if t == TOK_SAR => return ">>".to_string(),
         t if t == TOK_ARROW => return "->".to_string(),
@@ -554,6 +669,18 @@ pub struct Lexer<'a> {
     pub parse_flags: i32,
     /// Token-level flags (BOL, BOF, ENDIF) — cleared after each call to `next_raw()`.
     pub tok_flags: i32,
+    /// Position-based tok_alloc ID for the last identifier/keyword scanned.
+    /// For regular identifiers this equals `self.tok`.  For keyword aliases
+    /// (e.g. `__noreturn__` mapping to `Token::Noreturn`), this preserves the
+    /// spelling-specific entry index so that `##` token pasting uses the
+    /// original text, not the canonical keyword spelling.
+    pub ident_alloc_id: i32,
+
+    /// Set to `true` when `parse_number()` encounters an integer literal
+    /// with an explicit `U`/`u` suffix.  The `#if` expression evaluator
+    /// uses this to distinguish explicit unsigned (e.g. `42U`) from
+    /// implicit unsigned token types (e.g. hex `0x80000000` → `TOK_CUINT`).
+    pub tok_explicit_unsigned: bool,
 
     // ---- Private state ----
 
@@ -586,6 +713,8 @@ impl<'a> Lexer<'a> {
             tok_buf: TccCString::new(),
             parse_flags: 0,
             tok_flags: TOK_FLAG_BOL | TOK_FLAG_BOF,
+            ident_alloc_id: 0,
+            tok_explicit_unsigned: false,
             isidnum_table,
             keyword_map,
         };
@@ -593,6 +722,29 @@ impl<'a> Lexer<'a> {
         // Read the first character
         lexer.next_char();
         lexer
+    }
+
+    /// Create a lexer that resumes scanning with a pre-loaded lookahead
+    /// character.  Use this instead of `new()` when the caller already
+    /// has the next unprocessed character (e.g. from a previous Lexer
+    /// instance), avoiding the `next_char()` that `new()` performs.
+    pub fn resume(file: &'a mut BufferedFile, lookahead_ch: i32) -> Self {
+        let keyword_map = build_keyword_table();
+        let isidnum_table: IsIdnumTableMut = ISIDNUM_TABLE;
+
+        Lexer {
+            file,
+            ch: lookahead_ch,
+            tok: 0,
+            tokc: CValue::default(),
+            tok_buf: TccCString::new(),
+            parse_flags: 0,
+            tok_flags: TOK_FLAG_BOL | TOK_FLAG_BOF,
+            ident_alloc_id: 0,
+            tok_explicit_unsigned: false,
+            isidnum_table,
+            keyword_map,
+        }
     }
 
     // ---------------------------------------------------------------
@@ -1199,6 +1351,11 @@ impl<'a> Lexer<'a> {
             // Determine token type based on value and suffix
             // Port of tccpp.c lines 2530-2571
             self.tokc = CValue::default();
+            // Record whether the source literal had an explicit U/u suffix.
+            // The #if expression evaluator needs this to distinguish
+            // e.g. `42U` (unsigned) from `0x80000000` (TOK_CUINT by C type
+            // rules but signed in 64-bit #if evaluation context).
+            self.tok_explicit_unsigned = is_unsigned;
 
             if is_long >= 2 {
                 // Explicit long long
@@ -1260,6 +1417,13 @@ impl<'a> Lexer<'a> {
 
         let ident_bytes = &self.tok_buf.data[..self.tok_buf.data.len() - 1]; // exclude null
 
+        // Always obtain the spelling-preserving entry ID so that keyword
+        // aliases (e.g. `__noreturn__` vs `_Noreturn`) keep their original
+        // text through `##` token pasting.  tok_find_entry_id returns the
+        // entry's POSITION-based ID (index + TOK_IDENT), not ts.tok.
+        let entry_id = tok_find_entry_id(token_table, ident_bytes);
+        self.ident_alloc_id = entry_id;
+
         // Check if this is a keyword
         if let Ok(ident_str) = std::str::from_utf8(ident_bytes) {
             if let Some(kw_token) = self.keyword_map.get(ident_str) {
@@ -1270,9 +1434,8 @@ impl<'a> Lexer<'a> {
             }
         }
 
-        // Not a keyword — allocate or look up in the token symbol table
-        let tok_val = tok_alloc(token_table, ident_bytes);
-        self.tok = tok_val;
+        // Not a keyword — tok and entry_id are the same
+        self.tok = entry_id;
         self.tokc = CValue::default();
 
         Ok(())
@@ -1320,17 +1483,32 @@ impl<'a> Lexer<'a> {
     /// - Operators: their single/multi-char token values
     /// - `TOK_EOF` at end of file
     pub fn next_raw(&mut self, token_table: &mut TokenSymTable) -> TccResult<()> {
-        let _saved_tok_flags = self.tok_flags;
-
         loop {
-            // Skip whitespace
+            // Clear SPC from the previous token — each token must have its
+            // own fresh whitespace detection.  `tok_flags` may carry BOL
+            // and BOF across tokens (intentional), but SPC is per-token.
+            self.tok_flags &= !TOK_FLAG_SPC;
+
+            // Reset the spelling-preserving alias ID.  Only `parse_ident()`
+            // sets this to a non-zero value; for every other token kind it
+            // must be zero so that `tok_to_stream_id()` does not consume a
+            // stale value from the previous identifier.
+            self.ident_alloc_id = 0;
+
+            // Skip whitespace, recording if any was seen so the
+            // preprocessor `-E` output can reproduce spacing.
+            let mut saw_space = false;
             loop {
                 let idx = isidnum_index(self.ch);
                 if idx < self.isidnum_table.len() && (self.isidnum_table[idx] & IS_SPC) != 0 {
+                    saw_space = true;
                     self.next_char();
                 } else {
                     break;
                 }
+            }
+            if saw_space {
+                self.tok_flags |= TOK_FLAG_SPC;
             }
 
             match self.ch {
@@ -1338,7 +1516,7 @@ impl<'a> Lexer<'a> {
                 c if c == CH_EOF => {
                     self.tok = TOK_EOF;
                     self.tokc = CValue::default();
-                    self.tok_flags = 0;
+                    self.tok_flags &= TOK_FLAG_SPC;
                     return Ok(());
                 }
 
@@ -1351,7 +1529,11 @@ impl<'a> Lexer<'a> {
                     if (self.parse_flags & PARSE_FLAG_LINEFEED) != 0 {
                         self.tok = TOK_LINEFEED;
                         self.tokc = CValue::default();
-                        self.tok_flags = 0;
+                        // PRESERVE tok_flags (including BOL) — matches the C
+                        // code's `goto keep_tok_flags` which skips the
+                        // `tok_flags = 0` assignment.  The BOL flag must
+                        // survive so the preprocessor can detect `#` at the
+                        // start of the NEXT line.
                         return Ok(());
                     }
                     // Otherwise, skip and continue scanning
@@ -1368,7 +1550,7 @@ impl<'a> Lexer<'a> {
                         self.tok = b'\\' as i32;
                         self.tokc = CValue::default();
                         self.next_char();
-                        self.tok_flags = 0;
+                        self.tok_flags &= TOK_FLAG_SPC;
                         return Ok(());
                     }
                     // Stray backslash error
@@ -1388,7 +1570,7 @@ impl<'a> Lexer<'a> {
                         self.tok = b'#' as i32;
                     }
                     self.tokc = CValue::default();
-                    self.tok_flags = 0;
+                    self.tok_flags &= TOK_FLAG_SPC;
                     return Ok(());
                 }
 
@@ -1402,19 +1584,19 @@ impl<'a> Lexer<'a> {
                         if next == b'\'' as i32 {
                             self.next_char(); // skip 'L'
                             self.parse_char(true)?;
-                            self.tok_flags = 0;
+                            self.tok_flags &= TOK_FLAG_SPC;
                             return Ok(());
                         }
                         if next == b'"' as i32 {
                             self.next_char(); // skip 'L'
                             self.parse_string(b'"', true)?;
-                            self.tok_flags = 0;
+                            self.tok_flags &= TOK_FLAG_SPC;
                             return Ok(());
                         }
                     }
 
                     self.parse_ident(token_table)?;
-                    self.tok_flags = 0;
+                    self.tok_flags &= TOK_FLAG_SPC;
                     return Ok(());
                 }
 
@@ -1423,21 +1605,21 @@ impl<'a> Lexer<'a> {
                     let idx = isidnum_index(c);
                     if idx < self.isidnum_table.len() && (self.isidnum_table[idx] & IS_ID) != 0 {
                         self.parse_ident(token_table)?;
-                        self.tok_flags = 0;
+                        self.tok_flags &= TOK_FLAG_SPC;
                         return Ok(());
                     }
                     // Not allowed in identifiers — treat as single-char token
                     self.tok = c;
                     self.tokc = CValue::default();
                     self.next_char();
-                    self.tok_flags = 0;
+                    self.tok_flags &= TOK_FLAG_SPC;
                     return Ok(());
                 }
 
                 // ---- High bytes (0x80+: UTF-8 identifier starts) ----
                 c if c >= 0x80 => {
                     self.parse_ident(token_table)?;
-                    self.tok_flags = 0;
+                    self.tok_flags &= TOK_FLAG_SPC;
                     return Ok(());
                 }
 
@@ -1447,7 +1629,7 @@ impl<'a> Lexer<'a> {
                     if (self.parse_flags & PARSE_FLAG_TOK_NUM) != 0 {
                         self.parse_number()?;
                     }
-                    self.tok_flags = 0;
+                    self.tok_flags &= TOK_FLAG_SPC;
                     return Ok(());
                 }
 
@@ -1460,7 +1642,7 @@ impl<'a> Lexer<'a> {
                         if (self.parse_flags & PARSE_FLAG_TOK_NUM) != 0 {
                             self.parse_number()?;
                         }
-                        self.tok_flags = 0;
+                        self.tok_flags &= TOK_FLAG_SPC;
                         return Ok(());
                     }
                     if next == b'.' as i32 {
@@ -1472,7 +1654,7 @@ impl<'a> Lexer<'a> {
                             self.next_char(); // skip third .
                             self.tok = TOK_DOTS;
                             self.tokc = CValue::default();
-                            self.tok_flags = 0;
+                            self.tok_flags &= TOK_FLAG_SPC;
                             return Ok(());
                         }
                     }
@@ -1480,7 +1662,7 @@ impl<'a> Lexer<'a> {
                     self.tok = b'.' as i32;
                     self.tokc = CValue::default();
                     self.next_char();
-                    self.tok_flags = 0;
+                    self.tok_flags &= TOK_FLAG_SPC;
                     return Ok(());
                 }
 
@@ -1491,7 +1673,7 @@ impl<'a> Lexer<'a> {
                     } else {
                         self.scan_pp_string(b'"')?;
                     }
-                    self.tok_flags = 0;
+                    self.tok_flags &= TOK_FLAG_SPC;
                     return Ok(());
                 }
 
@@ -1502,7 +1684,7 @@ impl<'a> Lexer<'a> {
                     } else {
                         self.scan_pp_string(b'\'')?;
                     }
-                    self.tok_flags = 0;
+                    self.tok_flags &= TOK_FLAG_SPC;
                     return Ok(());
                 }
 
@@ -1523,10 +1705,10 @@ impl<'a> Lexer<'a> {
                             self.tok = TOK_SHL;
                         }
                     } else {
-                        self.tok = b'<' as i32;
+                        self.tok = TOK_LT;
                     }
                     self.tokc = CValue::default();
-                    self.tok_flags = 0;
+                    self.tok_flags &= TOK_FLAG_SPC;
                     return Ok(());
                 }
 
@@ -1545,10 +1727,10 @@ impl<'a> Lexer<'a> {
                             self.tok = TOK_SAR;
                         }
                     } else {
-                        self.tok = b'>' as i32;
+                        self.tok = TOK_GT;
                     }
                     self.tokc = CValue::default();
-                    self.tok_flags = 0;
+                    self.tok_flags &= TOK_FLAG_SPC;
                     return Ok(());
                 }
 
@@ -1565,7 +1747,7 @@ impl<'a> Lexer<'a> {
                         self.tok = b'&' as i32;
                     }
                     self.tokc = CValue::default();
-                    self.tok_flags = 0;
+                    self.tok_flags &= TOK_FLAG_SPC;
                     return Ok(());
                 }
 
@@ -1582,7 +1764,7 @@ impl<'a> Lexer<'a> {
                         self.tok = b'|' as i32;
                     }
                     self.tokc = CValue::default();
-                    self.tok_flags = 0;
+                    self.tok_flags &= TOK_FLAG_SPC;
                     return Ok(());
                 }
 
@@ -1599,7 +1781,7 @@ impl<'a> Lexer<'a> {
                         self.tok = b'+' as i32;
                     }
                     self.tokc = CValue::default();
-                    self.tok_flags = 0;
+                    self.tok_flags &= TOK_FLAG_SPC;
                     return Ok(());
                 }
 
@@ -1619,7 +1801,7 @@ impl<'a> Lexer<'a> {
                         self.tok = b'-' as i32;
                     }
                     self.tokc = CValue::default();
-                    self.tok_flags = 0;
+                    self.tok_flags &= TOK_FLAG_SPC;
                     return Ok(());
                 }
 
@@ -1633,7 +1815,7 @@ impl<'a> Lexer<'a> {
                         self.tok = b'!' as i32;
                     }
                     self.tokc = CValue::default();
-                    self.tok_flags = 0;
+                    self.tok_flags &= TOK_FLAG_SPC;
                     return Ok(());
                 }
 
@@ -1647,7 +1829,7 @@ impl<'a> Lexer<'a> {
                         self.tok = b'=' as i32;
                     }
                     self.tokc = CValue::default();
-                    self.tok_flags = 0;
+                    self.tok_flags &= TOK_FLAG_SPC;
                     return Ok(());
                 }
 
@@ -1661,7 +1843,7 @@ impl<'a> Lexer<'a> {
                         self.tok = b'*' as i32;
                     }
                     self.tokc = CValue::default();
-                    self.tok_flags = 0;
+                    self.tok_flags &= TOK_FLAG_SPC;
                     return Ok(());
                 }
 
@@ -1675,7 +1857,7 @@ impl<'a> Lexer<'a> {
                         self.tok = b'%' as i32;
                     }
                     self.tokc = CValue::default();
-                    self.tok_flags = 0;
+                    self.tok_flags &= TOK_FLAG_SPC;
                     return Ok(());
                 }
 
@@ -1689,7 +1871,7 @@ impl<'a> Lexer<'a> {
                         self.tok = b'^' as i32;
                     }
                     self.tokc = CValue::default();
-                    self.tok_flags = 0;
+                    self.tok_flags &= TOK_FLAG_SPC;
                     return Ok(());
                 }
 
@@ -1697,14 +1879,16 @@ impl<'a> Lexer<'a> {
                 c if c == b'/' as i32 => {
                     self.next_char();
                     if self.ch == b'*' as i32 {
-                        // Block comment
+                        // Block comment — comments count as whitespace in C
                         self.next_char();
                         self.parse_comment()?;
+                        self.tok_flags |= TOK_FLAG_SPC;
                         continue; // Comment consumed, scan next token
                     } else if self.ch == b'/' as i32 {
-                        // Line comment
+                        // Line comment — comments count as whitespace in C
                         self.next_char();
                         self.parse_line_comment();
+                        self.tok_flags |= TOK_FLAG_SPC;
                         continue; // Comment consumed, scan next token
                     } else if self.ch == b'=' as i32 {
                         self.next_char();
@@ -1713,7 +1897,7 @@ impl<'a> Lexer<'a> {
                         self.tok = b'/' as i32;
                     }
                     self.tokc = CValue::default();
-                    self.tok_flags = 0;
+                    self.tok_flags &= TOK_FLAG_SPC;
                     return Ok(());
                 }
 
@@ -1727,7 +1911,7 @@ impl<'a> Lexer<'a> {
                     self.tok = c;
                     self.tokc = CValue::default();
                     self.next_char();
-                    self.tok_flags = 0;
+                    self.tok_flags &= TOK_FLAG_SPC;
                     return Ok(());
                 }
 
@@ -1740,7 +1924,7 @@ impl<'a> Lexer<'a> {
                     if ch > 0 && ch < 128 {
                         self.tok = ch;
                         self.tokc = CValue::default();
-                        self.tok_flags = 0;
+                        self.tok_flags &= TOK_FLAG_SPC;
                         return Ok(());
                     }
                     // Non-ASCII: might be a UTF-8 identifier start
@@ -1758,7 +1942,7 @@ impl<'a> Lexer<'a> {
                         let tok_val = tok_alloc(token_table, ident_bytes);
                         self.tok = tok_val;
                         self.tokc = CValue::default();
-                        self.tok_flags = 0;
+                        self.tok_flags &= TOK_FLAG_SPC;
                         return Ok(());
                     }
                     // Skip truly unrecognized chars
@@ -1810,7 +1994,13 @@ impl<'a> Lexer<'a> {
         // Null-terminate
         self.tok_buf.data.push(0);
         self.tok = TOK_PPNUM;
+        // Point tokc.str_val at the raw text so that get_tok_str() and
+        // store_token_value() can access the pp-number representation.
         self.tokc = CValue::default();
+        self.tokc.str_val = CStringValue {
+            data: self.tok_buf.data.as_ptr(),
+            size: self.tok_buf.data.len() as i32,
+        };
         Ok(())
     }
 
@@ -1859,7 +2049,13 @@ impl<'a> Lexer<'a> {
         // Null-terminate
         self.tok_buf.data.push(0);
         self.tok = TOK_PPSTR;
+        // Point tokc.str_val at the raw text (including quotes) so
+        // that get_tok_str() returns the original source representation.
         self.tokc = CValue::default();
+        self.tokc.str_val = CStringValue {
+            data: self.tok_buf.data.as_ptr(),
+            size: self.tok_buf.data.len() as i32,
+        };
         Ok(())
     }
 }

@@ -753,6 +753,10 @@ pub const TOK_TWODOTS: i32 = 0xa2;
 pub const TOK_TWOSHARPS: i32 = 0xa3;
 /// Placeholder token (C99)
 pub const TOK_PLCHLDR: i32 = 0xa4;
+/// Marker token indicating the immediately following token must NOT be
+/// macro-expanded (C99 6.10.3.4 "painted blue" semantics).  Inserted by
+/// [`macro_subst`] when a macro name appears in its own expansion.
+pub const TOK_NOSUBST: i32 = 0xf1;
 /// Alias of `(` for parsing `sizeof(type)`
 pub const TOK_SOTYPE: i32 = 0xa7;
 

@@ -1026,7 +1026,21 @@ impl TCCState {
             ft if ft == FileType::Asm as i32
                 || ft == FileType::AsmPreprocessed as i32 =>
             {
-                self.assemble_file(filename, ft == FileType::AsmPreprocessed as i32)?;
+                // In preprocess-only mode (-E), assembly files (.S) go
+                // through the same preprocessor path as C files.
+                if self.output_type == Some(OutputType::Preprocess)
+                    && ft == FileType::AsmPreprocessed as i32
+                {
+                    // Temporarily mark parsing flags to treat tokens as
+                    // assembly (ASM_FILE) — the preprocessor needs to know
+                    // to allow assembly-style comments and directives.
+                    self.compile_file(filename)?;
+                } else {
+                    self.assemble_file(
+                        filename,
+                        ft == FileType::AsmPreprocessed as i32,
+                    )?;
+                }
             }
             _ => {
                 // Object, library, or DLL — recorded for linker phase.
@@ -1301,6 +1315,10 @@ impl TCCState {
                 }
                 "E" => {
                     self.output_type = Some(OutputType::Preprocess);
+                }
+                "P" => {
+                    // Suppress line directive output in preprocessor mode.
+                    self.Pflag = 1;
                 }
                 "run" => {
                     self.output_type = Some(OutputType::Memory);
@@ -1580,14 +1598,18 @@ impl TCCState {
         // processing can save/restore context correctly.
         self.include_stack.push(bf);
 
-        // ---- Step 2-3: Parse top-level declarations ----
-        //
-        // The `Parser` borrows `&mut self` (TCCState) for its lifetime.
-        // Internally, `parser.next()` → `advance_token()` creates a
-        // transient `Preprocessor` which drives the `Lexer` — the full
-        // lexer → preprocessor → parser → codegen pipeline executes
-        // within the `decl()` call.
-        let parse_result = {
+        // ---- Step 2-3: Preprocess-only or Parse top-level declarations ----
+        let parse_result = if self.output_type == Some(OutputType::Preprocess) {
+            // Preprocess-only mode (-E): run the preprocessor and write
+            // each token to ppfp_buffer. The CLI layer drains ppfp_buffer
+            // to the target writer (file or stdout).
+            self.run_preprocess_only()
+        } else {
+            // Full compilation: The `Parser` borrows `&mut self` (TCCState)
+            // for its lifetime.  Internally, `parser.next()` →
+            // `advance_token()` creates a transient `Preprocessor` which
+            // drives the `Lexer` — the full lexer → preprocessor → parser
+            // → codegen pipeline executes within the `decl()` call.
             let mut parser = crate::parser::Parser::new(self);
             // Prime the token stream — read the first token so
             // `parser.current_token` is valid before `decl()` examines it.
@@ -1626,6 +1648,212 @@ impl TCCState {
     // -----------------------------------------------------------------------
     // Path initialization
     // -----------------------------------------------------------------------
+
+    /// Initializes default system include paths based on config.
+    /// Runs the preprocessor in preprocess-only mode (-E).
+    ///
+    /// Tokenises the current source file, expands macros, processes
+    /// directives, and writes each resulting token into `ppfp_buffer`.
+    /// When the `-P` flag is active (Pflag != 0) line directives are
+    /// suppressed.
+    fn run_preprocess_only(&mut self) -> TccResult<()> {
+        use crate::lexer::{get_tok_str, TokenSymTable, PARSE_FLAG_PREPROCESS,
+            PARSE_FLAG_LINEFEED, PARSE_FLAG_ACCEPT_STRAYS,
+            PARSE_FLAG_ASM_FILE, TOK_FLAG_SPC};
+        use crate::preprocessor::Preprocessor;
+        use crate::token::{TOK_EOF, TOK_LINEFEED, TOK_NOSUBST};
+        use std::fmt::Write as FmtWrite;
+
+        // Pop the file we just pushed so we can hand it to the Preprocessor.
+        let file = match self.include_stack.pop() {
+            Some(f) => f,
+            None => return Ok(()),
+        };
+
+        // Detect assembly preprocessing mode (.S files) — we treat
+        // unrecognised `#` directives as line comments and tolerate
+        // assembly-specific lexer tokens.
+        let is_asm = file.filename.ends_with(".S");
+
+        let suppress_lines = self.Pflag != 0;
+        let tok_table = TokenSymTable::new();
+        let mut pp = Preprocessor::new(self, tok_table, file);
+        // Match the C TCC's `tcc_preprocess()` flags: PREPROCESS,
+        // LINEFEED, and optionally ASM_FILE.  Crucially, we do NOT set
+        // PARSE_FLAG_TOK_NUM or PARSE_FLAG_TOK_STR so that numbers
+        // stay as `TOK_PPNUM` (preserving hex/octal representation
+        // like `0x1E`) and strings stay as `TOK_PPSTR` (preserving
+        // the raw quoted form `"pipapo"`).
+        pp.parse_flags |= PARSE_FLAG_PREPROCESS
+            | PARSE_FLAG_LINEFEED
+            | PARSE_FLAG_ACCEPT_STRAYS;
+        if is_asm {
+            pp.parse_flags |= PARSE_FLAG_ASM_FILE;
+        }
+        let mut last_line: i32 = -1;
+        let mut last_file = String::new();
+        let mut out = String::new();
+        // Track the *token type* of the previous output token so we
+        // can decide whether a separator space is needed.  Mirrors C
+        // TCC's `token_seen` variable in `tcc_preprocess()`.
+        let mut token_seen: i32 = TOK_LINEFEED;
+        // Track whether the current line has emitted any tokens.
+        // In -P mode we only emit a newline when transitioning from
+        // a line that had content, avoiding empty blank lines.
+        let mut line_has_content = false;
+
+        /// Token-type-level space check.  Mirrors C TCC's
+        /// `pp_need_space(int a, int b)` exactly:
+        ///  - After a pp-number ending in E/e (sentinel `'E'`), space
+        ///    before `+` or `-` prevents re-lexing as exponent.
+        ///  - After `+`, space before `++` or another `+`.
+        ///  - After `-`, space before `--` or another `-`.
+        ///  - After identifier/ppnum, space before identifier/ppnum.
+        fn pp_need_space(a: i32, b: i32) -> bool {
+            // Constants inlined because inner fns can't see module imports.
+            const INC: i32 = 0x82;  // TOK_INC
+            const DEC: i32 = 0x80;  // TOK_DEC
+            const IDENT: i32 = 256; // TOK_IDENT
+            const PPNUM: i32 = 0xcd; // TOK_PPNUM
+            if a == b'E' as i32 {
+                return b == b'+' as i32 || b == b'-' as i32;
+            }
+            if a == b'+' as i32 {
+                return b == INC || b == b'+' as i32;
+            }
+            if a == b'-' as i32 {
+                return b == DEC || b == b'-' as i32;
+            }
+            if a >= IDENT || a == PPNUM {
+                return b >= IDENT || b == PPNUM;
+            }
+            false
+        }
+
+        /// If the token is a pp-number whose string representation
+        /// ends with 'E' or 'e', return `'E'` as a sentinel so that
+        /// `pp_need_space` will insert a space before `+`/`-`.
+        /// Otherwise return the token type unchanged.
+        /// Mirrors C TCC's `pp_check_he0xE()`.
+        ///
+        /// NOTE: Our macro expansion converts TOK_PPNUM to identifiers
+        /// via tok_alloc(), so we also check identifier tokens whose
+        /// text starts with a digit (i.e. converted pp-numbers).
+        #[allow(non_snake_case)]
+        fn pp_check_he0xE(tok: i32, s: &str) -> i32 {
+            const PPNUM: i32 = 0xcd; // TOK_PPNUM
+            const IDENT: i32 = 256;  // TOK_IDENT
+            let is_ppnum_like = tok == PPNUM
+                || (tok >= IDENT && !s.is_empty()
+                    && (s.as_bytes()[0].is_ascii_digit()
+                        || s.as_bytes()[0] == b'.'));
+            if is_ppnum_like {
+                if let Some(&last) = s.as_bytes().last() {
+                    if last.eq_ignore_ascii_case(&b'E') {
+                        return b'E' as i32;
+                    }
+                }
+            }
+            tok
+        }
+
+        loop {
+            let tok = pp.next()?;
+            if tok == TOK_EOF {
+                break;
+            }
+            if tok == TOK_LINEFEED {
+                if line_has_content {
+                    out.push('\n');
+                    line_has_content = false;
+                    token_seen = TOK_LINEFEED;
+                }
+                last_line += 1;
+                continue;
+            }
+            // Skip residual nosubst markers (should be consumed by next()
+            // already, but guard defensively).
+            if tok == TOK_NOSUBST {
+                continue;
+            }
+
+            // Emit #line directives on file/line change (unless -P).
+            if !suppress_lines {
+                if pp.file.filename != last_file {
+                    let _ = writeln!(out, "# {} \"{}\"", pp.file.line_num, pp.file.filename);
+                    last_file = pp.file.filename.clone();
+                    last_line = pp.file.line_num;
+                    token_seen = TOK_LINEFEED;
+                } else if pp.file.line_num != last_line {
+                    let diff = pp.file.line_num - last_line;
+                    if diff > 0 && diff < 8 {
+                        for _ in 0..diff {
+                            out.push('\n');
+                        }
+                    } else {
+                        let _ = writeln!(out, "# {} \"{}\"", pp.file.line_num, pp.file.filename);
+                    }
+                    last_line = pp.file.line_num;
+                    token_seen = TOK_LINEFEED;
+                }
+            }
+
+            let s = get_tok_str(&pp.token_table, tok, Some(&pp.tokc));
+            if s.is_empty() {
+                continue;
+            }
+
+            // Extra spaces from macros that expanded to nothing but had
+            // whitespace before them.  C TCC accumulates these as actual
+            // space tokens in a white[] buffer via PARSE_FLAG_SPACES; we
+            // track them as a counter on the Preprocessor instead.
+            let extra = pp.extra_spaces as usize;
+            pp.extra_spaces = 0;
+
+            // Insert a space when:
+            //  (a) the token's tok_flags has the SPC bit (whitespace was
+            //      present in the original source / macro body), OR
+            //  (b) pp_need_space() detects the previous and current token
+            //      types would merge into a different token upon re-lexing.
+            //
+            // C TCC's tcc_preprocess() uses PARSE_FLAG_SPACES to collect
+            // actual whitespace characters in a white[] buffer and flushes
+            // them before each non-whitespace token — even the first token
+            // after a newline.  We replicate this by emitting a space when
+            // TOK_FLAG_SPC is set, regardless of whether we are at the
+            // start of a line.
+            if token_seen != TOK_LINEFEED {
+                let need = (pp.tok_flags & TOK_FLAG_SPC) != 0
+                    || pp_need_space(token_seen, tok);
+                if need {
+                    out.push(' ');
+                }
+                // Emit extra spaces from empty macro expansions.
+                for _ in 0..extra {
+                    out.push(' ');
+                }
+            } else if (pp.tok_flags & TOK_FLAG_SPC) != 0 || extra > 0 {
+                // Leading whitespace on a continuation line: C TCC
+                // would flush its white[] buffer here; we emit one
+                // space to represent the collapsed indentation.
+                out.push(' ');
+                for _ in 0..extra {
+                    out.push(' ');
+                }
+            }
+            out.push_str(&s);
+            line_has_content = true;
+            token_seen = pp_check_he0xE(tok, &s);
+        }
+
+        // Ensure a trailing newline.
+        if !out.ends_with('\n') {
+            out.push('\n');
+        }
+
+        self.ppfp_buffer = out.into_bytes();
+        Ok(())
+    }
 
     /// Initializes default system include paths based on config.
     fn init_default_include_paths(&mut self) -> TccResult<()> {

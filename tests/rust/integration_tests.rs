@@ -427,10 +427,14 @@ fn run_pp_case_with_opts(test_name: &str, ext: &str, opts: &PpOpts) -> Result<()
         fs::read_to_string(&expect).map_err(|e| format!("Read .expect file: {}", e))?;
 
     let matches = if opts.ignore_whitespace {
-        // Whitespace-insensitive comparison (diff -w)
+        // Whitespace-insensitive comparison (diff -w) — test 02
         normalise_whitespace(&actual) == normalise_whitespace(&expected)
     } else {
-        actual.trim() == expected.trim()
+        // Default: diff -b — ignore changes in amount of whitespace.
+        // The C TCC tests/pp/Makefile uses DIFF_OPTS = -Nu -b for all
+        // PP tests, so tab-vs-space and double-vs-single space
+        // differences are considered equal.
+        normalise_space_amount(actual.trim()) == normalise_space_amount(expected.trim())
     };
 
     if matches {
@@ -455,8 +459,43 @@ fn run_pp_case_with_opts(test_name: &str, ext: &str, opts: &PpOpts) -> Result<()
 
 /// Collapse all whitespace sequences to a single space and trim, for
 /// whitespace-insensitive comparison (mirrors `diff -w`).
+/// Emulate `diff -w`: ignore ALL whitespace differences.
+///
+/// This strips every whitespace character so that `f (2 * (y + 1))` and
+/// `f(2 * (y+1))` compare equal, matching the behaviour of the
+/// Makefile's `DIFF_OPTS += -w`.
 fn normalise_whitespace(s: &str) -> String {
-    s.split_whitespace().collect::<Vec<_>>().join(" ")
+    s.chars().filter(|c| !c.is_whitespace()).collect()
+}
+
+/// Emulate `diff -b`: ignore changes in the *amount* of whitespace.
+///
+/// Each run of consecutive whitespace characters (space, tab, etc.) within
+/// a line is collapsed to a single space, and trailing whitespace on each
+/// line is stripped.  This mirrors the default `DIFF_OPTS = -Nu -b` used
+/// by the TCC `tests/pp/Makefile` for all PP test comparisons.
+fn normalise_space_amount(s: &str) -> String {
+    s.lines()
+        .map(|line| {
+            let mut result = String::with_capacity(line.len());
+            let mut in_space = false;
+            for c in line.chars() {
+                if c == ' ' || c == '\t' {
+                    if !in_space {
+                        result.push(' ');
+                        in_space = true;
+                    }
+                } else {
+                    in_space = false;
+                    result.push(c);
+                }
+            }
+            // Strip trailing whitespace (diff -b ignores trailing spaces)
+            let trimmed = result.trim_end();
+            trimmed.to_string()
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 // ===========================================================================
