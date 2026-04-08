@@ -1,0 +1,24 @@
+[package]
+name = "tcc-ffi"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "C-compatible FFI bindings for the Tiny C Compiler (Rust port) — preserves the complete libtcc public API"
+
+[lib]
+name = "tcc"
+crate-type = ["cdylib", "staticlib"]
+path = "src/lib.rs"
+
+[dependencies]
+# Core compiler library — the FFI crate is a thin wrapper delegating all operations
+# to tcc-core's public API (TCCState, compilation, linking, execution)
+tcc-core = { path = "../tcc-core" }
+# Raw FFI type bindings — provides libc::c_char, libc::c_int, libc::c_void, libc::c_ulong
+# for correct ABI-compatible function signatures matching libtcc.h declarations
+libc = { workspace = true }
+
+[package.metadata.docs.rs]
+all-features = true

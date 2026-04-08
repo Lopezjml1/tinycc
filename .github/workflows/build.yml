@@ -3,38 +3,58 @@ name: build and test
 on:
   push:
     branches: [ mob ]
+  pull_request:
+    branches: [ mob ]
 
 jobs:
   test-x86_64-linux:
     runs-on: ubuntu-22.04
-    timeout-minutes: 2
+    timeout-minutes: 10
     steps:
     - uses: actions/checkout@v4
-    - name: make & test tcc (x86_64-linux)
+    - name: make & test tcc (x86_64-linux) - Legacy C reference
       run: ./configure && make && make test -k
+    - name: Install Rust toolchain
+      uses: dtolnay/rust-toolchain@stable
+    - name: Build Rust TCC
+      run: cargo build --release
+    - name: Test Rust TCC
+      run: cargo test --all
 
   test-x86_64-osx:
     runs-on: macos-15-intel
-    timeout-minutes: 2
+    timeout-minutes: 10
     steps:
     - uses: actions/checkout@v4
-    - name: make & test tcc (x86_64-osx)
+    - name: make & test tcc (x86_64-osx) - Legacy C reference
       run: ./configure && make && make test -k
+    - name: Install Rust toolchain
+      uses: dtolnay/rust-toolchain@stable
+    - name: Build Rust TCC
+      run: cargo build --release
+    - name: Test Rust TCC
+      run: cargo test --all
 
   test-aarch64-osx:
     runs-on: macos-15
-    timeout-minutes: 2
+    timeout-minutes: 10
     steps:
     - uses: actions/checkout@v4
-    - name: make & test tcc (aarch64-osx)
+    - name: make & test tcc (aarch64-osx) - Legacy C reference
       run: ./configure && make && make test -k
+    - name: Install Rust toolchain
+      uses: dtolnay/rust-toolchain@stable
+    - name: Build Rust TCC
+      run: cargo build --release
+    - name: Test Rust TCC
+      run: cargo test --all
 
   test-x86_64-win32:
     runs-on: windows-2025
-    timeout-minutes: 6
+    timeout-minutes: 15
     steps:
     - uses: actions/checkout@v4
-    - name: make & test tcc (x86_64-win32)
+    - name: make & test tcc (x86_64-win32) - Legacy C reference
       shell: cmd
       run: |
         echo ::group:: setup msys mingw64-gcc
@@ -44,10 +64,16 @@ jobs:
         C:\msys64\usr\bin\bash -l -c "pacman -S --noconfirm mingw-w64-x86_64-gcc"
         echo ::endgroup::
         C:\msys64\usr\bin\bash -l -c "./configure && make && make test -k"
+    - name: Install Rust toolchain
+      uses: dtolnay/rust-toolchain@stable
+    - name: Build Rust TCC
+      run: cargo build --release
+    - name: Test Rust TCC
+      run: cargo test --all
     - uses: ilammy/msvc-dev-cmd@v1
       with:
         arch: amd64
-    - name: build with MSVC (x86_64-win32)
+    - name: build with MSVC (x86_64-win32) - Legacy C reference
       shell: cmd
       run: |
         echo ::group:: run build-tcc.bat
@@ -59,10 +85,10 @@ jobs:
 
   test-i386-win32:
     runs-on: windows-2025
-    timeout-minutes: 6
+    timeout-minutes: 15
     steps:
     - uses: actions/checkout@v4
-    - name: make & test tcc (i386-win32)
+    - name: make & test tcc (i386-win32) - Legacy C reference
       shell: cmd
       run: |
         echo ::group:: setup msys mingw32-gcc
@@ -72,10 +98,16 @@ jobs:
         C:\msys64\usr\bin\bash -l -c "pacman -S --noconfirm mingw-w64-i686-gcc"
         echo ::endgroup::
         C:\msys64\usr\bin\bash -l -c "./configure && make && make test -k"
+    - name: Install Rust toolchain
+      uses: dtolnay/rust-toolchain@stable
+    - name: Build Rust TCC
+      run: cargo build --release
+    - name: Test Rust TCC
+      run: cargo test --all
     - uses: ilammy/msvc-dev-cmd@v1
       with:
         arch: x86
-    - name: build with MSVC (i386-win32)
+    - name: build with MSVC (i386-win32) - Legacy C reference
       shell: cmd
       run: |
         echo ::group:: run build-tcc.bat
@@ -87,11 +119,11 @@ jobs:
 
   test-armv7-linux:
     runs-on: ubuntu-22.04
-    timeout-minutes: 8
+    timeout-minutes: 20
     steps:
     - uses: actions/checkout@v4
     - uses: uraimo/run-on-arch-action@v3
-      name: make & test tcc (armv7-linux)
+      name: make & test tcc (armv7-linux) - Legacy C reference
       with:
         arch: armv7
         distro: ubuntu22.04
@@ -99,17 +131,22 @@ jobs:
         install: |
           apt-get update -q -y
           apt-get install -q -y gcc make
+          curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable
+          . $HOME/.cargo/env
         run: |
             echo "::endgroup::" # flatten 'run container'
             ./configure && make && make test -k
+            . $HOME/.cargo/env
+            cargo build --release
+            cargo test --all
 
   test-aarch64-linux:
     runs-on: ubuntu-22.04
-    timeout-minutes: 8
+    timeout-minutes: 20
     steps:
     - uses: actions/checkout@v4
     - uses: uraimo/run-on-arch-action@v3
-      name: make & test tcc (aarch64-linux)
+      name: make & test tcc (aarch64-linux) - Legacy C reference
       with:
         arch: aarch64
         distro: ubuntu24.04
@@ -117,17 +154,22 @@ jobs:
         install: |
           apt-get update -q -y
           apt-get install -q -y gcc make
+          curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable
+          . $HOME/.cargo/env
         run: |
             echo "::endgroup::" # flatten 'run container'
             ./configure && make && make test -k
+            . $HOME/.cargo/env
+            cargo build --release
+            cargo test --all
 
   test-riscv64-linux:
     runs-on: ubuntu-22.04
-    timeout-minutes: 8
+    timeout-minutes: 20
     steps:
     - uses: actions/checkout@v4
     - uses: uraimo/run-on-arch-action@v3
-      name: make & test tcc (riscv64-linux)
+      name: make & test tcc (riscv64-linux) - Legacy C reference
       with:
         arch: riscv64
         distro: ubuntu22.04
@@ -135,6 +177,11 @@ jobs:
         install: |
           apt-get update -q -y
           apt-get install -q -y gcc make
+          curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable
+          . $HOME/.cargo/env
         run: |
             echo "::endgroup::" # flatten 'run container'
             ./configure && make && make test -k
+            . $HOME/.cargo/env
+            cargo build --release
+            cargo test --all
